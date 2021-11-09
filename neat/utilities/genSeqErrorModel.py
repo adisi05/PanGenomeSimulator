@@ -24,7 +24,7 @@ from functools import reduce
 # enables import from neighboring package
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
-from source.probability import DiscreteDistribution
+from neat.source.probability import DiscreteDistribution
 
 
 def parse_file(input_file, real_q, off_q, max_reads, n_samp, plot_stuff):

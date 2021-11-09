@@ -66,8 +66,8 @@ def main(args):
                                                                              args.discard_offtarget,
                                                                              args.force_coverage, args.rescale_qual)
     # important flags
-    (save_bam, save_vcf, fasta_instead, no_fastq) = \
-        (args.bam, args.vcf, args.fa, args.no_fastq)
+    (save_bam, save_vcf, fasta_instead, no_fastq, save_fasta) = \
+        (args.bam, args.vcf, args.fa, args.no_fastq, args.save_fasta)
 
     # sequencing model parameters
     (fragment_size, fragment_std) = args.pe
@@ -327,15 +327,17 @@ def main(args):
     if cancer:
         output_file_writer = OutputFileWriter(out_prefix + '_normal', paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                              no_fastq=no_fastq, fasta_instead=fasta_instead, save_fasta=save_fasta)
         output_file_writer_cancer = OutputFileWriter(out_prefix + '_tumor', paired=paired_end, bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     no_fastq=no_fastq, fasta_instead=fasta_instead)
+                                                     no_fastq=no_fastq, fasta_instead=fasta_instead,
+                                                     save_fasta=save_fasta)
     else:
         output_file_writer = OutputFileWriter(out_prefix, paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
                                               no_fastq=no_fastq,
-                                              fasta_instead=fasta_instead)
+                                              fasta_instead=fasta_instead,
+                                              save_fasta=save_fasta)
     # Using pathlib to make this more machine agnostic
     out_prefix_name = pathlib.Path(out_prefix).name
 
@@ -545,16 +547,16 @@ def main(args):
                 if sequences is None:
                     sequences = SequenceContainer(start, ref_sequence[start:end], ploids, overlap, read_len,
                                                   [mut_model] * ploids, mut_rate, only_vcf=only_vcf)
-                    if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
-                            [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
+                    # if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
+                    #         [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
+                    if [hap for hap in range(ploids) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
                         print("There's a cigar that's off.")
                         # pdb.set_trace()
                         sys.exit(1)
                 else:
                     sequences.update(start, ref_sequence[start:end], ploids, overlap, read_len, [mut_model] * ploids,
                                      mut_rate)
-                    if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
-                            [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
+                    if [hap for hap in range(ploids) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
                         print("There's a cigar that's off.")
                         # pdb.set_trace()
                         sys.exit(1)
@@ -818,6 +820,9 @@ def main(args):
                 # k[0] + 1 because we're going back to 1-based vcf coords
                 output_file_writer.write_vcf_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
                                                     my_filter, k[4])
+        if save_fasta:
+            print('writing output fasta...')
+            output_file_writer.write_fasta_record(sequences, ref_index[chrom][0], out_prefix)
 
     # write unmapped reads to bam file
     if save_bam and len(unmapped_records):

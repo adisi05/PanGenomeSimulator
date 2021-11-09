@@ -92,10 +92,15 @@ BUFFER_BATCH_SIZE = 8000  # write out to file after this many reads
 # TODO find a better way to write output files
 class OutputFileWriter:
     def __init__(self, out_prefix, paired=False, bam_header=None, vcf_header=None,
-                 no_fastq=False, fasta_instead=False):
+                 no_fastq=False, fasta_instead=False, save_fasta=False):
 
         self.fasta_instead = fasta_instead
+        self.save_fasta = save_fasta
         # TODO Eliminate paired end as an option for fastas. Plan is to create a write fasta method.
+        # if self.save_fasta:
+        #     output_fasta = pathlib.Path(out_prefix + '.fasta.gz')
+        #     self.fasta_file = bgzf.open(output_fasta, 'wb')
+
         if self.fasta_instead:
             fq1 = pathlib.Path(out_prefix + '.fasta.gz')
             fq2 = None
@@ -175,7 +180,29 @@ class OutputFileWriter:
         self.fq2_buffer = []
         self.bam_buffer = []
 
-    # TODO add write_fasta_record
+    def write_fasta_record(self, sequences, chrom, out_prefix):
+
+        # for chrom in sequences.keys():
+        # for hapl_type in sequences[chrom].keys():
+        for hapl_idx in range(sequences.ploidy):
+            # [if_true] if [expression] else [if_false]
+            file_name = '{0}.fasta'.format(out_prefix) if sequences.ploidy == 1 else '{0}_{hapl_idx}.fasta'.format(out_prefix,hapl_idx)
+            self.fasta_file = open(file_name, 'w')
+            strID = '>{0}\n'.format(chrom)
+            self.fasta_file.write(strID)
+
+            strDNA = str(sequences.sequences[hapl_idx])
+            strDNA_len = len(strDNA)
+            i = 0
+
+            while i + 50 <= strDNA_len:
+                self.fasta_file.write(strDNA[i:i + 50] + '\n')
+                i = i + 50
+
+            if i < strDNA_len:
+                self.fasta_file.write(strDNA[i:strDNA_len] + '\n')
+
+            self.fasta_file.close()
 
     def write_fastq_record(self, read_name, read1, qual1, read2=None, qual2=None, orientation=None):
         # Since read1 and read2 are Seq objects from Biopython, they have reverse_complement methods built-in
@@ -325,3 +352,5 @@ class OutputFileWriter:
             self.vcf_file.close()
         if self.bam_file is not None:
             self.bam_file.close()
+        # if self.fasta_file is not None:
+        #     self.fasta_file.close()

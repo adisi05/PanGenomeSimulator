@@ -76,10 +76,10 @@ def index_ref(reference_path: str) -> list:
             if prev_p is not None:
                 ref_indices.append((prev_r, prev_p, ref_file.tell() - len(data), seq_len))
             seq_len = 0
-            prev_p = ref_file.tell()
+            prev_p = ref_file.tell() #including '\n' characters
             prev_r = data[1:-1]
         else:
-            seq_len += len(data) - 1
+            seq_len += len(data) # - 1 # -1 is for ignoring the '\n' characters
     ref_file.close()
 
     print('{0:.3f} (sec)'.format(time.time() - tt))
@@ -103,7 +103,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
 
 
     ref_file.seek(ref_inds_i[1])
-    my_dat = ''.join(ref_file.read(ref_inds_i[2] - ref_inds_i[1]).split('\n'))
+    my_dat = ''.join(ref_file.read(ref_inds_i[3]).split('\n'))
     my_dat = Seq(my_dat.upper())
     # Mutable seqs have a number of disadvantages. I'm going to try making them immutable and see if that helps
     # my_dat = my_dat.tomutable()
@@ -114,6 +114,8 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
     n_count = 0
     n_atlas = []
     for i in range(len(my_dat)):
+        # if my_dat[i] == '>':
+        #     break
         if my_dat[i] == 'N' or (n_unknowns and my_dat[i] not in OK_CHR_ORD):
             if n_count == 0:
                 prev_ni = i

@@ -18,8 +18,10 @@ def main(raw_args=None):
                         help="Location of the file for the sequencing error model (omit to use the default)")
     parser.add_argument('-E', type=float, required=False, metavar='Error rate', default=-1,
                         help="Rescale avg sequencing error rate to this, must be between 0.0 and 0.3")
-    parser.add_argument('-p', type=int, required=False, metavar='ploidy', default=2,
-                        help="Desired ploidy, default = 2")
+    # TODO add to the documentation that now ploidy default is 1
+    # TODO Consider adding feature of working with a multiple ploidy *reference* (doesn't exist now, only multi-ploidy output exists)
+    parser.add_argument('-p', type=int, required=False, metavar='ploidy', default=1,
+                        help="Desired ploidy, default = 1")
     parser.add_argument('-tr', type=str, required=False, metavar='target.bed', default=None,
                         help="Bed file containing targeted regions")
     parser.add_argument('-dr', type=str, required=False, metavar='discard_regions.bed', default=None,
@@ -61,14 +63,28 @@ def main(raw_args=None):
     # TODO implement a broader debugging scheme for subclasses.
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
     parser.add_argument('-newick', type=str, required=True, metavar='newick tree', help="Path to reference newick")
+    parser.add_argument('--save-fasta', required=False, action='store_true', default=False,
+                        help='outputs FASTA')
 
     args = parser.parse_args(raw_args)
 
-    t = ete3.Tree(args.newick)
+    t = ete3.Tree(args.newick, format=1)
+    output_format = args.o
+    ancestor_fasta = args.r
     for node in t.traverse("preorder"):
-        print(node.name)
+        print("node.name",node.name)
+        if node.up is None:
+            continue # continues in the for loop?
+        args.o = output_format + "_" + node.name
+        if node.up is t:
+            print("node.parent is root")
+            args.r = ancestor_fasta
+        else:
+            print("node.parent", node.up.name)
+            args.r = output_format + "_" + node.up.name + ".fasta"
 
-    gen_reads.main(args)
+        print("args",args)
+        gen_reads.main(args)
 
 if __name__ == "__main__":
     # start = time.clock()
