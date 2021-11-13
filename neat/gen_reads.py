@@ -66,8 +66,8 @@ def main(args):
                                                                              args.discard_offtarget,
                                                                              args.force_coverage, args.rescale_qual)
     # important flags
-    (save_bam, save_vcf, fasta_instead, no_fastq, save_fasta) = \
-        (args.bam, args.vcf, args.fa, args.no_fastq, args.save_fasta)
+    (save_bam, save_vcf, no_fastq, save_fasta) = \
+        (args.bam, args.vcf, args.no_fastq, args.save_fasta)
 
     # sequencing model parameters
     (fragment_size, fragment_std) = args.pe
@@ -88,14 +88,14 @@ def main(args):
     check_file_open(input_bed, 'ERROR: could not open input BED, {}'.format(input_bed), required=False)
 
     # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
-    if no_fastq and not fasta_instead and not save_bam and not save_vcf:
+    if no_fastq and not save_bam and not save_vcf:
         print('\nERROR: No files would be written.\n')
         sys.exit(1)
 
     if no_fastq:
         print('Bypassing FASTQ generation...')
 
-    only_vcf = no_fastq and save_vcf and not save_bam and not fasta_instead
+    only_vcf = no_fastq and save_vcf and not save_bam
     if only_vcf:
         print('Only producing VCF output...')
 
@@ -105,7 +105,7 @@ def main(args):
 
     # If user specified mean/std, or specified an empirical model, then the reads will be paired_ended
     # If not, then we're doing single-end reads.
-    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None) and not fasta_instead:
+    if (fragment_size is not None and fragment_std is not None) or (fraglen_model is not None):
         paired_end = True
     else:
         paired_end = False
@@ -327,16 +327,15 @@ def main(args):
     if cancer:
         output_file_writer = OutputFileWriter(out_prefix + '_normal', paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
-                                              no_fastq=no_fastq, fasta_instead=fasta_instead, save_fasta=save_fasta)
+                                              no_fastq=no_fastq, save_fasta=save_fasta)
         output_file_writer_cancer = OutputFileWriter(out_prefix + '_tumor', paired=paired_end, bam_header=bam_header,
                                                      vcf_header=vcf_header,
-                                                     no_fastq=no_fastq, fasta_instead=fasta_instead,
+                                                     no_fastq=no_fastq,
                                                      save_fasta=save_fasta)
     else:
         output_file_writer = OutputFileWriter(out_prefix, paired=paired_end, bam_header=bam_header,
                                               vcf_header=vcf_header,
                                               no_fastq=no_fastq,
-                                              fasta_instead=fasta_instead,
                                               save_fasta=save_fasta)
     # Using pathlib to make this more machine agnostic
     out_prefix_name = pathlib.Path(out_prefix).name
@@ -417,8 +416,6 @@ def main(args):
         print('--------------------------------')
         if only_vcf:
             print('generating vcf...')
-        elif fasta_instead:
-            print('generating mutated fasta...')
         else:
             print('sampling reads...')
         tt = time.time()
@@ -821,7 +818,7 @@ def main(args):
                 output_file_writer.write_vcf_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
                                                     my_filter, k[4])
         if save_fasta:
-            print('writing output fasta...')
+            print('Writing output fasta...')
             output_file_writer.write_fasta_record(sequences, ref_index[chrom][0], out_prefix)
 
     # write unmapped reads to bam file

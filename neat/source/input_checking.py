@@ -7,17 +7,17 @@ import pathlib
 import sys
 
 
-def required_field(variable_to_test: any, err_string: str) -> None:
-    """
-    If required field variable_to_test is empty, issues an error. Otherwise this does nothing
-
-    :param variable_to_test: Any input type
-    :param err_string: A string with the error message
-    :return: None
-    """
-    if variable_to_test is None:
-        print('\n' + err_string + '\n')
-        sys.exit(1)
+# def required_field(variable_to_test: any, err_string: str) -> None:
+#     """
+#     If required field variable_to_test is empty, issues an error. Otherwise this does nothing
+#
+#     :param variable_to_test: Any input type
+#     :param err_string: A string with the error message
+#     :return: None
+#     """
+#     if variable_to_test is None:
+#         print('\n' + err_string + '\n')
+#         sys.exit(1)
 
 
 def check_file_open(filename: str, err_string: str, required: bool = False) -> None:
@@ -41,16 +41,16 @@ def check_file_open(filename: str, err_string: str, required: bool = False) -> N
                 sys.exit(1)
 
 
-def check_dir(directory: str, err_string: str) -> None:
-    """
-    Checks that directory exists and is a directory
-    :param directory: string of the directory path
-    :param err_string: string of the error in case it is not a directory or doesn't exist
-    :return: None
-    """
-    if not pathlib.Path(directory).is_dir():
-        print('\n' + err_string + '\n')
-        raise NotADirectoryError
+# def check_dir(directory: str, err_string: str) -> None:
+#     """
+#     Checks that directory exists and is a directory
+#     :param directory: string of the directory path
+#     :param err_string: string of the error in case it is not a directory or doesn't exist
+#     :return: None
+#     """
+#     if not pathlib.Path(directory).is_dir():
+#         print('\n' + err_string + '\n')
+#         raise NotADirectoryError
 
 
 def is_in_range(value: float, lower_bound: float, upper_bound: float, err_string: str) -> None:

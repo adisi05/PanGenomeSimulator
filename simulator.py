@@ -4,8 +4,7 @@ import ete3
 import time
 
 
-
-def main(raw_args=None):
+def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
@@ -46,8 +45,6 @@ def main(raw_args=None):
                         help='empirical GC coverage bias distribution')
     parser.add_argument('--bam', required=False, action='store_true', default=False, help='output golden BAM file')
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
-    parser.add_argument('--fa', required=False, action='store_true', default=False,
-                        help='output FASTA instead of FASTQ')
     parser.add_argument('--rng', type=int, required=False, metavar='<int>', default=-1,
                         help='rng seed value; identical RNG value should produce identical runs of the program, so '
                              'things like read locations, variant positions, error positions, etc, '
@@ -66,30 +63,35 @@ def main(raw_args=None):
     parser.add_argument('--save-fasta', required=False, action='store_true', default=False,
                         help='outputs FASTA')
 
-    args = parser.parse_args(raw_args)
+    return parser.parse_args(raw_args)
+
+def main(raw_args=None):
+    args = parse_args(raw_args)
 
     t = ete3.Tree(args.newick, format=1)
-    output_format = args.o
+    print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
+
+    output_prefix = args.o
     ancestor_fasta = args.r
     for node in t.traverse("preorder"):
-        print("node.name",node.name)
-        if node.up is None:
-            continue # continues in the for loop?
-        args.o = output_format + "_" + node.name
+        if node is t:
+            continue # This is the root
+        print('================================')
+        print("Generating sequence for taxon (node):",node.name)
         if node.up is t:
-            print("node.parent is root")
+            print("The parent is the root")
             args.r = ancestor_fasta
         else:
-            print("node.parent", node.up.name)
-            args.r = output_format + "_" + node.up.name + ".fasta"
-
-        print("args",args)
+            print("The parent is:", node.up.name)
+            args.r = output_prefix + "_" + node.up.name + ".fasta"
+        args.o = output_prefix + "_" + node.name
+        print("Using the next args:",args)
         gen_reads.main(args)
+    print('================================')
+
 
 if __name__ == "__main__":
-    # start = time.clock()
-    # print('simulation begins at:'+str(start))
+    tt = time.time()
+    print('Simulation begins')
     main()
-    # end = time.clock()
-    # print('simulation ends at:'+str(end))
-    # print("The function run time is : %.03f seconds" % (end-start))
+    print("Simulation run time is : {0:.3f} (sec)".format(time.time() - tt))
