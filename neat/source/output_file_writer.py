@@ -107,72 +107,72 @@ class OutputFileWriter:
 
         self.no_fastq = no_fastq
         if not self.no_fastq:
-            self.fq1_file = bgzf.open(fq1, 'w')
+            self._file1 = bgzf.open(fq1, 'w')
 
-            self.fq2_file = None
+            self._file2 = None
             if paired:
-                self.fq2_file = bgzf.open(fq2, 'w')
+                self._file2 = bgzf.open(fq2, 'w')
 
         # VCF OUTPUT
-        self.vcf_file = None
+        self._file = None
         if vcf_header is not None:
-            self.vcf_file = bgzf.open(vcf, 'wb')
+            self._file = bgzf.open(vcf, 'wb')
 
             # WRITE VCF HEADER
-            self.vcf_file.write('##fileformat=VCFv4.1\n'.encode('utf-8'))
+            self._file.write('##fileformat=VCFv4.1\n'.encode('utf-8'))
             reference = '##reference=' + vcf_header[0] + '\n'
-            self.vcf_file.write(reference.encode('utf-8'))
-            self.vcf_file.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n'.encode('utf-8'))
-            self.vcf_file.write(
+            self._file.write(reference.encode('utf-8'))
+            self._file.write('##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">\n'.encode('utf-8'))
+            self._file.write(
                 '##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">\n'.encode('utf-8'))
-            self.vcf_file.write(
+            self._file.write(
                 '##INFO=<ID=VMX,Number=1,Type=String,Description="SNP is Missense in these Read Frames">\n'.encode(
                     'utf-8'))
-            self.vcf_file.write(
+            self._file.write(
                 '##INFO=<ID=VNX,Number=1,Type=String,Description="SNP is Nonsense in these Read Frames">\n'.encode(
                     'utf-8'))
-            self.vcf_file.write(
+            self._file.write(
                 '##INFO=<ID=VFX,Number=1,Type=String,Description="Indel Causes Frameshift">\n'.encode('utf-8'))
-            self.vcf_file.write(
+            self._file.write(
                 '##INFO=<ID=WP,Number=A,Type=Integer,Description="NEAT-GenReads ploidy indicator">\n'.encode(
                     'utf-8'))
-            self.vcf_file.write('##ALT=<ID=DEL,Description="Deletion">\n'.encode('utf-8'))
-            self.vcf_file.write('##ALT=<ID=DUP,Description="Duplication">\n'.encode('utf-8'))
-            self.vcf_file.write('##ALT=<ID=INS,Description="Insertion of novel sequence">\n'.encode('utf-8'))
-            self.vcf_file.write('##ALT=<ID=INV,Description="Inversion">\n'.encode('utf-8'))
-            self.vcf_file.write('##ALT=<ID=CNV,Description="Copy number variable region">\n'.encode('utf-8'))
-            self.vcf_file.write('##ALT=<ID=TRANS,Description="Translocation">\n'.encode('utf-8'))
-            self.vcf_file.write('##ALT=<ID=INV-TRANS,Description="Inverted translocation">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=DEL,Description="Deletion">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=DUP,Description="Duplication">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=INS,Description="Insertion of novel sequence">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=INV,Description="Inversion">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=CNV,Description="Copy number variable region">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=TRANS,Description="Translocation">\n'.encode('utf-8'))
+            self._file.write('##ALT=<ID=INV-TRANS,Description="Inverted translocation">\n'.encode('utf-8'))
             # TODO add sample to vcf output
-            self.vcf_file.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'.encode('utf-8'))
+            self._file.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'.encode('utf-8'))
 
         # BAM OUTPUT
-        self.bam_file = None
+        self._file = None
         if bam_header is not None:
-            self.bam_file = bgzf.BgzfWriter(bam, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
+            self._file = bgzf.BgzfWriter(bam, 'w', compresslevel=BAM_COMPRESSION_LEVEL)
 
             # WRITE BAM HEADER
-            self.bam_file.write("BAM\1")
+            self._file.write("BAM\1")
             header = '@HD\tVN:1.5\tSO:coordinate\n'
             for n in bam_header[0]:
                 header += '@SQ\tSN:' + n[0] + '\tLN:' + str(n[3]) + '\n'
             header += '@RG\tID:NEAT\tSM:NEAT\tLB:NEAT\tPL:NEAT\n'
             header_bytes = len(header)
             num_refs = len(bam_header[0])
-            self.bam_file.write(pack('<i', header_bytes))
-            self.bam_file.write(header)
-            self.bam_file.write(pack('<i', num_refs))
+            self._file.write(pack('<i', header_bytes))
+            self._file.write(header)
+            self._file.write(pack('<i', num_refs))
 
             for n in bam_header[0]:
                 l_name = len(n[0]) + 1
-                self.bam_file.write(pack('<i', l_name))
-                self.bam_file.write(n[0] + '\0')
-                self.bam_file.write(pack('<i', n[3]))
+                self._file.write(pack('<i', l_name))
+                self._file.write(n[0] + '\0')
+                self._file.write(pack('<i', n[3]))
 
         # buffers for more efficient writing
-        self.fq1_buffer = []
-        self.fq2_buffer = []
-        self.bam_buffer = []
+        self._buffer1 = []
+        self._buffer2 = []
+        self._buffer = []
 
     def write_fasta_record(self, sequences, chrom, out_prefix):
 
@@ -205,12 +205,12 @@ class OutputFileWriter:
             (read2, quality2) = (read1, qual1)
             (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
 
-        self.fq1_buffer.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
+        self._buffer1.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
         if read2 is not None:
-            self.fq2_buffer.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
+            self._buffer2.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
 
     def write_vcf_record(self, chrom, pos, id_str, ref, alt, qual, filt, info):
-        self.vcf_file.write(
+        self._file.write(
             str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' + str(
                 qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
 
@@ -288,26 +288,26 @@ class OutputFileWriter:
 
         # a horribly compressed line, I'm sorry.
         # (ref_index, position, data)
-        self.bam_buffer.append((ref_id, pos_0, pack('<i', block_size) + pack('<i', ref_id) + pack('<i', pos_0) +
-                                pack('<I', (my_bin << 16) + (my_map_quality << 8) + len(read_name) + 1) +
-                                pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) + pack('<i', next_ref_id) +
-                                pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
+        self._buffer.append((ref_id, pos_0, pack('<i', block_size) + pack('<i', ref_id) + pack('<i', pos_0) +
+                             pack('<I', (my_bin << 16) + (my_map_quality << 8) + len(read_name) + 1) +
+                             pack('<I', (output_sam_flag << 16) + cig_ops) + pack('<i', seq_len) + pack('<i', next_ref_id) +
+                             pack('<i', next_pos) + pack('<i', my_t_len) + read_name.encode('utf-8') +
                                 b'\0' + encoded_cig + encoded_seq + encoded_qual.encode('utf-8')))
 
-    def flush_buffers(self, bam_max=None, last_time=False):
-        if (len(self.fq1_buffer) >= BUFFER_BATCH_SIZE or len(self.bam_buffer) >= BUFFER_BATCH_SIZE) or (
-                len(self.fq1_buffer) and last_time) or (len(self.bam_buffer) and last_time):
+    def flush_buffer(self, bam_max=None, last_time=False):
+        if (len(self._buffer1) >= BUFFER_BATCH_SIZE or len(self._buffer) >= BUFFER_BATCH_SIZE) or (
+                len(self._buffer1) and last_time) or (len(self._buffer) and last_time):
             # fq
             if not self.no_fastq:
-                self.fq1_file.write(''.join(self.fq1_buffer))
-                if len(self.fq2_buffer):
-                    self.fq2_file.write(''.join(self.fq2_buffer))
+                self._file1.write(''.join(self._buffer1))
+                if len(self._buffer2):
+                    self._file2.write(''.join(self._buffer2))
             # bam
-            if len(self.bam_buffer):
-                bam_data = sorted(self.bam_buffer)
+            if len(self._buffer):
+                bam_data = sorted(self._buffer)
                 if last_time:
-                    self.bam_file.write(b''.join([n[2] for n in bam_data]))
-                    self.bam_buffer = []
+                    self._file.write(b''.join([n[2] for n in bam_data]))
+                    self._buffer = []
                 else:
                     ind_to_stop_at = 0
                     for i in range(0, len(bam_data)):
@@ -317,23 +317,23 @@ class OutputFileWriter:
                             ind_to_stop_at = i + 1
                         else:
                             break
-                    self.bam_file.write(b''.join([n[2] for n in bam_data[:ind_to_stop_at]]))
+                    self._file.write(b''.join([n[2] for n in bam_data[:ind_to_stop_at]]))
                     # Debug statement
                     # print(f'BAM WRITING: {ind_to_stop_at}/{len(bam_data)}')
                     if ind_to_stop_at >= len(bam_data):
-                        self.bam_buffer = []
+                        self._buffer = []
                     else:
-                        self.bam_buffer = bam_data[ind_to_stop_at:]
-            self.fq1_buffer = []
-            self.fq2_buffer = []
+                        self._buffer = bam_data[ind_to_stop_at:]
+            self._buffer1 = []
+            self._buffer2 = []
 
-    def close_files(self):
-        self.flush_buffers(last_time=True)
+    def close_file(self):
+        self.flush_buffer(last_time=True)
         if not self.no_fastq:
-            self.fq1_file.close()
-            if self.fq2_file is not None:
-                self.fq2_file.close()
-        if self.vcf_file is not None:
-            self.vcf_file.close()
-        if self.bam_file is not None:
-            self.bam_file.close()
+            self._file1.close()
+            if self._file2 is not None:
+                self._file2.close()
+        if self._file is not None:
+            self._file.close()
+        if self._file is not None:
+            self._file.close()

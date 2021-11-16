@@ -78,10 +78,22 @@ def test_ete3_params(newick_file,fasta_file):
 
 
 if __name__ == "__main__":
+
+    arr = [3]
+    if len(arr):
+        print(True)
+    else:
+        print(False)
+
+    num = None
+    if (num == None):
+        print("hi")
+
+
     # test_dendropy_params("tree1.newick")
 
     # test_dendropy_params("tree2.newick","tree2.fasta")
 
-    test_ete3_params("tree4.newick","tree2.fasta")
+    # test_ete3_params("tree4.newick","tree2.fasta")
 
     # test_dendropy_params("tree3.newick")
