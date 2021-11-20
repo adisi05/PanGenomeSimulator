@@ -23,7 +23,7 @@ import re
 import numpy as np
 import argparse
 
-from Bio.Seq import Seq
+from Bio.Seq import Seq, MutableSeq
 
 EV_BPRANGE = 50  # how far to either side of a particular variant location do we want to check for equivalents?
 
@@ -444,7 +444,7 @@ def main():
                         print(i, len(my_dat[i]), in_width)
                 exit(1)
 
-            my_dat = Seq(''.join(my_dat)).upper().tomutable()
+            my_dat = MutableSeq(Seq(''.join(my_dat)).upper())
             my_len = len(my_dat)
 
         #

@@ -4,7 +4,7 @@ import pathlib
 import re
 
 from neat.source.neat_cigar import CigarString
-from neat.source.output_file_writer import OutputFileWriter
+from neat.source.file_writer_utils import BUFFER_BATCH_SIZE
 
 BAM_COMPRESSION_LEVEL = 6
 
@@ -68,12 +68,9 @@ CIGAR_PACKED = {'M': 0, 'I': 1, 'D': 2, 'N': 3, 'S': 4, 'H': 5, 'P': 6, '=': 7, 
 SEQ_PACKED = {'=': 0, 'A': 1, 'C': 2, 'M': 3, 'G': 4, 'R': 5, 'S': 6, 'V': 7,
               'T': 8, 'W': 9, 'Y': 10, 'H': 11, 'K': 12, 'D': 13, 'B': 14, 'N': 15}
 
-# TODO figure out an optimum batch size
-BUFFER_BATCH_SIZE = 8000  # write out to file after this many reads
-
 
 # TODO find a better way to write output files
-class BamFileWriter(OutputFileWriter):
+class BamFileWriter:
     def __init__(self, out_prefix, header=None):
 
         bam = pathlib.Path(out_prefix + '_golden.bam')

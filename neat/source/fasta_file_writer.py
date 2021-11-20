@@ -1,13 +1,4 @@
-from struct import pack
-import Bio.bgzf as bgzf
-import pathlib
-import re
-
-from neat.source.neat_cigar import CigarString
-from neat.source.output_file_writer import OutputFileWriter
-
-
-class FastaFileWriter(OutputFileWriter):
+class FastaFileWriter:
     def __init__(self):
         pass
 

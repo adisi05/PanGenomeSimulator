@@ -75,6 +75,8 @@ def test_ete3_params(newick_file,fasta_file):
         print(node.name)
 
 
+def func():
+    return 123, "hey"
 
 
 if __name__ == "__main__":
@@ -88,6 +90,16 @@ if __name__ == "__main__":
     num = None
     if (num == None):
         print("hi")
+    dict = {
+        "a": 4,
+        "b": "test"
+    }
+    dict["c"],dict["d"] = func()
+    dict["e"] = {}
+
+    print(dict)
+
+
 
 
     # test_dendropy_params("tree1.newick")

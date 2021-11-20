@@ -1,13 +1,9 @@
-from struct import pack
 import Bio.bgzf as bgzf
 import pathlib
-import re
-
-from neat.source.neat_cigar import CigarString
-from neat.source.output_file_writer import OutputFileWriter
 
 
-class VcfFileWriter(OutputFileWriter):
+
+class VcfFileWriter:
     def __init__(self, out_prefix, header=None):
 
         vcf = pathlib.Path(out_prefix + '_golden.vcf.gz')

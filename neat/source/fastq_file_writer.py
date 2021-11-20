@@ -1,11 +1,10 @@
 import Bio.bgzf as bgzf
 import pathlib
 
-from neat.source import output_file_writer
-from neat.source.output_file_writer import OutputFileWriter
+from neat.source.file_writer_utils import BUFFER_BATCH_SIZE
 
 
-class FastqFileWriter(OutputFileWriter):
+class FastqFileWriter:
     def __init__(self, out_prefix, paired=False, no_fastq=False):
         self.no_fastq = no_fastq
         if self.no_fastq:
@@ -42,7 +41,7 @@ class FastqFileWriter(OutputFileWriter):
         if self.no_fastq:
             return
 
-        if (len(self._buffer1) >= output_file_writer.BUFFER_BATCH_SIZE) or (len(self._buffer1) and last_time):
+        if (len(self._buffer1) >= BUFFER_BATCH_SIZE) or (len(self._buffer1) and last_time):
             if not self.no_fastq:
                 self._file1.write(''.join(self._buffer1))
                 if len(self._buffer2):
