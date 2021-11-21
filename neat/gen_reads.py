@@ -46,7 +46,6 @@ WINDOW_TARGET_SCALE = 100
 # allowed nucleotides
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
 
-
 def main(args):
 
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
@@ -55,11 +54,10 @@ def main(args):
     load_mutation_model(mutation_params)
 
     # initialize output writers
-    bam_file_writer, fastq_file_writer = intialize_reads_writers(index_params, input_params, output_params,
-                                                                 sequencing_params)
+    bam_file_writer, fastq_file_writer = intialize_reads_writers(index_params, output_params, sequencing_params)
 
     # Using pathlib to make this more machine agnostic
-    out_prefix_name = pathlib.Path(output_params["out_prefix"]).name
+    output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
     # keep track of the number of reads we've sampled, for read-names
     read_name_count = 1
     unmapped_records = []
@@ -67,7 +65,7 @@ def main(args):
     for chrom in range(len(index_params["ref_index"])):
 
         simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, chrom, out_prefix_name, read_name_count, unmapped_records)
+                       bam_file_writer, fastq_file_writer, chrom, read_name_count, unmapped_records)
 
     # write unmapped reads to bam file
     write_unmapped_to_bam(bam_file_writer, sequencing_params["paired_end"], output_params["save_bam"], unmapped_records)
@@ -77,92 +75,6 @@ def main(args):
         bam_file_writer.close_file()
     if not output_params["no_fastq"]:
         fastq_file_writer.close_file()
-
-
-def intialize_reads_writers(index_params, input_params, output_params, sequencing_params):
-    bam_file_writer = None
-    if output_params["save_bam"]:
-        bam_header = [
-            copy.deepcopy(index_params["ref_index"])]  # TODO wondering if this is actually needed in the bam_header
-        bam_file_writer = BamFileWriter(output_params["out_prefix"], bam_header)
-    fastq_file_writer = None
-    if not output_params["no_fastq"]:
-        fastq_file_writer = FastqFileWriter(output_params["out_prefix"], paired=sequencing_params["paired_end"],
-                                            no_fastq=output_params["no_fastq"])
-    else:
-        print('Bypassing FASTQ generation...')
-    output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
-    if output_params["only_vcf"]:
-        print('Only producing VCF output...')
-    return bam_file_writer, fastq_file_writer
-
-
-def process_input_params(input_params, ploids):
-    index_params = index_reference(input_params)
-    # parse input variants, if present
-    load_input_variants(input_params, ploids)
-    # parse input targeted regions, if present
-    load_input_regions(input_params, index_params["ref_list"])
-    # parse discard bed similarly
-    load_discard_regions(input_params)
-    return index_params
-
-
-def index_reference(input_params):
-    # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
-    #                    2: byte index where the next contig begins, 3: contig seq length),
-    #                    (repeat for every chrom)]
-    # TODO check to see if this might work better as a dataframe or biopython object
-    ref_index = index_ref(input_params["reference"])
-    # TODO check if this index can work, maybe it's faster
-    # ref_index2 = SeqIO.index(reference, 'fasta')
-    index_params = {
-        "ref_index": ref_index,
-        "indices_by_ref_name": {ref_index[n][0]: n for n in range(len(ref_index))},
-        "ref_list": [n[0] for n in ref_index]
-    }
-    return index_params
-
-
-def load_mutation_model(mutation_params):
-    mutation_params["mut_model"] = parse_input_mutation_model(mutation_params["mut_model"], 1)
-    if mutation_params["mut_rate"] < 0.:
-        mutation_params["mut_rate"] = None
-    if mutation_params["mut_rate"] != -1 and mutation_params["mut_rate"] is not None:
-        is_in_range(mutation_params["mut_rate"], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
-    load_mutation_regions(mutation_params)
-
-
-def load_sequencing_model(sequencing_params):
-    # absolute path to this script
-    sim_path = pathlib.Path(__file__).resolve().parent
-    # If user specified mean/std, or specified an empirical model, then the reads will be paired_ended
-    # If not, then we're doing single-end reads.
-    if (sequencing_params["fragment_size"] is not None and sequencing_params["fragment_std"] is not None) or (
-            sequencing_params["fraglen_model"] is not None):
-        sequencing_params["paired_end"] = True
-    else:
-        sequencing_params["paired_end"] = False
-    # sequencing error model
-    if sequencing_params["se_model"] is None:
-        print('Using default sequencing error model.')
-        sequencing_params["se_model"] = sim_path / 'models/errorModel_toy.p'
-        sequencing_params["se_class"] = ReadContainer(sequencing_params["read_len"], sequencing_params["se_model"],
-                                                      sequencing_params["se_rate"], sequencing_params["rescale_qual"])
-    else:
-        # probably need to do some sanity checking
-        sequencing_params["se_class"] = ReadContainer(sequencing_params["read_len"], sequencing_params["se_model"],
-                                                      sequencing_params["se_rate"], sequencing_params["rescale_qual"])
-    # GC-bias model
-    load_gc_model(sequencing_params, sim_path)
-    # Assign appropriate values to the needed variables if we're dealing with paired-ended data
-    if sequencing_params["paired_end"]:
-        load_fraglen_model_PE(sequencing_params)
-    if sequencing_params["paired_end"]:
-        sequencing_params["n_handling"] = ('random', sequencing_params["fragment_size"])
-    else:
-        sequencing_params["n_handling"] = ('ignore', sequencing_params["read_len"])
-
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
@@ -237,338 +149,30 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     if sequencing_params["n_max_qual"] != -1:
         is_in_range(sequencing_params["n_max_qual"], 1, 40, 'Error: -N must be between 1 and 40')
 
-def simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, chrom, out_prefix_name, read_name_count, unmapped_records):
+def process_input_params(input_params, ploids):
+    index_params = index_reference(input_params)
+    # parse input variants, if present
+    load_input_variants(input_params, ploids)
+    # parse input targeted regions, if present
+    load_input_regions(input_params, index_params["ref_list"])
+    # parse discard bed similarly
+    load_discard_regions(input_params)
+    return index_params
 
-    # read in reference sequence and notate blocks of Ns
-    index_params["ref_sequence"], index_params["n_regions"] = \
-        read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
-
-    progress_params = intialize_progress_bar_params(index_params["n_regions"])
-
-    valid_variants_from_vcf = prune_invalid_variants(chrom, input_params["input_variants"], index_params["ref_index"], index_params["ref_sequence"])
-    all_variants_out = {}
-    sequences = None
-
-    # TODO add large random structural variants
-
-    load_sampling_window_params(sequencing_params)
-    print('--------------------------------')
-    if output_params["only_vcf"]:
-        print('generating vcf...')
-    else:
-        print('sampling reads...')
-    tt = time.time()
-    # start the progress bar
-    print('[', end='', flush=True)
-    # Applying variants to non-N regions
-    for i in range(len(index_params["n_regions"]['non_N'])):
-        sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
-                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer,
-                                             chrom, out_prefix_name, read_name_count, unmapped_records, progress_params,
-                                             valid_variants_from_vcf, all_variants_out, sequences, i)
-    print(']', flush=True)
-    if output_params["only_vcf"]:
-        print('VCF generation completed in ', end='')
-    else:
-        print('Read sampling completed in ', end='')
-    print(int(time.time() - tt), '(sec)')
-    # write all output variants for this reference
-    if output_params["save_vcf"]:
-        vcf_header = [input_params["reference"]]
-        write_vcf(all_variants_out, chrom, output_params["out_prefix"], vcf_header, index_params["ref_index"])
-    if output_params["save_fasta"]:
-        write_fasta(chrom, output_params["out_prefix"], index_params["ref_index"], sequences)
-
-
-def intialize_progress_bar_params(n_regions):
-    # count total bp we'll be spanning so we can get an idea of how far along we are
-    # (for printing progress indicators)
-    progress_params = {
-        "total_bp_span": sum([n[1] - n[0] for n in n_regions['non_N']]),
-        "current_progress": 0,
-        "current_percent": 0,
-        "have_printed100": False
+def index_reference(input_params):
+    # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
+    #                    2: byte index where the next contig begins, 3: contig seq length),
+    #                    (repeat for every chrom)]
+    # TODO check to see if this might work better as a dataframe or biopython object
+    ref_index = index_ref(input_params["reference"])
+    # TODO check if this index can work, maybe it's faster
+    # ref_index2 = SeqIO.index(reference, 'fasta')
+    index_params = {
+        "ref_index": ref_index,
+        "indices_by_ref_name": {ref_index[n][0]: n for n in range(len(ref_index))},
+        "ref_list": [n[0] for n in ref_index]
     }
-    return progress_params
-
-
-def load_sampling_window_params(sequencing_params):
-    # determine sampling windows based on read length, large N regions, and structural mutations.
-    # in order to obtain uniform coverage, windows should overlap by:
-    # - read_len, if single-end reads
-    # - fragment_size (mean), if paired-end reads
-    # ploidy is fixed per large sampling window,
-    # coverage distributions due to GC% and targeted regions are specified within these windows
-    if sequencing_params["paired_end"]:
-        sequencing_params["target_size"] = WINDOW_TARGET_SCALE * sequencing_params["fragment_size"]
-        sequencing_params["overlap"] = sequencing_params["fragment_size"]
-        sequencing_params["overlap_min_window_size"] = max(sequencing_params["fraglen_distribution"].values) + 10
-    else:
-        sequencing_params["target_size"] = WINDOW_TARGET_SCALE * sequencing_params["read_len"]
-        sequencing_params["overlap"] = sequencing_params["read_len"]
-        sequencing_params["overlap_min_window_size"] = sequencing_params["read_len"] + 10
-
-
-def write_fasta(chrom, out_prefix, ref_index, sequences):
-    print('Writing output fasta...')
-    fasta_file_writer = FastaFileWriter()
-    fasta_file_writer.write_record(sequences, ref_index[chrom][0], out_prefix)
-
-
-def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
-    """Prune invalid input variants, e.g variants that:
-                    - try to delete or alter any N characters
-                    - don't match the reference base at their specified position
-                    - any alt allele contains anything other than allowed characters"""
-    valid_variants_from_vcf = []
-    n_skipped = [0, 0, 0]
-    if ref_index[chrom][0] in input_variants:
-        for n in input_variants[ref_index[chrom][0]]:
-            span = (n[0], n[0] + len(n[1]))
-            r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
-            # Checks if there are any invalid nucleotides in the vcf items
-            any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
-            # Ensure reference sequence matches the nucleotide in the vcf
-            if r_seq != n[1]:
-                n_skipped[0] += 1
-                continue
-            # Ensure that we aren't trying to insert into an N region
-            elif 'N' in r_seq:
-                n_skipped[1] += 1
-                continue
-            # Ensure that we don't insert any disallowed characters
-            elif any_bad_nucl:
-                n_skipped[2] += 1
-                continue
-            # If it passes the above tests, append to valid variants list
-            valid_variants_from_vcf.append(n)
-
-        print('found', len(valid_variants_from_vcf), 'valid variants for ' +
-              ref_index[chrom][0] + ' in input VCF...')
-        if any(n_skipped):
-            print(sum(n_skipped), 'variants skipped...')
-            print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
-            print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
-            print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
-    return valid_variants_from_vcf
-
-
-def write_vcf(all_variants_out, chrom, out_prefix, vcf_header, ref_index):
-    print('Writing output VCF...')
-    vcf_file_writer = VcfFileWriter(out_prefix,vcf_header)
-    for k in sorted(all_variants_out.keys()):
-        current_ref = ref_index[chrom][0]
-        my_id = '.'
-        my_quality = '.'
-        my_filter = 'PASS'
-        # k[0] + 1 because we're going back to 1-based vcf coords
-        vcf_file_writer.write_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
-                                     my_filter, k[4])
-    vcf_file_writer.close_file()
-
-
-def apply_variants_to_region(general_params, input_params, output_params, mutation_params,
-                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer,
-                                             chrom, out_prefix_name, read_name_count, unmapped_records, progress_params,
-                                             valid_variants_from_vcf, all_variants_out, sequences, i):
-    (initial_position, final_position) = index_params["n_regions"]['non_N'][i]
-    number_target_windows = max([1, (final_position - initial_position) // sequencing_params["target_size"]])
-    base_pair_distance = int((final_position - initial_position) / float(number_target_windows))
-    # if for some reason our region is too small to process, skip it! (sorry)
-    if number_target_windows == 1 and (final_position - initial_position) < sequencing_params["overlap_min_window_size"]:
-        return sequences
-    start = initial_position
-    end = min([start + base_pair_distance, final_position])
-    vars_from_prev_overlap = []
-    v_index_from_prev = 0
-    is_last_time = False
-    while True:
-        # which inserted variants are in this window?
-        buffer_added, vars_in_window, v_index_from_prev = get_vars_in_window(end, sequencing_params["overlap"], start, v_index_from_prev,
-                                                          valid_variants_from_vcf)
-
-        buffer_added, end, is_last_time, next_end, next_start = adjust_window_to_vars(base_pair_distance, buffer_added,
-                                                                                      end, final_position, is_last_time,
-                                                                                      sequencing_params["overlap"], vars_in_window)
-
-        print_progress_indicator(buffer_added, progress_params, general_params["debug"], end,
-                                 is_last_time, next_end, next_start, start)
-
-        coverage_dat, target_hits = compute_coverage_modifiers(chrom, start, end, sequencing_params, input_params,
-                                                               index_params["ref_index"])
-
-        skip_this_window = should_skip_this_window(coverage_dat, end, sequencing_params, start, target_hits)
-
-        if skip_this_window:
-            # skip window, save cpu time
-            start = next_start
-            end = next_end
-            if is_last_time:
-                break
-            if end >= final_position:
-                is_last_time = True
-            vars_from_prev_overlap = []
-            continue
-
-        # construct sequence data that we will sample reads from
-        all_inserted_variants, coverage_avg, sequences =\
-            update_sequences(coverage_dat, end, output_params, mutation_params, sequencing_params,
-                             index_params, sequences, start, vars_from_prev_overlap, vars_in_window)
-
-        # which variants do we need to keep for next time (because of window overlap)?
-        vars_from_prev_overlap = []
-        for n in all_inserted_variants:
-            if n[0] >= end - sequencing_params["overlap"] - 1:
-                vars_from_prev_overlap.append(n)
-
-        # if we're only producing VCF, no need to go through the hassle of generating reads
-        if not output_params["only_vcf"]:
-            sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom, coverage_avg,
-                         coverage_dat, start, end, fastq_file_writer, is_last_time, next_start, out_prefix_name,
-                         read_name_count, sequences, unmapped_records)
-
-        # tally up all the variants that got successfully introduced
-        for n in all_inserted_variants:
-            all_variants_out[n] = True
-
-        # prepare indices of next window
-        start = next_start
-        end = next_end
-        if is_last_time:
-            break
-        if end >= final_position:
-            is_last_time = True
-    return sequences
-
-def adjust_window_to_vars(base_pair_distance, buffer_added, end, final_position, is_last_time, overlap, vars_in_window):
-    # determine which structural variants will affect our sampling window positions
-    structural_vars = []
-    for n in vars_in_window:
-        # change: added abs() so that insertions are also buffered.
-        buffer_needed = max([max([abs(len(n[1]) - len(alt_allele)), 1]) for alt_allele in n[2]])
-        # -1 because going from VCF coords to array coords
-        structural_vars.append((n[0] - 1, buffer_needed))
-    # adjust end-position of window based on inserted structural mutations
-    keep_going = True
-    while keep_going:
-        keep_going = False
-        for n in structural_vars:
-            # adding "overlap" here to prevent SVs from being introduced in overlap regions
-            # (which can cause problems if random mutations from the previous window land on top of them)
-            delta = (end - 1) - (n[0] + n[1]) - 2 - overlap
-            if delta < 0:
-                buffer_added = -delta
-                end += buffer_added
-                keep_going = True
-                break
-    next_start = end - overlap
-    next_end = min([next_start + base_pair_distance, final_position])
-    if next_end - next_start < base_pair_distance:
-        end = next_end
-        is_last_time = True
-    return buffer_added, end, is_last_time, next_end, next_start
-
-def get_vars_in_window(end, overlap, start, v_index_from_prev, valid_variants_from_vcf):
-    vars_in_window = []
-    updated = False
-    buffer_added = 0
-    for j in range(v_index_from_prev, len(valid_variants_from_vcf)):
-        variants_position = valid_variants_from_vcf[j][0]
-        # update: changed <= to <, so variant cannot be inserted in first position
-        if start < variants_position < end:
-            # vcf --> array coords
-            vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf[j][1:])))
-        if variants_position >= end - overlap - 1 and updated is False:
-            updated = True
-            v_index_from_prev = j
-        if variants_position >= end:
-            break
-    return buffer_added, vars_in_window, v_index_from_prev
-
-
-def print_progress_indicator(buffer_added, progress_params, debug, end,
-                                 is_last_time, next_end, next_start, start):
-    # print progress indicator
-    if debug:
-        print(f'PROCESSING WINDOW: {(start, end), [buffer_added]}, '
-              f'next: {(next_start, next_end)}, isLastTime: {is_last_time}')
-    progress_params["current_progress"] += end - start
-    new_percent = int((progress_params["current_progress"] * 100) / float(progress_params["total_bp_span"]))
-    if new_percent > progress_params["current_percent"]:
-        if new_percent <= 99 or (new_percent == 100 and not progress_params["have_printed100"]):
-            # if new_percent % 10 == 1:
-            print('-', end='', flush=True)
-        progress_params["current_percent"] = new_percent
-        if progress_params["current_percent"] == 100:
-            progress_params["have_printed100"] = True
-
-
-def update_sequences(coverage_dat, end, output_params, mutation_params, sequencing_params,
-                             index_params, sequences, start, vars_from_prev_overlap, vars_in_window):
-    if sequences is None:
-        sequences = SequenceContainer(start, index_params["ref_sequence"][start:end], output_params["ploids"],\
-                                      sequencing_params["overlap"],sequencing_params["read_len"],
-                                      [mutation_params["mut_model"]] * output_params["ploids"], mutation_params["mut_rate"],
-                                      only_vcf=output_params["only_vcf"])
-        # if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
-        #         [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
-        if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
-            print("There's a cigar that's off.")
-            # pdb.set_trace()
-            sys.exit(1)
-    else:
-        sequences.update(start, index_params["ref_sequence"][start:end], output_params["ploids"], sequencing_params["overlap"],
-                         sequencing_params["read_len"], [mutation_params["mut_model"]] * output_params["ploids"],
-                         mutation_params["mut_rate"])
-        if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
-            print("There's a cigar that's off.")
-            # pdb.set_trace()
-            sys.exit(1)
-    # insert variants
-    sequences.insert_mutations(vars_from_prev_overlap + vars_in_window)
-    all_inserted_variants = sequences.random_mutations()
-    # print all_inserted_variants
-    # init coverage
-    if sum(coverage_dat[2]) >= sequencing_params["low_cov_thresh"]:
-        if sequencing_params["paired_end"]:
-            coverage_avg = sequences.init_coverage(tuple(coverage_dat), frag_dist=sequencing_params["fraglen_distribution"])
-        else:
-            coverage_avg = sequences.init_coverage(tuple(coverage_dat))
-    return all_inserted_variants, coverage_avg, sequences
-
-
-def should_skip_this_window(coverage_dat, end, sequencing_params, start, target_hits):
-    # off-target and we're not interested?
-    if sequencing_params["off_target_discard"] and target_hits <= sequencing_params["read_len"]:
-        return True
-    # print len(coverage_dat[2]), sum(coverage_dat[2])
-    if sum(coverage_dat[2]) < sequencing_params["low_cov_thresh"]:
-        return True
-    # check for small window sizes
-    if (end - start) < sequencing_params["overlap_min_window_size"]:
-        return True
-    return False
-
-
-def compute_coverage_modifiers(chrom, start, end, sequencing_params, input_params, ref_index):
-    # compute coverage modifiers
-    coverage_dat = [sequencing_params["gc_window_size"], sequencing_params["gc_scale_val"], []]
-    target_hits = 0
-    if input_params["input_bed"] is None:
-        coverage_dat[2] = [1.0] * (end - start)
-    else:
-        if ref_index[chrom][0] not in input_params["input_regions"]:
-            coverage_dat[2] = [sequencing_params["off_target_scalar"]] * (end - start)
-        else:
-            for j in range(start, end):
-                if not (bisect.bisect(input_params["input_regions"][ref_index[chrom][0]], j) % 2):
-                    coverage_dat[2].append(1.0)
-                    target_hits += 1
-                else:
-                    coverage_dat[2].append(sequencing_params["off_target_scalar"])
-    return coverage_dat, target_hits
-
+    return index_params
 
 def load_input_variants(input_params, ploids):
     # TODO read this in as a pandas dataframe
@@ -577,46 +181,6 @@ def load_input_variants(input_params, ploids):
         (sample_names, input_variants) = parse_vcf(input_params["input_vcf"], ploidy=ploids)
         for k in sorted(input_variants.keys()):
             input_variants[k].sort()
-
-# parse input mutation rate rescaling regions, if present
-def load_mutation_regions(mutation_params):
-    # TODO convert to pandas dataframe
-    mutation_params["mut_rate_regions"] = {}
-    mutation_params["mut_rate_values"] = {}
-    if mutation_params["mut_bed"] is not None:
-        try:
-            with open(mutation_params["mut_bed"], 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
-                    mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
-                    (pos1, pos2) = (int(pos1), int(pos2))
-                    if len(mut_str) and (pos2 - pos1) > 1:
-                        # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
-                        mutation_params["mut_rate"] = max([0.0, min([float(mut_str[0][9:]), 0.3])])
-                        if my_chr not in mutation_params["mut_rate_regions"]:
-                            mutation_params["mut_rate_regions"][my_chr] = [-1]
-                            mutation_params["mut_rate_values"][my_chr] = [0.0]
-                        mutation_params["mut_rate_regions"][my_chr].extend([pos1, pos2])
-                        # TODO figure out what the next line is supposed to do and fix
-                        mutation_params["mut_rate_values"].extend([mutation_params["mut_rate"] * (pos2 - pos1)] * 2)
-        except IOError:
-            print("\nProblem reading mutational BED file.\n")
-            sys.exit(1)
-
-def load_discard_regions(input_params):
-    # TODO convert to pandas dataframe
-    input_params["discard_regions"] = {}
-    if input_params["discard_bed"] is not None:
-        try:
-            with open(input_params["discard_bed"], 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                    if my_chr not in input_params["discard_bed"]:
-                        input_params["discard_bed"][my_chr] = [-1]
-                    input_params["discard_bed"][my_chr].extend([int(pos1), int(pos2)])
-        except IOError:
-            print("\nProblem reading discard BED file.\n")
-            sys.exit(1)
 
 def load_input_regions(input_params, ref_list):
     # TODO convert bed to pandas dataframe
@@ -649,6 +213,51 @@ def load_input_regions(input_params, ref_list):
             print(
                 'Warning: Targeted regions BED file contains sequence names not found in reference (regions ignored).')
 
+def load_discard_regions(input_params):
+    # TODO convert to pandas dataframe
+    input_params["discard_regions"] = {}
+    if input_params["discard_bed"] is not None:
+        try:
+            with open(input_params["discard_bed"], 'r') as f:
+                for line in f:
+                    [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
+                    if my_chr not in input_params["discard_bed"]:
+                        input_params["discard_bed"][my_chr] = [-1]
+                    input_params["discard_bed"][my_chr].extend([int(pos1), int(pos2)])
+        except IOError:
+            print("\nProblem reading discard BED file.\n")
+            sys.exit(1)
+
+def load_sequencing_model(sequencing_params):
+    # absolute path to this script
+    sim_path = pathlib.Path(__file__).resolve().parent
+    # If user specified mean/std, or specified an empirical model, then the reads will be paired_ended
+    # If not, then we're doing single-end reads.
+    if (sequencing_params["fragment_size"] is not None and sequencing_params["fragment_std"] is not None) or (
+            sequencing_params["fraglen_model"] is not None):
+        sequencing_params["paired_end"] = True
+    else:
+        sequencing_params["paired_end"] = False
+    # sequencing error model
+    if sequencing_params["se_model"] is None:
+        print('Using default sequencing error model.')
+        sequencing_params["se_model"] = sim_path / 'models/errorModel_toy.p'
+        sequencing_params["se_class"] = ReadContainer(sequencing_params["read_len"], sequencing_params["se_model"],
+                                                      sequencing_params["se_rate"], sequencing_params["rescale_qual"])
+    else:
+        # probably need to do some sanity checking
+        sequencing_params["se_class"] = ReadContainer(sequencing_params["read_len"], sequencing_params["se_model"],
+                                                      sequencing_params["se_rate"], sequencing_params["rescale_qual"])
+    # GC-bias model
+    load_gc_model(sequencing_params, sim_path)
+    # Assign appropriate values to the needed variables if we're dealing with paired-ended data
+    if sequencing_params["paired_end"]:
+        load_fraglen_model_PE(sequencing_params)
+    if sequencing_params["paired_end"]:
+        sequencing_params["n_handling"] = ('random', sequencing_params["fragment_size"])
+    else:
+        sequencing_params["n_handling"] = ('ignore', sequencing_params["read_len"])
+
 def load_gc_model(sequencing_params, sim_path):
     if sequencing_params["gc_bias_model"] is None:
         print('Using default gc-bias model.')
@@ -668,7 +277,6 @@ def load_gc_model(sequencing_params, sim_path):
         gc_window_size = gc_scale_count[-1]
     sequencing_params["gc_scale_val"] = gc_scale_val
     sequencing_params["gc_window_size"] = gc_window_size
-
 
 def load_fraglen_model_PE(sequencing_params):
     # Empirical fragment length distribution, if input model is specified
@@ -709,8 +317,367 @@ def load_fraglen_model_PE(sequencing_params):
                                    fraglen_values]
             sequencing_params["fraglen_distribution"] = DiscreteDistribution(fraglen_probability, fraglen_values)
 
+def load_mutation_model(mutation_params):
+    mutation_params["mut_model"] = parse_input_mutation_model(mutation_params["mut_model"], 1)
+    if mutation_params["mut_rate"] < 0.:
+        mutation_params["mut_rate"] = None
+    if mutation_params["mut_rate"] != -1 and mutation_params["mut_rate"] is not None:
+        is_in_range(mutation_params["mut_rate"], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
+    load_mutation_regions(mutation_params)
+
+# parse input mutation rate rescaling regions, if present
+def load_mutation_regions(mutation_params):
+    # TODO convert to pandas dataframe
+    mutation_params["mut_rate_regions"] = {}
+    mutation_params["mut_rate_values"] = {}
+    if mutation_params["mut_bed"] is not None:
+        try:
+            with open(mutation_params["mut_bed"], 'r') as f:
+                for line in f:
+                    [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
+                    mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
+                    (pos1, pos2) = (int(pos1), int(pos2))
+                    if len(mut_str) and (pos2 - pos1) > 1:
+                        # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
+                        mutation_params["mut_rate"] = max([0.0, min([float(mut_str[0][9:]), 0.3])])
+                        if my_chr not in mutation_params["mut_rate_regions"]:
+                            mutation_params["mut_rate_regions"][my_chr] = [-1]
+                            mutation_params["mut_rate_values"][my_chr] = [0.0]
+                        mutation_params["mut_rate_regions"][my_chr].extend([pos1, pos2])
+                        # TODO figure out what the next line is supposed to do and fix
+                        mutation_params["mut_rate_values"].extend([mutation_params["mut_rate"] * (pos2 - pos1)] * 2)
+        except IOError:
+            print("\nProblem reading mutational BED file.\n")
+            sys.exit(1)
+
+def intialize_reads_writers(index_params, output_params, sequencing_params):
+    bam_file_writer = None
+    if output_params["save_bam"]:
+        bam_header = [
+            copy.deepcopy(index_params["ref_index"])]  # TODO wondering if this is actually needed in the bam_header
+        bam_file_writer = BamFileWriter(output_params["out_prefix"], bam_header)
+    fastq_file_writer = None
+    if not output_params["no_fastq"]:
+        fastq_file_writer = FastqFileWriter(output_params["out_prefix"], paired=sequencing_params["paired_end"],
+                                            no_fastq=output_params["no_fastq"])
+    else:
+        print('Bypassing FASTQ generation...')
+    output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
+    if output_params["only_vcf"]:
+        print('Only producing VCF output...')
+    return bam_file_writer, fastq_file_writer
+
+def simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
+                       bam_file_writer, fastq_file_writer, chrom, read_name_count, unmapped_records):
+
+    # read in reference sequence and notate blocks of Ns
+    index_params["ref_sequence"], index_params["n_regions"] = \
+        read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
+
+    progress_params = intialize_progress_bar_params(index_params["n_regions"])
+
+    valid_variants_from_vcf = prune_invalid_variants(chrom, input_params["input_variants"], index_params["ref_index"], index_params["ref_sequence"])
+    all_variants_out = {}
+    sequences = None
+
+    # TODO add large random structural variants
+
+    load_sampling_window_params(sequencing_params)
+    print('--------------------------------')
+    if output_params["only_vcf"]:
+        print('generating vcf...')
+    else:
+        print('sampling reads...')
+    tt = time.time()
+    # start the progress bar
+    print('[', end='', flush=True)
+    # Applying variants to non-N regions
+    for i in range(len(index_params["n_regions"]['non_N'])):
+        sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
+                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer,
+                                             chrom, read_name_count, unmapped_records, progress_params,
+                                             valid_variants_from_vcf, all_variants_out, sequences, i)
+    print(']', flush=True)
+    if output_params["only_vcf"]:
+        print('VCF generation completed in ', end='')
+    else:
+        print('Read sampling completed in ', end='')
+    print(int(time.time() - tt), '(sec)')
+    # write all output variants for this reference
+    if output_params["save_vcf"]:
+        vcf_header = [input_params["reference"]]
+        write_vcf(all_variants_out, chrom, output_params["out_prefix"], vcf_header, index_params["ref_index"])
+    if output_params["save_fasta"]:
+        write_fasta(chrom, output_params["out_prefix"], index_params["ref_index"], sequences)
+
+def intialize_progress_bar_params(n_regions):
+    # count total bp we'll be spanning so we can get an idea of how far along we are
+    # (for printing progress indicators)
+    progress_params = {
+        "total_bp_span": sum([n[1] - n[0] for n in n_regions['non_N']]),
+        "current_progress": 0,
+        "current_percent": 0,
+        "have_printed100": False
+    }
+    return progress_params
+
+def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
+    """Prune invalid input variants, e.g variants that:
+                    - try to delete or alter any N characters
+                    - don't match the reference base at their specified position
+                    - any alt allele contains anything other than allowed characters"""
+    valid_variants_from_vcf = []
+    n_skipped = [0, 0, 0]
+    if ref_index[chrom][0] in input_variants:
+        for n in input_variants[ref_index[chrom][0]]:
+            span = (n[0], n[0] + len(n[1]))
+            r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
+            # Checks if there are any invalid nucleotides in the vcf items
+            any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
+            # Ensure reference sequence matches the nucleotide in the vcf
+            if r_seq != n[1]:
+                n_skipped[0] += 1
+                continue
+            # Ensure that we aren't trying to insert into an N region
+            elif 'N' in r_seq:
+                n_skipped[1] += 1
+                continue
+            # Ensure that we don't insert any disallowed characters
+            elif any_bad_nucl:
+                n_skipped[2] += 1
+                continue
+            # If it passes the above tests, append to valid variants list
+            valid_variants_from_vcf.append(n)
+
+        print('found', len(valid_variants_from_vcf), 'valid variants for ' +
+              ref_index[chrom][0] + ' in input VCF...')
+        if any(n_skipped):
+            print(sum(n_skipped), 'variants skipped...')
+            print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
+            print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
+            print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
+    return valid_variants_from_vcf
+
+def load_sampling_window_params(sequencing_params):
+    # determine sampling windows based on read length, large N regions, and structural mutations.
+    # in order to obtain uniform coverage, windows should overlap by:
+    # - read_len, if single-end reads
+    # - fragment_size (mean), if paired-end reads
+    # ploidy is fixed per large sampling window,
+    # coverage distributions due to GC% and targeted regions are specified within these windows
+    if sequencing_params["paired_end"]:
+        sequencing_params["target_size"] = WINDOW_TARGET_SCALE * sequencing_params["fragment_size"]
+        sequencing_params["overlap"] = sequencing_params["fragment_size"]
+        sequencing_params["overlap_min_window_size"] = max(sequencing_params["fraglen_distribution"].values) + 10
+    else:
+        sequencing_params["target_size"] = WINDOW_TARGET_SCALE * sequencing_params["read_len"]
+        sequencing_params["overlap"] = sequencing_params["read_len"]
+        sequencing_params["overlap_min_window_size"] = sequencing_params["read_len"] + 10
+
+def apply_variants_to_region(general_params, input_params, output_params, mutation_params,
+                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer,
+                                             chrom, read_name_count, unmapped_records, progress_params,
+                                             valid_variants_from_vcf, all_variants_out, sequences, i):
+    (initial_position, final_position) = index_params["n_regions"]['non_N'][i]
+    number_target_windows = max([1, (final_position - initial_position) // sequencing_params["target_size"]])
+    base_pair_distance = int((final_position - initial_position) / float(number_target_windows))
+    # if for some reason our region is too small to process, skip it! (sorry)
+    if number_target_windows == 1 and (final_position - initial_position) < sequencing_params["overlap_min_window_size"]:
+        return sequences
+    start = initial_position
+    end = min([start + base_pair_distance, final_position])
+    vars_from_prev_overlap = []
+    v_index_from_prev = 0
+    is_last_time = False
+    while True:
+        # which inserted variants are in this window?
+        buffer_added, vars_in_window, v_index_from_prev = get_vars_in_window(end, sequencing_params["overlap"], start,
+                                                                             v_index_from_prev, valid_variants_from_vcf)
+
+        buffer_added, end, is_last_time, next_end, next_start = adjust_window_to_vars(base_pair_distance, buffer_added,
+                                                                                      end, final_position, is_last_time,
+                                                                                      sequencing_params["overlap"],
+                                                                                      vars_in_window)
+
+        print_progress_indicator(buffer_added, progress_params, general_params["debug"], start, end, next_start,
+                                 next_end, is_last_time)
+
+        coverage_dat, target_hits = compute_coverage_modifiers(chrom, start, end, sequencing_params, input_params,
+                                                               index_params["ref_index"])
+
+        skip_this_window = should_skip_this_window(coverage_dat, end, sequencing_params, start, target_hits)
+
+        if skip_this_window:
+            # skip window, save cpu time
+            if is_last_time:
+                break
+            start, end, is_last_time = prepare_next_window(next_start, next_end, final_position, is_last_time)
+            vars_from_prev_overlap = []
+            continue
+
+        # construct sequence data that we will sample reads from
+        all_inserted_variants, coverage_avg, sequences =\
+            update_sequences(coverage_dat, end, output_params, mutation_params, sequencing_params,
+                             index_params, sequences, start, vars_from_prev_overlap, vars_in_window)
+
+        # which variants do we need to keep for next time (because of window overlap)?
+        vars_from_prev_overlap = get_vars_for_next_window(all_inserted_variants, end, sequencing_params)
+
+        # if we're only producing VCF, no need to go through the hassle of generating reads
+        if not output_params["only_vcf"]:
+            sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,
+                         coverage_avg, coverage_dat, start, end, fastq_file_writer, is_last_time, next_start,
+                         read_name_count, sequences, unmapped_records)
+
+        # tally up all the variants that got successfully introduced
+        for n in all_inserted_variants:
+            all_variants_out[n] = True
+
+        if is_last_time:
+            break
+        # prepare indices of next window
+        start, end, is_last_time = prepare_next_window(next_start, next_end, final_position, is_last_time)
+    return sequences
+
+def get_vars_in_window(end, overlap, start, v_index_from_prev, valid_variants_from_vcf):
+    vars_in_window = []
+    updated = False
+    buffer_added = 0
+    for j in range(v_index_from_prev, len(valid_variants_from_vcf)):
+        variants_position = valid_variants_from_vcf[j][0]
+        # update: changed <= to <, so variant cannot be inserted in first position
+        if start < variants_position < end:
+            # vcf --> array coords
+            vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf[j][1:])))
+        if variants_position >= end - overlap - 1 and updated is False:
+            updated = True
+            v_index_from_prev = j
+        if variants_position >= end:
+            break
+    return buffer_added, vars_in_window, v_index_from_prev
+
+def adjust_window_to_vars(base_pair_distance, buffer_added, end, final_position, is_last_time, overlap, vars_in_window):
+    # determine which structural variants will affect our sampling window positions
+    structural_vars = []
+    for n in vars_in_window:
+        # change: added abs() so that insertions are also buffered.
+        buffer_needed = max([max([abs(len(n[1]) - len(alt_allele)), 1]) for alt_allele in n[2]])
+        # -1 because going from VCF coords to array coords
+        structural_vars.append((n[0] - 1, buffer_needed))
+    # adjust end-position of window based on inserted structural mutations
+    keep_going = True
+    while keep_going:
+        keep_going = False
+        for n in structural_vars:
+            # adding "overlap" here to prevent SVs from being introduced in overlap regions
+            # (which can cause problems if random mutations from the previous window land on top of them)
+            delta = (end - 1) - (n[0] + n[1]) - 2 - overlap
+            if delta < 0:
+                buffer_added = -delta
+                end += buffer_added
+                keep_going = True
+                break
+    next_start = end - overlap
+    next_end = min([next_start + base_pair_distance, final_position])
+    if next_end - next_start < base_pair_distance:
+        end = next_end
+        is_last_time = True
+    return buffer_added, end, is_last_time, next_end, next_start
+
+def print_progress_indicator(buffer_added, progress_params, debug, start, end, next_start, next_end, is_last_time):
+    # print progress indicator
+    if debug:
+        print(f'PROCESSING WINDOW: {(start, end), [buffer_added]}, '
+              f'next: {(next_start, next_end)}, isLastTime: {is_last_time}')
+    progress_params["current_progress"] += end - start
+    new_percent = int((progress_params["current_progress"] * 100) / float(progress_params["total_bp_span"]))
+    if new_percent > progress_params["current_percent"]:
+        if new_percent <= 99 or (new_percent == 100 and not progress_params["have_printed100"]):
+            # if new_percent % 10 == 1:
+            print('-', end='', flush=True)
+        progress_params["current_percent"] = new_percent
+        if progress_params["current_percent"] == 100:
+            progress_params["have_printed100"] = True
+
+def compute_coverage_modifiers(chrom, start, end, sequencing_params, input_params, ref_index):
+    # compute coverage modifiers
+    coverage_dat = [sequencing_params["gc_window_size"], sequencing_params["gc_scale_val"], []]
+    target_hits = 0
+    if input_params["input_bed"] is None:
+        coverage_dat[2] = [1.0] * (end - start)
+    else:
+        if ref_index[chrom][0] not in input_params["input_regions"]:
+            coverage_dat[2] = [sequencing_params["off_target_scalar"]] * (end - start)
+        else:
+            for j in range(start, end):
+                if not (bisect.bisect(input_params["input_regions"][ref_index[chrom][0]], j) % 2):
+                    coverage_dat[2].append(1.0)
+                    target_hits += 1
+                else:
+                    coverage_dat[2].append(sequencing_params["off_target_scalar"])
+    return coverage_dat, target_hits
+
+def should_skip_this_window(coverage_dat, end, sequencing_params, start, target_hits):
+    # off-target and we're not interested?
+    if sequencing_params["off_target_discard"] and target_hits <= sequencing_params["read_len"]:
+        return True
+    # print len(coverage_dat[2]), sum(coverage_dat[2])
+    if sum(coverage_dat[2]) < sequencing_params["low_cov_thresh"]:
+        return True
+    # check for small window sizes
+    if (end - start) < sequencing_params["overlap_min_window_size"]:
+        return True
+    return False
+
+def prepare_next_window(next_start, next_end, final_position, is_last_time):
+    start = next_start
+    end = next_end
+    if end >= final_position:
+        is_last_time = True
+    return start, end, is_last_time
+
+def update_sequences(coverage_dat, end, output_params, mutation_params, sequencing_params,
+                             index_params, sequences, start, vars_from_prev_overlap, vars_in_window):
+    if sequences is None:
+        sequences = SequenceContainer(start, index_params["ref_sequence"][start:end], output_params["ploids"],
+                                      sequencing_params["overlap"],sequencing_params["read_len"],
+                                      [mutation_params["mut_model"]] * output_params["ploids"],
+                                      mutation_params["mut_rate"], only_vcf=output_params["only_vcf"])
+        # if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
+        #         [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
+        if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
+            print("There's a cigar that's off.")
+            # pdb.set_trace()
+            sys.exit(1)
+    else:
+        sequences.update(start, index_params["ref_sequence"][start:end], output_params["ploids"], sequencing_params["overlap"],
+                         sequencing_params["read_len"], [mutation_params["mut_model"]] * output_params["ploids"],
+                         mutation_params["mut_rate"])
+        if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
+            print("There's a cigar that's off.")
+            # pdb.set_trace()
+            sys.exit(1)
+    # insert variants
+    sequences.insert_mutations(vars_from_prev_overlap + vars_in_window)
+    all_inserted_variants = sequences.random_mutations()
+    # print all_inserted_variants
+    # init coverage
+    if sum(coverage_dat[2]) >= sequencing_params["low_cov_thresh"]:
+        if sequencing_params["paired_end"]:
+            coverage_avg = sequences.init_coverage(tuple(coverage_dat), frag_dist=sequencing_params["fraglen_distribution"])
+        else:
+            coverage_avg = sequences.init_coverage(tuple(coverage_dat))
+    return all_inserted_variants, coverage_avg, sequences
+
+def get_vars_for_next_window(all_inserted_variants, end, sequencing_params):
+    vars_from_prev_overlap = []
+    for n in all_inserted_variants:
+        if n[0] >= end - sequencing_params["overlap"] - 1:
+            vars_from_prev_overlap.append(n)
+    return vars_from_prev_overlap
+
 def sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom, coverage_avg,
-                         coverage_dat, start, end, fastq_file_writer, is_last_time, next_start, out_prefix_name,
+                         coverage_dat, start, end, fastq_file_writer, is_last_time, next_start,
                          read_name_count, sequences, unmapped_records):
 
     reads_to_sample = compute_reads_to_sample(sequencing_params, coverage_avg, coverage_dat, start, end)
@@ -726,7 +693,7 @@ def sample_reads(sequencing_params, input_params, index_params, output_params, b
         if len(outside_boundaries) and any(outside_boundaries):
             continue
 
-        my_read_name = out_prefix_name + '-' + index_params["ref_index"][chrom][0] + '-' + str(read_name_count)
+        my_read_name = output_params["out_prefix_name"] + '-' + index_params["ref_index"][chrom][0] + '-' + str(read_name_count)
         read_name_count += len(my_read_data)
 
         # if desired, replace all low-quality bases with Ns
@@ -747,7 +714,6 @@ def sample_reads(sequencing_params, input_params, index_params, output_params, b
     if output_params["save_bam"]:
         bam_file_writer.flush_buffer(last_time=is_last_time, bam_max=(next_start if not is_last_time else end + 1))
 
-
 def compute_reads_to_sample(sequencing_params, coverage_avg, coverage_dat, start, end):
     window_span = end - start
     if sequencing_params["paired_end"]:
@@ -765,7 +731,6 @@ def compute_reads_to_sample(sequencing_params, coverage_avg, coverage_dat, start
     if reads_to_sample == 1 and sum(coverage_dat[2]) < sequencing_params["low_cov_thresh"]:
         reads_to_sample = 0
     return reads_to_sample
-
 
 def get_read_data(sequencing_params, sequences, start):
     is_unmapped = []
@@ -800,49 +765,6 @@ def get_read_data(sequencing_params, sequences, start):
             my_read_data[0][0] += start
     return my_read_data, is_unmapped
 
-
-def handle_low_quality(my_read_data, n_max_qual, se_class):
-    if n_max_qual > -1:
-        for j in range(len(my_read_data)):
-            my_read_string = [n for n in my_read_data[j][2]]
-            for m in range(len(my_read_data[j][3])):
-                adjusted_qual = ord(my_read_data[j][3][m]) - se_class.off_q
-                if adjusted_qual <= n_max_qual:
-                    my_read_string[m] = 'N'
-            my_read_data[j][2] = ''.join(my_read_string)
-
-
-def handle_unmapped_reads(is_forward, is_unmapped, my_read_data, my_read_name, paired_end, unmapped_records):
-    if all(is_unmapped):
-        if paired_end:
-            if is_forward:
-                flag1 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'first', 'mate_reverse'])
-                flag2 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'second', 'reverse'])
-            else:
-                flag1 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'second', 'mate_reverse'])
-                flag2 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'first', 'reverse'])
-            unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
-            unmapped_records.append((my_read_name + '/2', my_read_data[1], flag2))
-        else:
-            flag1 = sam_flag(['unmapped'])
-            unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
-
-
-def output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index,
-                 no_fastq, save_bam):
-    # write SE output
-    if len(my_read_data) == 1:
-        write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data,
-                        my_read_name, my_ref_index, no_fastq, save_bam)
-    # write PE output
-    elif len(my_read_data) == 2:
-        write_PE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data,
-                        my_read_name, my_ref_index, no_fastq, save_bam)
-    else:
-        print('\nError: Unexpected number of reads generated...\n')
-        sys.exit(1)
-
-
 def get_outside_boundries(chrom, input_params, index_params, sequencing_params, my_read_data):
     outside_boundaries = []
     if sequencing_params["off_target_discard"] and input_params["input_bed"] is not None:
@@ -859,6 +781,62 @@ def get_outside_boundries(chrom, input_params, index_params, sequencing_params, 
             my_read_data]
     return outside_boundaries
 
+def handle_low_quality(my_read_data, n_max_qual, se_class):
+    if n_max_qual > -1:
+        for j in range(len(my_read_data)):
+            my_read_string = [n for n in my_read_data[j][2]]
+            for m in range(len(my_read_data[j][3])):
+                adjusted_qual = ord(my_read_data[j][3][m]) - se_class.off_q
+                if adjusted_qual <= n_max_qual:
+                    my_read_string[m] = 'N'
+            my_read_data[j][2] = ''.join(my_read_string)
+
+def handle_unmapped_reads(is_forward, is_unmapped, my_read_data, my_read_name, paired_end, unmapped_records):
+    if all(is_unmapped):
+        if paired_end:
+            if is_forward:
+                flag1 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'first', 'mate_reverse'])
+                flag2 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'second', 'reverse'])
+            else:
+                flag1 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'second', 'mate_reverse'])
+                flag2 = sam_flag(['paired', 'unmapped', 'mate_unmapped', 'first', 'reverse'])
+            unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
+            unmapped_records.append((my_read_name + '/2', my_read_data[1], flag2))
+        else:
+            flag1 = sam_flag(['unmapped'])
+            unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
+
+def output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index,
+                 no_fastq, save_bam):
+    # write SE output
+    if len(my_read_data) == 1:
+        write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data,
+                        my_read_name, my_ref_index, no_fastq, save_bam)
+    # write PE output
+    elif len(my_read_data) == 2:
+        write_PE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data,
+                        my_read_name, my_ref_index, no_fastq, save_bam)
+    else:
+        print('\nError: Unexpected number of reads generated...\n')
+        sys.exit(1)
+
+def write_vcf(all_variants_out, chrom, out_prefix, vcf_header, ref_index):
+    print('Writing output VCF...')
+    vcf_file_writer = VcfFileWriter(out_prefix,vcf_header)
+    for k in sorted(all_variants_out.keys()):
+        current_ref = ref_index[chrom][0]
+        my_id = '.'
+        my_quality = '.'
+        my_filter = 'PASS'
+        # k[0] + 1 because we're going back to 1-based vcf coords
+        vcf_file_writer.write_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
+                                     my_filter, k[4])
+    vcf_file_writer.close_file()
+
+def write_fasta(chrom, out_prefix, ref_index, sequences):
+    print('Writing output fasta...')
+    fasta_file_writer = FastaFileWriter()
+    fasta_file_writer.write_record(sequences, ref_index[chrom][0], out_prefix)
 
 def write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                     my_ref_index, no_fastq, save_bam):
@@ -866,7 +844,6 @@ def write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped,
         write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name)
     if save_bam:
         write_SE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index)
-
 
 def write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name):
     if is_forward:
@@ -876,7 +853,6 @@ def write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name):
         fastq_file_writer.write_record(my_read_name,
                                        reverse_complement(my_read_data[0][2]),
                                        my_read_data[0][3][::-1])
-
 
 def write_SE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index):
     if is_unmapped[0] is False:
@@ -895,7 +871,6 @@ def write_SE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_r
                                          my_read_data[0][3],
                                          output_sam_flag=flag1)
 
-
 def write_PE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                     my_ref_index, no_fastq, save_bam):
     if not no_fastq:
@@ -903,14 +878,12 @@ def write_PE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped,
     if save_bam:
         write_PE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index)
 
-
 def write_fastq_PE(fastq_file_writer, is_forward, my_read_data, my_read_name):
     fastq_file_writer.write_record(my_read_name, my_read_data[0][2],
                                    my_read_data[0][3],
                                    read2=my_read_data[1][2],
                                    qual2=my_read_data[1][3],
                                    orientation=is_forward)
-
 
 def write_PE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index):
     if is_unmapped[0] is False and is_unmapped[1] is False:
