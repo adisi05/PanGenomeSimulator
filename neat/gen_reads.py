@@ -67,6 +67,8 @@ def main(args):
         simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
                        bam_file_writer, fastq_file_writer, chrom, read_name_count, unmapped_records)
 
+    #TODO translocation feature
+
     # write unmapped reads to bam file
     write_unmapped_to_bam(bam_file_writer, sequencing_params["paired_end"], output_params["save_bam"], unmapped_records)
 
