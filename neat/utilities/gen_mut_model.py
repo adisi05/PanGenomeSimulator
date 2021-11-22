@@ -131,7 +131,7 @@ def main():
         else:
             ref_dict[key_split[0]] = reference[key]
 
-    ref_list = list(ref_dict.keys())
+    ref_list = list(map(str, ref_dict.keys()))
 
     # Process VCF file. First check if it's been entered as a TSV
     if vcf[-3:] == 'tsv':
@@ -141,6 +141,7 @@ def main():
     print('Processing VCF file...')
     try:
         variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
+        variants[0] = variants[0].map(str)
     except ValueError:
         print("VCF must be in standard VCF format with tab-separated columns")
 
@@ -260,7 +261,7 @@ def main():
         VDAT_COMMON = []
 
         # Create a view that narrows variants list to current ref
-        variants_to_process = matching_variants[matching_variants["CHROM"] == ref_name].copy()
+        variants_to_process = matching_variants[matching_variants["CHROM"].map(str) == ref_name].copy()
         ref_sequence = str(ref_dict[ref_name].seq)
 
         # we want only snps
