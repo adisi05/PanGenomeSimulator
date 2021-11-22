@@ -261,7 +261,7 @@ def main():
         VDAT_COMMON = []
 
         # Create a view that narrows variants list to current ref
-        variants_to_process = matching_variants[matching_variants["CHROM"].map(str) == ref_name].copy()
+        variants_to_process = matching_variants[matching_variants["CHROM"] == ref_name].copy()
         ref_sequence = str(ref_dict[ref_name].seq)
 
         # we want only snps
