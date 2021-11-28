@@ -54,7 +54,8 @@ def main(args):
     load_mutation_model(mutation_params)
 
     # initialize output writers
-    bam_file_writer, fastq_file_writer = intialize_reads_writers(index_params, output_params, sequencing_params)
+    bam_file_writer, fastq_file_writer, fasta_file_writer = intialize_reads_writers(index_params, output_params,
+                                                                                    sequencing_params)
 
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
@@ -65,7 +66,7 @@ def main(args):
     for chrom in range(len(index_params["ref_index"])):
 
         simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, chrom, read_name_count, unmapped_records)
+                       bam_file_writer, fastq_file_writer, fasta_file_writer, chrom, read_name_count, unmapped_records)
 
     #TODO translocation feature
 
@@ -362,15 +363,18 @@ def intialize_reads_writers(index_params, output_params, sequencing_params):
     if not output_params["no_fastq"]:
         fastq_file_writer = FastqFileWriter(output_params["out_prefix"], paired=sequencing_params["paired_end"],
                                             no_fastq=output_params["no_fastq"])
+    fasta_file_writer = None
+    if output_params["save_fasta"]:
+        fasta_file_writer = FastaFileWriter(output_params["out_prefix"], output_params["ploids"])
     else:
         print('Bypassing FASTQ generation...')
     output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
     if output_params["only_vcf"]:
         print('Only producing VCF output...')
-    return bam_file_writer, fastq_file_writer
+    return bam_file_writer, fastq_file_writer, fasta_file_writer
 
 def simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, chrom, read_name_count, unmapped_records):
+                       bam_file_writer, fastq_file_writer, fasta_file_writer, chrom, read_name_count, unmapped_records):
 
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
@@ -410,7 +414,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
         vcf_header = [input_params["reference"]]
         write_vcf(all_variants_out, chrom, output_params["out_prefix"], vcf_header, index_params["ref_index"])
     if output_params["save_fasta"]:
-        write_fasta(chrom, output_params["out_prefix"], index_params["ref_index"], sequences)
+        write_fasta(fasta_file_writer, chrom, output_params["out_prefix"], index_params["ref_index"], sequences)
 
 def intialize_progress_bar_params(n_regions):
     # count total bp we'll be spanning so we can get an idea of how far along we are
@@ -835,10 +839,9 @@ def write_vcf(all_variants_out, chrom, out_prefix, vcf_header, ref_index):
                                      my_filter, k[4])
     vcf_file_writer.close_file()
 
-def write_fasta(chrom, out_prefix, ref_index, sequences):
+def write_fasta(fasta_file_writer, chrom, out_prefix, ref_index, sequences):
     print('Writing output fasta...')
-    fasta_file_writer = FastaFileWriter()
-    fasta_file_writer.write_record(sequences, ref_index[chrom][0], out_prefix)
+    fasta_file_writer.write_record(sequences, ref_index[chrom][0])
 
 def write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                     my_ref_index, no_fastq, save_bam):
