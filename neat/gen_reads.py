@@ -96,7 +96,8 @@ def extract_params(args):
     mutation_params = {
         "mut_bed": args.Mb,
         "mut_model": args.m,
-        "mut_rate": args.M
+        "mut_rate": args.M,
+        "dist": args.dist
     }
     output_params = {
         "out_prefix": args.o,
@@ -414,7 +415,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
         vcf_header = [input_params["reference"]]
         write_vcf(all_variants_out, chrom, output_params["out_prefix"], vcf_header, index_params["ref_index"])
     if output_params["save_fasta"]:
-        write_fasta(fasta_file_writer, chrom, output_params["out_prefix"], index_params["ref_index"], sequences)
+        write_fasta(fasta_file_writer, chrom, index_params["ref_index"], sequences)
 
 def intialize_progress_bar_params(n_regions):
     # count total bp we'll be spanning so we can get an idea of how far along we are
@@ -648,7 +649,8 @@ def update_sequences(coverage_dat, end, output_params, mutation_params, sequenci
         sequences = SequenceContainer(start, index_params["ref_sequence"][start:end], output_params["ploids"],
                                       sequencing_params["overlap"],sequencing_params["read_len"],
                                       [mutation_params["mut_model"]] * output_params["ploids"],
-                                      mutation_params["mut_rate"], only_vcf=output_params["only_vcf"])
+                                      mutation_params["mut_rate"], mutation_params["dist"],
+                                      only_vcf=output_params["only_vcf"])
         # if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
         #         [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
         if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
@@ -658,7 +660,7 @@ def update_sequences(coverage_dat, end, output_params, mutation_params, sequenci
     else:
         sequences.update(start, index_params["ref_sequence"][start:end], output_params["ploids"], sequencing_params["overlap"],
                          sequencing_params["read_len"], [mutation_params["mut_model"]] * output_params["ploids"],
-                         mutation_params["mut_rate"])
+                         mutation_params["mut_rate"], mutation_params["dist"])
         if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
             print("There's a cigar that's off.")
             # pdb.set_trace()
@@ -839,7 +841,7 @@ def write_vcf(all_variants_out, chrom, out_prefix, vcf_header, ref_index):
                                      my_filter, k[4])
     vcf_file_writer.close_file()
 
-def write_fasta(fasta_file_writer, chrom, out_prefix, ref_index, sequences):
+def write_fasta(fasta_file_writer, chrom, ref_index, sequences):
     print('Writing output fasta...')
     fasta_file_writer.write_record(sequences, ref_index[chrom][0])
 

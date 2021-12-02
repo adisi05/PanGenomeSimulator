@@ -94,7 +94,7 @@ class SequenceContainer:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None,
+    def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None,
                  only_vcf=False):
 
         # initialize basic variables
@@ -137,9 +137,9 @@ class SequenceContainer:
         mut_rate_sum = sum([n[0] for n in self.model_data])
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
-            self.mut_scalar = 1.0
+            self.mut_scalar = 1.0 if dist is None else dist
         else:
-            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
+            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data))) * dist
 
         # how are mutations spread to each ploid, based on their specified mut rates?
         self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
@@ -209,7 +209,7 @@ class SequenceContainer:
             self.black_list[p][-self.win_buffer] = 3
             self.black_list[p][-self.win_buffer - 1] = 3
 
-    def update_mut_models(self, mut_models, mut_rate):
+    def update_mut_models(self, mut_models, mut_rate, dist):
         if not mut_models:
             default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
             self.model_data = default_model[:self.ploidy]
@@ -223,9 +223,9 @@ class SequenceContainer:
         mut_rate_sum = sum([n[0] for n in self.model_data])
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
-            self.mut_scalar = 1.0
+            self.mut_scalar = 1.0 if dist is None else dist
         else:
-            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
+            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data))) * dist
 
         # how are mutations spread to each ploid, based on their specified mut rates?
         self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
@@ -398,12 +398,12 @@ class SequenceContainer:
         return [poisson_list(k_range, ind_l_list[n]) for n in range(len(self.models))], \
                [poisson_list(k_range, snp_l_list[n]) for n in range(len(self.models))]
 
-    def update(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None):
+    def update(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None):
         # if mutation model is changed, we have to reinitialize it...
         if ploidy != self.ploidy or mut_rate != self.mut_rescale or mut_models is not None:
             self.ploidy = ploidy
             self.mut_rescale = mut_rate
-            self.update_mut_models(mut_models, mut_rate)
+            self.update_mut_models(mut_models, mut_rate, dist)
         # if sequence length is different than previous window, we have to redo snp/indel poissons
         if len(sequence) != self.seq_len:
             self.seq_len = len(sequence)

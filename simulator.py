@@ -85,6 +85,7 @@ def main(raw_args=None):
             print("The parent is:", node.up.name)
             args.r = output_prefix + "_" + node.up.name + ".fasta"
         args.o = output_prefix + "_" + node.name
+        args.dist = node.dist
         print("Using the next args:",args)
         gen_reads.main(args)
     print('================================')
