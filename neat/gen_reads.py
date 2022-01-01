@@ -54,8 +54,8 @@ def main(args):
     load_mutation_model(mutation_params)
 
     # initialize output writers
-    bam_file_writer, fastq_file_writer, fasta_file_writer = intialize_reads_writers(index_params, output_params,
-                                                                                    sequencing_params)
+    bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer = intialize_reads_writers(index_params,\
+                                                                    input_params, output_params, sequencing_params)
 
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
@@ -66,7 +66,7 @@ def main(args):
     for chrom in range(len(index_params["ref_index"])):
 
         simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, fasta_file_writer, chrom, read_name_count, unmapped_records)
+                       bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer, chrom, read_name_count, unmapped_records)
 
     #TODO translocation feature
 
@@ -78,6 +78,8 @@ def main(args):
         bam_file_writer.close_file()
     if not output_params["no_fastq"]:
         fastq_file_writer.close_file()
+    if output_params["save_vcf"]:
+        vcf_file_writer.close_file()
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
@@ -355,7 +357,7 @@ def load_mutation_regions(mutation_params):
             print("\nProblem reading mutational BED file.\n")
             sys.exit(1)
 
-def intialize_reads_writers(index_params, output_params, sequencing_params):
+def intialize_reads_writers(index_params, input_params, output_params, sequencing_params):
     bam_file_writer = None
     if output_params["save_bam"]:
         bam_header = [
@@ -373,10 +375,16 @@ def intialize_reads_writers(index_params, output_params, sequencing_params):
     output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
     if output_params["only_vcf"]:
         print('Only producing VCF output...')
-    return bam_file_writer, fastq_file_writer, fasta_file_writer
+
+    vcf_file_writer = None
+    if output_params["save_vcf"]:
+        vcf_header = [input_params["reference"]]
+        vcf_file_writer = VcfFileWriter(output_params["out_prefix"],output_params["accession"],vcf_header)
+
+    return bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer
 
 def simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, fasta_file_writer, chrom, read_name_count, unmapped_records):
+                       bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer, chrom, read_name_count, unmapped_records):
 
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
@@ -413,8 +421,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     print(int(time.time() - tt), '(sec)')
     # write all output variants for this reference
     if output_params["save_vcf"]:
-        vcf_header = [input_params["reference"]]
-        write_vcf(all_variants_out, chrom, output_params["out_prefix"], output_params["accession"], vcf_header, index_params["ref_index"])
+        write_vcf(vcf_file_writer, all_variants_out, chrom, index_params["ref_index"])
     if output_params["save_fasta"]:
         write_fasta(fasta_file_writer, chrom, index_params["ref_index"], sequences)
 
@@ -829,9 +836,8 @@ def output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my
         print('\nError: Unexpected number of reads generated...\n')
         sys.exit(1)
 
-def write_vcf(all_variants_out, chrom, out_prefix, accession, vcf_header, ref_index):
+def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
     print('Writing output VCF...')
-    vcf_file_writer = VcfFileWriter(out_prefix,accession,vcf_header)
     for k in sorted(all_variants_out.keys()):
         current_ref = ref_index[chrom][0]
         my_id = '.'
@@ -840,7 +846,6 @@ def write_vcf(all_variants_out, chrom, out_prefix, accession, vcf_header, ref_in
         # k[0] + 1 because we're going back to 1-based vcf coords
         vcf_file_writer.write_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
                                      my_filter, k[4])
-    vcf_file_writer.close_file()
 
 def write_fasta(fasta_file_writer, chrom, ref_index, sequences):
     print('Writing output fasta...')
