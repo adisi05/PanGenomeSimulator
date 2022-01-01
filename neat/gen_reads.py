@@ -100,7 +100,8 @@ def extract_params(args):
         "dist": args.dist
     }
     output_params = {
-        "out_prefix": args.o,
+        "accession": args.name,
+        "out_prefix": args.o+'_'+args.name,
         "save_bam": args.bam,
         "save_vcf": args.vcf,
         "save_fasta": args.save_fasta,
@@ -413,7 +414,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # write all output variants for this reference
     if output_params["save_vcf"]:
         vcf_header = [input_params["reference"]]
-        write_vcf(all_variants_out, chrom, output_params["out_prefix"], vcf_header, index_params["ref_index"])
+        write_vcf(all_variants_out, chrom, output_params["out_prefix"], output_params["accession"], vcf_header, index_params["ref_index"])
     if output_params["save_fasta"]:
         write_fasta(fasta_file_writer, chrom, index_params["ref_index"], sequences)
 
@@ -828,9 +829,9 @@ def output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my
         print('\nError: Unexpected number of reads generated...\n')
         sys.exit(1)
 
-def write_vcf(all_variants_out, chrom, out_prefix, vcf_header, ref_index):
+def write_vcf(all_variants_out, chrom, out_prefix, accession, vcf_header, ref_index):
     print('Writing output VCF...')
-    vcf_file_writer = VcfFileWriter(out_prefix,vcf_header)
+    vcf_file_writer = VcfFileWriter(out_prefix,accession,vcf_header)
     for k in sorted(all_variants_out.keys()):
         current_ref = ref_index[chrom][0]
         my_id = '.'

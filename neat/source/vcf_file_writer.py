@@ -4,7 +4,7 @@ import pathlib
 
 
 class VcfFileWriter:
-    def __init__(self, out_prefix, header=None):
+    def __init__(self, out_prefix, accession, header=None):
 
         vcf = pathlib.Path(out_prefix + '_golden.vcf.gz')
 
@@ -38,13 +38,14 @@ class VcfFileWriter:
             self._file.write('##ALT=<ID=CNV,Description="Copy number variable region">\n'.encode('utf-8'))
             self._file.write('##ALT=<ID=TRANS,Description="Translocation">\n'.encode('utf-8'))
             self._file.write('##ALT=<ID=INV-TRANS,Description="Inverted translocation">\n'.encode('utf-8'))
+            self._file.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'.encode('utf-8'))
             # TODO add sample to vcf output
-            self._file.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'.encode('utf-8'))
+            self._file.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{}\n'.format(accession).encode('utf-8'))
 
     def write_record(self, chrom, pos, id_str, ref, alt, qual, filt, info):
         self._file.write(
             str(chrom) + '\t' + str(pos) + '\t' + str(id_str) + '\t' + str(ref) + '\t' + str(alt) + '\t' + str(
-                qual) + '\t' + str(filt) + '\t' + str(info) + '\n')
+                qual) + '\t' + str(filt) + '\t' + str(info) + '\tGT\t1|1\n')
 
     def flush_buffer(self, last_time=False):
         pass

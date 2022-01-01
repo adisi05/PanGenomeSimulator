@@ -71,7 +71,6 @@ def main(raw_args=None):
     t = ete3.Tree(args.newick, format=1)
     print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
 
-    output_prefix = args.o
     ancestor_fasta = args.r
     for node in t.traverse("preorder"):
         if node is t:
@@ -83,8 +82,8 @@ def main(raw_args=None):
             args.r = ancestor_fasta
         else:
             print("The parent is:", node.up.name)
-            args.r = output_prefix + "_" + node.up.name + ".fasta"
-        args.o = output_prefix + "_" + node.name
+            args.r = args.o + "_" + node.up.name + ".fasta"
+        args.name = node.name
         args.dist = node.dist
         print("Using the next args:",args)
         gen_reads.main(args)
