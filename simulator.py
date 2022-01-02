@@ -62,6 +62,7 @@ def parse_args(raw_args=None):
     parser.add_argument('-newick', type=str, required=True, metavar='newick tree', help="Path to reference newick")
     parser.add_argument('--save-fasta', required=False, action='store_true', default=False,
                         help='outputs FASTA')
+    parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
 
     return parser.parse_args(raw_args)
 
@@ -70,6 +71,10 @@ def main(raw_args=None):
 
     t = ete3.Tree(args.newick, format=1)
     print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
+    total_dist = tree_total_dist(t)
+
+    # Relate to one of the accessions (given by -a param) as the reference
+    root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     ancestor_fasta = args.r
     for node in t.traverse("preorder"):
@@ -80,14 +85,33 @@ def main(raw_args=None):
         if node.up is t:
             print("The parent is the root")
             args.r = ancestor_fasta
+            args.dist = (node.dist + root_to_ref_dist)/ total_dist
         else:
             print("The parent is:", node.up.name)
             args.r = args.o + "_" + node.up.name + ".fasta"
+            args.dist = node.dist / total_dist
         args.name = node.name
-        args.dist = node.dist
         print("Using the next args:",args)
         gen_reads.main(args)
     print('================================')
+
+
+def set_ref_as_accession(accession, t):
+    root_to_ref_dist = 0
+    if accession:
+        ref_node = t & accession
+        t.set_outgroup(ref_node)
+        root_to_ref_dist = ref_node.dist
+        ref_node.delete()
+    return root_to_ref_dist
+
+
+def tree_total_dist(t):
+    total_dist = 0
+    for node in t.traverse("preorder"):
+        total_dist += node.dist
+    print("Total branches distance =", total_dist)
+    return total_dist
 
 
 if __name__ == "__main__":
