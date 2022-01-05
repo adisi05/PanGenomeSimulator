@@ -80,23 +80,23 @@ def main(raw_args=None):
     root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     ancestor_fasta = args.r
-    # for node in t.traverse("preorder"):
-    #     if node is t:
-    #         continue # This is the root
-    #     print('================================')
-    #     print("Generating sequence for taxon (node):",node.name)
-    #     if node.up is t:
-    #         print("The parent is the root")
-    #         args.r = ancestor_fasta
-    #         args.dist = (node.dist + root_to_ref_dist)/ total_dist
-    #     else:
-    #         print("The parent is:", node.up.name)
-    #         args.r = args.o + "_" + node.up.name + ".fasta"
-    #         args.dist = node.dist / total_dist
-    #     args.name = node.name
-    #     print("Using the next args:",args)
-    #     gen_reads.main(args)
-    # print('================================')
+    for node in t.traverse("preorder"):
+        if node is t:
+            continue # This is the root
+        print('================================')
+        print("Generating sequence for taxon (node):",node.name)
+        if node.up is t:
+            print("The parent is the root")
+            args.r = ancestor_fasta
+            args.dist = (node.dist + root_to_ref_dist)/ total_dist
+        else:
+            print("The parent is:", node.up.name)
+            args.r = args.o + "_" + node.up.name + ".fasta"
+            args.dist = node.dist / total_dist
+        args.name = node.name
+        print("Using the next args:",args)
+        gen_reads.main(args)
+    print('================================')
     print('Merging VCF files across the generations...')
     for node in t.traverse("preorder"):
         if node is t:
