@@ -2,7 +2,10 @@ import argparse
 from neat import gen_reads
 import ete3
 import time
-
+import vcf
+from vcf import utils
+import os
+import Bio.bgzf as bgzf
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
@@ -77,23 +80,39 @@ def main(raw_args=None):
     root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     ancestor_fasta = args.r
+    # for node in t.traverse("preorder"):
+    #     if node is t:
+    #         continue # This is the root
+    #     print('================================')
+    #     print("Generating sequence for taxon (node):",node.name)
+    #     if node.up is t:
+    #         print("The parent is the root")
+    #         args.r = ancestor_fasta
+    #         args.dist = (node.dist + root_to_ref_dist)/ total_dist
+    #     else:
+    #         print("The parent is:", node.up.name)
+    #         args.r = args.o + "_" + node.up.name + ".fasta"
+    #         args.dist = node.dist / total_dist
+    #     args.name = node.name
+    #     print("Using the next args:",args)
+    #     gen_reads.main(args)
+    # print('================================')
+    print('Merging VCF files across the generations...')
     for node in t.traverse("preorder"):
         if node is t:
-            continue # This is the root
-        print('================================')
-        print("Generating sequence for taxon (node):",node.name)
+            continue # This is the root or its direct descendants
         if node.up is t:
-            print("The parent is the root")
-            args.r = ancestor_fasta
-            args.dist = (node.dist + root_to_ref_dist)/ total_dist
+            newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
+            oldname = args.o + "_" + node.name + "_golden.vcf.gz"
+            if os.path.exists(newname):
+                os.remove(newname)
+            os.rename(oldname, newname)
         else:
-            print("The parent is:", node.up.name)
-            args.r = args.o + "_" + node.up.name + ".fasta"
-            args.dist = node.dist / total_dist
-        args.name = node.name
-        print("Using the next args:",args)
-        gen_reads.main(args)
-    print('================================')
+            parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
+            child_file = args.o + "_" + node.name + "_golden.vcf.gz"
+            out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
+            add_parent_variants(parent_file, child_file, out_file)
+    print('Done.')
 
 
 def set_ref_as_accession(accession, t):
@@ -112,6 +131,19 @@ def tree_total_dist(t):
         total_dist += node.dist
     print("Total branches distance =", total_dist)
     return total_dist
+
+def add_parent_variants(parent_file, child_file, out_file):
+    vcf_reader_parent = vcf.Reader(filename=parent_file)
+    vcf_reader_child = vcf.Reader(filename=child_file)
+
+    vcf_writer = vcf.Writer(bgzf.BgzfWriter(filename=out_file), vcf_reader_child)
+
+    iterate_simulatnously = utils.walk_together(vcf_reader_parent,vcf_reader_child)
+    for readers in iterate_simulatnously:
+        if readers[1]:
+            vcf_writer.write_record(readers[1])
+        elif (readers[0]):
+            vcf_writer.write_record(readers[0])
 
 
 if __name__ == "__main__":
