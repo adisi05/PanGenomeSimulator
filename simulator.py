@@ -135,8 +135,8 @@ def tree_total_dist(t):
 def add_parent_variants(parent_file, child_file, out_file):
     vcf_reader_parent = vcf.Reader(filename=parent_file)
     vcf_reader_child = vcf.Reader(filename=child_file)
-
-    vcf_writer = vcf.Writer(bgzf.BgzfWriter(filename=out_file), vcf_reader_child)
+    out = bgzf.open(out_file, 'wb')
+    vcf_writer = vcf.Writer(out, vcf_reader_child)
 
     iterate_simulatnously = utils.walk_together(vcf_reader_parent,vcf_reader_child)
     for readers in iterate_simulatnously:
@@ -144,6 +144,8 @@ def add_parent_variants(parent_file, child_file, out_file):
             vcf_writer.write_record(readers[1])
         elif (readers[0]):
             vcf_writer.write_record(readers[0])
+
+    out.close()
 
 
 if __name__ == "__main__":
