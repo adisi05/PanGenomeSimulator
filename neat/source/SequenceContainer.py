@@ -8,8 +8,8 @@ import sys
 import numpy as np
 from Bio.Seq import Seq, MutableSeq
 
-from neat.source.neat_cigar import CigarString
-from neat.source.probability import DiscreteDistribution, poisson_list
+from neat_cigar import CigarString
+from probability import DiscreteDistribution, poisson_list
 
 # TODO This whole file is in desperate need of refactoring
 

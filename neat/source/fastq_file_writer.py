@@ -1,7 +1,7 @@
 import Bio.bgzf as bgzf
 import pathlib
 
-from neat.source.file_writer_utils import BUFFER_BATCH_SIZE
+from file_writer_utils import BUFFER_BATCH_SIZE
 
 
 class FastqFileWriter:

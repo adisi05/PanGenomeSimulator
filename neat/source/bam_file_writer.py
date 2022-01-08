@@ -3,8 +3,8 @@ import Bio.bgzf as bgzf
 import pathlib
 import re
 
-from neat.source.neat_cigar import CigarString
-from neat.source.file_writer_utils import BUFFER_BATCH_SIZE
+from neat_cigar import CigarString
+from file_writer_utils import BUFFER_BATCH_SIZE
 
 BAM_COMPRESSION_LEVEL = 6
 
