@@ -95,7 +95,7 @@ def main(raw_args=None):
             args.dist = node.dist / total_dist
         args.name = node.name
         print("Using the next args:",args)
-        gen_reads.main(args)
+        gen_reads.simulate(args)
     print('================================')
     print('Merging VCF files across the generations...')
     for node in t.traverse("preorder"):

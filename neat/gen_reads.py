@@ -46,7 +46,7 @@ WINDOW_TARGET_SCALE = 100
 # allowed nucleotides
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
 
-def main(args):
+def simulate(args):
 
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
     index_params = process_input_params(input_params, output_params["ploids"])
@@ -954,6 +954,3 @@ def write_unmapped_to_bam(bam_file_writer, paired_end, save_bam, unmapped_record
         for umr in unmapped_records:
             bam_file_writer.write_record(-1, umr[0], 0, umr[1][1], umr[1][2], umr[1][3], output_sam_flag=umr[2],
                                          mate_pos=0 if paired_end else None, aln_map_quality=0)
-
-if __name__ == '__main__':
-    main()
