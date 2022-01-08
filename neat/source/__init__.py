@@ -4,5 +4,6 @@ Created on Mon Nov  9 10:41:07 2020
 
 @author: membry2
 """
-
-from neat.source.probability import *
+import os, sys
+sys.path.append(os.path.realpath(os.path.dirname(__file__)))
+from probability import *
