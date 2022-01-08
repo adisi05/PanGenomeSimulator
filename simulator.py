@@ -62,7 +62,7 @@ def parse_args(raw_args=None):
                         help='Rescale quality scores to match -E input')
     # TODO implement a broader debugging scheme for subclasses.
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
-    parser.add_argument('-newick', type=str, required=True, metavar='newick tree', help="Path to reference newick")
+    parser.add_argument('-newick', type=str, required=False, metavar='newick tree', help="Path to reference newick")
     parser.add_argument('--save-fasta', required=False, action='store_true', default=False,
                         help='outputs FASTA')
     parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
@@ -71,6 +71,16 @@ def parse_args(raw_args=None):
 
 def main(raw_args=None):
     args = parse_args(raw_args)
+
+    if not args.newick:
+        print("No phylogenetic tree supplied")
+        args.name = "simulation"
+        args.dist = 1
+        print("Using the next args:",args)
+        gen_reads.simulate(args)
+        print('================================')
+        print('Done.')
+        return
 
     t = ete3.Tree(args.newick, format=1)
     print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
