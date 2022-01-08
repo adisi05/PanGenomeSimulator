@@ -24,17 +24,17 @@ import pickle
 import numpy as np
 import pathlib
 
-from neat.source.bam_file_writer import BamFileWriter
-from neat.source.fasta_file_writer import FastaFileWriter
-from neat.source.fastq_file_writer import FastqFileWriter
-from neat.source.input_checking import check_file_open, is_in_range
-from neat.source.ref_func import index_ref, read_ref
-from neat.source.vcf_file_writer import VcfFileWriter
-from neat.source.vcf_func import parse_vcf
-from neat.source.file_writer_utils import reverse_complement
-from neat.source.bam_file_writer import sam_flag
-from neat.source.probability import DiscreteDistribution, mean_ind_of_weighted_list
-from neat.source.SequenceContainer import SequenceContainer, ReadContainer, parse_input_mutation_model
+from source.bam_file_writer import BamFileWriter
+from source.fasta_file_writer import FastaFileWriter
+from source.fastq_file_writer import FastqFileWriter
+from source.input_checking import check_file_open, is_in_range
+from source.ref_func import index_ref, read_ref
+from source.vcf_file_writer import VcfFileWriter
+from source.vcf_func import parse_vcf
+from source.file_writer_utils import reverse_complement
+from source.bam_file_writer import sam_flag
+from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
+from source.SequenceContainer import SequenceContainer, ReadContainer, parse_input_mutation_model
 
 """
 Some constants needed for analysis
