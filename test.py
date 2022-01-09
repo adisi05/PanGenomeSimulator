@@ -1,4 +1,5 @@
 import dendropy
+import numpy as np
 from dendropy import Taxon
 import ete3
 
@@ -55,24 +56,29 @@ def test_dendropy_params(newick_file,fasta_file):
     print(d.taxon_namespaces[0].description(3))
     print(d.as_string('nexus'))
 
-def test_ete3_params(newick_file,fasta_file):
-    t = ete3.Tree(newick_file)
-    (t & "D").add_features(fasta="AAAA")
-    (t & "F").add_features(fasta="ACGT")
+def test_ete3_params(newick_file,fasta_file=None):
+    t = ete3.Tree(newick_file,format=1)
     print(t)
-    print(t.get_ascii(attributes=["name", "dist", "fasta"]))
-    (t & "D").add_features(SequenceContainer = SequenceContainer(0, "AAAA", 1, 2, 2, [parse_input_mutation_model(None, 1)] * 1))
-    (t & "F").add_features(SequenceContainer = SequenceContainer(0, "ACGT", 1, 2, 2, [parse_input_mutation_model(None, 1)] * 1))
-    print((t & "D").fasta)
-    print((t & "F").fasta)
-    print((t & "D").SequenceContainer.sequences)
-    print((t & "F").SequenceContainer.sequences)
-    print((t & "D").SequenceContainer.sequences[0])
-    print((t & "F").SequenceContainer.sequences[0])
+    # (t & "D").add_features(fasta="AAAA")
+    # (t & "F").add_features(fasta="ACGT")
+    # print(t)
+    # print(t.get_ascii(attributes=["name", "dist", "fasta"]))
+    # (t & "D").add_features(SequenceContainer = SequenceContainer(0, "AAAA", 1, 2, 2, [parse_input_mutation_model(None, 1)] * 1))
+    # (t & "F").add_features(SequenceContainer = SequenceContainer(0, "ACGT", 1, 2, 2, [parse_input_mutation_model(None, 1)] * 1))
+    # print((t & "D").fasta)
+    # print((t & "F").fasta)
+    # print((t & "D").SequenceContainer.sequences)
+    # print((t & "F").SequenceContainer.sequences)
+    # print((t & "D").SequenceContainer.sequences[0])
+    # print((t & "F").SequenceContainer.sequences[0])
 
+    total_dist = 0
     for node in t.traverse("preorder"):
         # Do some analysis on node
-        print(node.name)
+        print(node.name,node.dist)
+        total_dist += node.dist
+    print("total_dist =",total_dist)
+
 
 
 def func():
@@ -80,6 +86,12 @@ def func():
 
 
 if __name__ == "__main__":
+
+    a = np.array([[10, 7, 4], [3, 2, 1]])
+    print(a)
+    print(np.percentile(a, 25))
+    print(np.percentile(a, 50))
+    print(np.percentile(a, 75))
 
     arr = [3]
     if len(arr):
@@ -109,3 +121,6 @@ if __name__ == "__main__":
     # test_ete3_params("tree4.newick","tree2.fasta")
 
     # test_dendropy_params("tree3.newick")
+
+    test_ete3_params("treefile2.newick")
+
