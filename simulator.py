@@ -143,8 +143,8 @@ def tree_total_dist(t):
     return total_dist
 
 def add_parent_variants(parent_file, child_file, out_file):
-    vcf_reader_parent = vcf.Reader(filename=parent_file)
-    vcf_reader_child = vcf.Reader(filename=child_file)
+    vcf_reader_parent = vcf.Reader(filename=parent_file, strict_whitespace=True)
+    vcf_reader_child = vcf.Reader(filename=child_file, strict_whitespace=True)
     out = bgzf.open(out_file, 'wb')
     vcf_writer = vcf.Writer(out, vcf_reader_child)
 
