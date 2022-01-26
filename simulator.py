@@ -104,6 +104,7 @@ def main(raw_args=None):
             args.r = args.o + "_" + node.up.name + ".fasta"
             args.dist = node.dist / total_dist
         args.name = node.name
+        args.internal = len(node.children) > 0
         print("Using the next args:",args)
         gen_reads.simulate(args)
     print('================================')

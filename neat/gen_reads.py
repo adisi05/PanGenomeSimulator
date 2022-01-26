@@ -106,8 +106,8 @@ def extract_params(args):
         "out_prefix": args.o+'_'+args.name,
         "save_bam": args.bam,
         "save_vcf": args.vcf,
-        "save_fasta": args.save_fasta,
-        "no_fastq": args.no_fastq,  # TODO maybe convert to save-fastq?
+        "save_fasta": args.save_fasta or args.internal,
+        "no_fastq": args.no_fastq or args.internal,  # TODO maybe convert to save-fastq?
         "ploids": args.p  # TODO validate it's an output param
     }
     general_params = {
