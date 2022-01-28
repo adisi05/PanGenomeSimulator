@@ -184,10 +184,10 @@ def index_reference(input_params):
 def load_input_variants(input_params, ploids):
     # TODO read this in as a pandas dataframe
     input_params["input_variants"] = []
-    if input_params["input_vcf"] is not None:
+    if input_params["input_vcf"] is not None: # TODO why this condition?
         (sample_names, input_variants) = parse_vcf(input_params["input_vcf"], ploidy=ploids)
         for k in sorted(input_variants.keys()):
-            input_variants[k].sort()
+            input_variants[k].sort() #TODO assign to input_params["input_vcf"]
 
 def load_input_regions(input_params, ref_list):
     # TODO convert bed to pandas dataframe
@@ -388,7 +388,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
 
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
-        read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
+        read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"]) #TODO how is index_params["ref_sequence"] computed?
 
     progress_params = intialize_progress_bar_params(index_params["n_regions"])
 
@@ -408,11 +408,12 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # start the progress bar
     print('[', end='', flush=True)
     # Applying variants to non-N regions
-    for i in range(len(index_params["n_regions"]['non_N'])):
+    for i in range(len(index_params["n_regions"]['non_N'])): #TODO maybe iterate over all regions, and not just non_N regions?
         sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
                                              sequencing_params, index_params, bam_file_writer, fastq_file_writer,
                                              chrom, read_name_count, unmapped_records, progress_params,
                                              valid_variants_from_vcf, all_variants_out, sequences, i)
+        #TODO fill N regions with... well, Ns
     print(']', flush=True)
     if output_params["only_vcf"]:
         print('VCF generation completed in ', end='')
@@ -522,7 +523,8 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
 
         skip_this_window = should_skip_this_window(coverage_dat, end, sequencing_params, start, target_hits)
 
-        if skip_this_window:
+        if skip_this_window: #TODO what to do in this case?
+            # TODO fill the window with Ns
             # skip window, save cpu time
             if is_last_time:
                 break
@@ -538,6 +540,7 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
         # which variants do we need to keep for next time (because of window overlap)?
         vars_from_prev_overlap = get_vars_for_next_window(all_inserted_variants, end, sequencing_params)
 
+        # TODO write window to fasta, deal with overlaps between windows
         # if we're only producing VCF, no need to go through the hassle of generating reads
         if not output_params["only_vcf"]:
             sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,

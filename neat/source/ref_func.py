@@ -86,7 +86,7 @@ def index_ref(reference_path: str) -> list:
     return ref_indices
 
 
-def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):
+def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False): #TODO understand how my_dat is computed
     tt = time.time()
     if not quiet:
         print('reading ' + ref_inds_i[0] + '... ')

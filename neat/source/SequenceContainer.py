@@ -196,7 +196,7 @@ class SequenceContainer:
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
+        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)] #TODO why replacing and not adding?
         self.seq_len = len(sequence)
         self.indel_list = [[] for _ in range(self.ploidy)]
         self.snp_list = [[] for _ in range(self.ploidy)]
@@ -392,9 +392,9 @@ class SequenceContainer:
             return np.mean(avg_out)
 
     def init_poisson(self):
-        ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in
+        ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in  #TODO maybe seq_len?
                       range(len(self.models))]
-        snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in
+        snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in #TODO maybe seq_len?
                       range(len(self.models))]
         k_range = range(int(self.seq_len * MAX_MUTFRAC))
         # return (indel_poisson, snp_poisson)
