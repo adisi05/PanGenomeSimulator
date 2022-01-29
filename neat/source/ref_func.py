@@ -79,7 +79,7 @@ def index_ref(reference_path: str) -> list:
             prev_p = ref_file.tell() #including '\n' characters
             prev_r = data[1:-1]
         else:
-            seq_len += len(data) # - 1 # -1 is for ignoring the '\n' characters
+            seq_len += len(data) # - 1 # -1 is for ignoring the '\n' characters #TODO use -1 ?
     ref_file.close()
 
     print('{0:.3f} (sec)'.format(time.time() - tt))
