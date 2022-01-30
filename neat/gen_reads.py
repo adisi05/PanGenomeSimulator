@@ -171,7 +171,7 @@ def index_reference(input_params):
     #                    2: byte index where the next contig begins, 3: contig seq length),
     #                    (repeat for every chrom)]
     # TODO check to see if this might work better as a dataframe or biopython object
-    ref_index = index_ref(input_params["reference"])
+    ref_index, line_width = index_ref(input_params["reference"])
     print("ANOTHER TEST")
     print("ref_index =")
     print(ref_index)
@@ -180,7 +180,8 @@ def index_reference(input_params):
     index_params = {
         "ref_index": ref_index,
         "indices_by_ref_name": {ref_index[n][0]: n for n in range(len(ref_index))},
-        "ref_list": [n[0] for n in ref_index]
+        "ref_list": [n[0] for n in ref_index],
+        "line_width": line_width
     }
     return index_params
 
@@ -372,7 +373,7 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
                                             no_fastq=output_params["no_fastq"])
     fasta_file_writer = None
     if output_params["save_fasta"]:
-        fasta_file_writer = FastaFileWriter(output_params["out_prefix"], output_params["ploids"])
+        fasta_file_writer = FastaFileWriter(output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
     else:
         print('Bypassing FASTQ generation...')
     output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
@@ -414,14 +415,17 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     print('[', end='', flush=True)
     # Applying variants to non-N regions
     for i in range(len(index_params["n_regions"]['non_N'])):
-        preliminary_Ns = index_params["n_regions"]['non_N'][i][1] - index_params["n_regions"]['non_N'][i][0]
-        write_fasta(fasta_file_writer, chrom, index_params["ref_index"], None ,preliminary_Ns)
+        last_non_n_index = index_params["n_regions"]['non_N'][i-1][1] if i>0 else 0
+        print("TEST3 last_non_n_index =",last_non_n_index)
+        print("TEST3 index_params['n_regions']['non_N'][i][0] =", index_params["n_regions"]['non_N'][i][0])
+        preliminary_Ns = index_params["n_regions"]['non_N'][i][0] - last_non_n_index
+        write_fasta(fasta_file_writer, chrom, index_params["ref_index"], 0, None ,preliminary_Ns)
         sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
                                              sequencing_params, index_params, bam_file_writer, fastq_file_writer, fasta_file_writer,
                                              chrom, read_name_count, unmapped_records, progress_params,
                                              valid_variants_from_vcf, all_variants_out, sequences, i)
     closing_Ns = index_params["ref_index"][chrom][3]-index_params["n_regions"]['non_N'][-1][1]
-    write_fasta(fasta_file_writer, chrom, index_params["ref_index"], None, closing_Ns)
+    write_fasta(fasta_file_writer, chrom, index_params["ref_index"], 0, None, closing_Ns)
     print(']', flush=True)
     if output_params["only_vcf"]:
         print('VCF generation completed in ', end='')
@@ -548,7 +552,7 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
 
         if output_params["save_fasta"]:
             overlap_with_next = 0 if is_last_time else sequencing_params["overlap"]
-            write_fasta(fasta_file_writer, chrom, index_params["ref_index"], sequences, overlap_with_next)
+            write_fasta(fasta_file_writer, chrom, index_params["ref_index"], overlap_with_next, sequences)
         # if we're only producing VCF, no need to go through the hassle of generating reads
         if not output_params["only_vcf"]:
             sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,
@@ -858,7 +862,7 @@ def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
         vcf_file_writer.write_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
                                      my_filter, k[4])
 
-def write_fasta(fasta_file_writer, chrom, ref_index, sequences, N_seq_len=0, overlap_with_next=0):
+def write_fasta(fasta_file_writer, chrom, ref_index, overlap_with_next, sequences, N_seq_len=0):
     print('Writing output fasta...')
     haploid_sequences = sequences.sequences if sequences else None
     fasta_file_writer.write_record(haploid_sequences, ref_index[chrom][0], N_seq_len, overlap_with_next)

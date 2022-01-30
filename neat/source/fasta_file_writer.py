@@ -1,8 +1,9 @@
 class FastaFileWriter:
-    def __init__(self, out_prefix, ploidy):
+    def __init__(self, out_prefix, ploidy, line_width):
         self.files = {}
         self.prev_chrom = None
         self.ploidy = ploidy
+        self.line_width = line_width
         self.last_line_len = 0
         for hapl_idx in range(self.ploidy):
             file_name = '{0}.fasta'.format(out_prefix) if ploidy == 1 else '{0}_{hapl_idx}.fasta'.format(
@@ -13,10 +14,15 @@ class FastaFileWriter:
     def write_record(self, haploid_sequences, chrom, N_seq_len=0, ignored_ending=0):
         for hapl_idx in range(self.ploidy):
             fasta_file = open(self.files[hapl_idx], 'a')
+
             if (not self.prev_chrom) or self.prev_chrom != chrom:
+                if self.prev_chrom != None:
+                    fasta_file.write("\n")
+                    self.last_line_len = 0
                 strID = '>{0}\n'.format(chrom)
                 fasta_file.write(strID)
                 self.prev_chrom = chrom
+
             if haploid_sequences is None or N_seq_len > 0:
                 strDNA = "N" * N_seq_len
                 # print("TEST2 - N_seq_len is ",N_seq_len)
@@ -29,16 +35,16 @@ class FastaFileWriter:
             strDNA=strDNA[:strDNA_len]
             i = 0
 
-            if self.last_line_len + strDNA_len < 50:
+            if self.last_line_len + strDNA_len < self.line_width:
                 pass
                 self.last_line_len = self.last_line_len + strDNA_len
-            else: # self.last_line_len + strDNA_len >= 50
-                fasta_file.write(strDNA[0:50-self.last_line_len] + '\n')
-                i = 50 - self.last_line_len
+            else: # self.last_line_len + strDNA_len >= self.line_width
+                fasta_file.write(strDNA[0:self.line_width-self.last_line_len] + '\n')
+                i = self.line_width - self.last_line_len
                 self.last_line_len = 0
-                while i + 50 <= strDNA_len:
-                    fasta_file.write(strDNA[i:i + 50] + '\n')
-                    i = i + 50
+                while i + self.line_width <= strDNA_len:
+                    fasta_file.write(strDNA[i:i + self.line_width] + '\n')
+                    i = i + self.line_width
                 if i < strDNA_len:
                     fasta_file.write(strDNA[i:strDNA_len])
                     self.last_line_len = strDNA_len - i

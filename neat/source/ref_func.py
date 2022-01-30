@@ -67,6 +67,7 @@ def index_ref(reference_path: str) -> list:
     prev_p = None
     seq_len = 0
 
+    line_width = -1
     while True:
         data = ref_file.readline()
         if not data:
@@ -79,11 +80,12 @@ def index_ref(reference_path: str) -> list:
             prev_p = ref_file.tell() #including '\n' characters
             prev_r = data[1:-1]
         else:
+            line_width = len(data) - 1 if line_width == -1 else line_width # look at the first line of the first chromosome
             seq_len += len(data) - 1 # -1 is for ignoring the '\n' characters
     ref_file.close()
 
     print('{0:.3f} (sec)'.format(time.time() - tt))
-    return ref_indices
+    return ref_indices, line_width
 
 
 def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False): #TODO understand how my_dat is computed
