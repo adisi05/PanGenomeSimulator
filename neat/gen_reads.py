@@ -187,7 +187,7 @@ def index_reference(input_params):
 
 def load_input_variants(input_params, ploids):
     # TODO read this in as a pandas dataframe
-    input_params["input_variants"] = []
+    input_params["input_variants"] = [] #TODO load input_variants?
     if input_params["input_vcf"] is not None: # TODO why this condition?
         (sample_names, input_variants) = parse_vcf(input_params["input_vcf"], ploidy=ploids)
         for k in sorted(input_variants.keys()):
@@ -371,11 +371,9 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
     if not output_params["no_fastq"]:
         fastq_file_writer = FastqFileWriter(output_params["out_prefix"], paired=sequencing_params["paired_end"],
                                             no_fastq=output_params["no_fastq"])
-    fasta_file_writer = None
-    if output_params["save_fasta"]:
-        fasta_file_writer = FastaFileWriter(output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
     else:
         print('Bypassing FASTQ generation...')
+    fasta_file_writer = FastaFileWriter(output_params["save_fasta"], output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
     output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
     if output_params["only_vcf"]:
         print('Only producing VCF output...')
@@ -550,9 +548,8 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
         # which variants do we need to keep for next time (because of window overlap)?
         vars_from_prev_overlap = get_vars_for_next_window(all_inserted_variants, end, sequencing_params)
 
-        if output_params["save_fasta"]:
-            overlap_with_next = 0 if is_last_time else sequencing_params["overlap"]
-            write_fasta(fasta_file_writer, chrom, index_params["ref_index"], overlap_with_next, sequences)
+        overlap_with_next = 0 if is_last_time else sequencing_params["overlap"]
+        write_fasta(fasta_file_writer, chrom, index_params["ref_index"], overlap_with_next, sequences)
         # if we're only producing VCF, no need to go through the hassle of generating reads
         if not output_params["only_vcf"]:
             sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,
@@ -863,7 +860,6 @@ def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
                                      my_filter, k[4])
 
 def write_fasta(fasta_file_writer, chrom, ref_index, overlap_with_next, sequences, N_seq_len=0):
-    print('Writing output fasta...')
     haploid_sequences = sequences.sequences if sequences else None
     fasta_file_writer.write_record(haploid_sequences, ref_index[chrom][0], N_seq_len, overlap_with_next)
 

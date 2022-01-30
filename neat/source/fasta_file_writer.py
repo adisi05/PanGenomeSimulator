@@ -1,5 +1,9 @@
 class FastaFileWriter:
-    def __init__(self, out_prefix, ploidy, line_width):
+    def __init__(self, active, out_prefix, ploidy, line_width):
+        self.active = active
+        if not self.active:
+            return
+
         self.files = {}
         self.prev_chrom = None
         self.ploidy = ploidy
@@ -12,6 +16,9 @@ class FastaFileWriter:
             self.files[hapl_idx] = file_name
 
     def write_record(self, haploid_sequences, chrom, N_seq_len=0, ignored_ending=0):
+        if not self.active:
+            return
+
         for hapl_idx in range(self.ploidy):
             fasta_file = open(self.files[hapl_idx], 'a')
 
