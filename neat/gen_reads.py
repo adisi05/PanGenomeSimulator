@@ -531,8 +531,10 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
 
         skip_this_window = should_skip_this_window(coverage_dat, end, sequencing_params, start, target_hits)
 
-        if skip_this_window: #TODO what to do in this case?
-            # TODO fill the window with Ns
+        if skip_this_window:
+            # fill the window with Ns - a good practice?
+            overlap_with_next = 0 if is_last_time else sequencing_params["overlap"]
+            write_fasta(fasta_file_writer, chrom, index_params["ref_index"], overlap_with_next, sequences)
             # skip window, save cpu time
             if is_last_time:
                 break
