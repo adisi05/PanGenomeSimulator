@@ -79,7 +79,7 @@ def index_ref(reference_path: str) -> list:
             prev_p = ref_file.tell() #including '\n' characters
             prev_r = data[1:-1]
         else:
-            seq_len += len(data) # - 1 # -1 is for ignoring the '\n' characters #TODO use -1 ?
+            seq_len += len(data) - 1 # -1 is for ignoring the '\n' characters
     ref_file.close()
 
     print('{0:.3f} (sec)'.format(time.time() - tt))
@@ -103,7 +103,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False): #T
 
 
     ref_file.seek(ref_inds_i[1])
-    my_dat = ''.join(ref_file.read(ref_inds_i[3]).split('\n'))
+    my_dat = ''.join(ref_file.read(ref_inds_i[2] - ref_inds_i[1]).split('\n'))
     my_dat = Seq(my_dat.upper())
     # Mutable seqs have a number of disadvantages. I'm going to try making them immutable and see if that helps
     # my_dat = MutableSeq(my_dat)

@@ -77,6 +77,7 @@ def main(raw_args=None):
         args.name = "simulation"
         args.dist = 1
         print("Using the next args:",args)
+        args.internal = False
         gen_reads.simulate(args)
         print('================================')
         print('Done.')

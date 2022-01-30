@@ -172,6 +172,9 @@ def index_reference(input_params):
     #                    (repeat for every chrom)]
     # TODO check to see if this might work better as a dataframe or biopython object
     ref_index = index_ref(input_params["reference"])
+    print("ANOTHER TEST")
+    print("ref_index =")
+    print(ref_index)
     # TODO check if this index can work, maybe it's faster
     # ref_index2 = SeqIO.index(reference, 'fasta')
     index_params = {
@@ -388,8 +391,10 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
 
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
-        read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"]) #TODO how is index_params["ref_sequence"] computed?
-
+        read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
+    print("THIS IS A TEST")
+    print('index_params["n_regions"] =')
+    print(index_params["n_regions"])
     progress_params = intialize_progress_bar_params(index_params["n_regions"])
 
     valid_variants_from_vcf = prune_invalid_variants(chrom, input_params["input_variants"], index_params["ref_index"], index_params["ref_sequence"])
@@ -408,12 +413,15 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # start the progress bar
     print('[', end='', flush=True)
     # Applying variants to non-N regions
-    for i in range(len(index_params["n_regions"]['non_N'])): #TODO maybe iterate over all regions, and not just non_N regions?
+    for i in range(len(index_params["n_regions"]['non_N'])):
+        preliminary_Ns = index_params["n_regions"]['non_N'][i][1] - index_params["n_regions"]['non_N'][i][0]
+        write_fasta(fasta_file_writer, chrom, index_params["ref_index"], None ,preliminary_Ns)
         sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
-                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer,
+                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer, fasta_file_writer,
                                              chrom, read_name_count, unmapped_records, progress_params,
                                              valid_variants_from_vcf, all_variants_out, sequences, i)
-        #TODO fill N regions with... well, Ns
+    closing_Ns = index_params["ref_index"][chrom][3]-index_params["n_regions"]['non_N'][-1][1]
+    write_fasta(fasta_file_writer, chrom, index_params["ref_index"], None, closing_Ns)
     print(']', flush=True)
     if output_params["only_vcf"]:
         print('VCF generation completed in ', end='')
@@ -423,8 +431,6 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # write all output variants for this reference
     if output_params["save_vcf"]:
         write_vcf(vcf_file_writer, all_variants_out, chrom, index_params["ref_index"])
-    if output_params["save_fasta"]:
-        write_fasta(fasta_file_writer, chrom, index_params["ref_index"], sequences)
 
 def intialize_progress_bar_params(n_regions):
     # count total bp we'll be spanning so we can get an idea of how far along we are
@@ -491,7 +497,7 @@ def load_sampling_window_params(sequencing_params):
         sequencing_params["overlap_min_window_size"] = sequencing_params["read_len"] + 10
 
 def apply_variants_to_region(general_params, input_params, output_params, mutation_params,
-                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer,
+                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer, fasta_file_writer,
                                              chrom, read_name_count, unmapped_records, progress_params,
                                              valid_variants_from_vcf, all_variants_out, sequences, i):
     (initial_position, final_position) = index_params["n_regions"]['non_N'][i]
@@ -540,7 +546,9 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
         # which variants do we need to keep for next time (because of window overlap)?
         vars_from_prev_overlap = get_vars_for_next_window(all_inserted_variants, end, sequencing_params)
 
-        # TODO write window to fasta, deal with overlaps between windows
+        if output_params["save_fasta"]:
+            overlap_with_next = 0 if is_last_time else sequencing_params["overlap"]
+            write_fasta(fasta_file_writer, chrom, index_params["ref_index"], sequences, overlap_with_next)
         # if we're only producing VCF, no need to go through the hassle of generating reads
         if not output_params["only_vcf"]:
             sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,
@@ -850,9 +858,10 @@ def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
         vcf_file_writer.write_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
                                      my_filter, k[4])
 
-def write_fasta(fasta_file_writer, chrom, ref_index, sequences):
+def write_fasta(fasta_file_writer, chrom, ref_index, sequences, N_seq_len=0, overlap_with_next=0):
     print('Writing output fasta...')
-    fasta_file_writer.write_record(sequences, ref_index[chrom][0])
+    haploid_sequences = sequences.sequences if sequences else None
+    fasta_file_writer.write_record(haploid_sequences, ref_index[chrom][0], N_seq_len, overlap_with_next)
 
 def write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                     my_ref_index, no_fastq, save_bam):

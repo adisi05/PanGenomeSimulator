@@ -196,7 +196,7 @@ class SequenceContainer:
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)] #TODO why replacing and not adding?
+        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
         self.seq_len = len(sequence)
         self.indel_list = [[] for _ in range(self.ploidy)]
         self.snp_list = [[] for _ in range(self.ploidy)]
