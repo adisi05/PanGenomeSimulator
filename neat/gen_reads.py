@@ -172,9 +172,9 @@ def index_reference(input_params):
     #                    (repeat for every chrom)]
     # TODO check to see if this might work better as a dataframe or biopython object
     ref_index, line_width = index_ref(input_params["reference"])
-    print("ANOTHER TEST")
-    print("ref_index =")
-    print(ref_index)
+    # print("ANOTHER TEST")
+    # print("ref_index =")
+    # print(ref_index)
     # TODO check if this index can work, maybe it's faster
     # ref_index2 = SeqIO.index(reference, 'fasta')
     index_params = {
@@ -187,11 +187,12 @@ def index_reference(input_params):
 
 def load_input_variants(input_params, ploids):
     # TODO read this in as a pandas dataframe
-    input_params["input_variants"] = [] #TODO load input_variants?
-    if input_params["input_vcf"] is not None: # TODO why this condition?
+    input_params["input_variants"] = None
+    if input_params["input_vcf"] is not None:
         (sample_names, input_variants) = parse_vcf(input_params["input_vcf"], ploidy=ploids)
         for k in sorted(input_variants.keys()):
-            input_variants[k].sort() #TODO assign to input_params["input_vcf"]
+            input_variants[k].sort()
+        input_params["input_variants"] = input_variants
 
 def load_input_regions(input_params, ref_list):
     # TODO convert bed to pandas dataframe
@@ -391,9 +392,9 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
         read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
-    print("THIS IS A TEST")
-    print('index_params["n_regions"] =')
-    print(index_params["n_regions"])
+    # print("THIS IS A TEST")
+    # print('index_params["n_regions"] =')
+    # print(index_params["n_regions"])
     progress_params = intialize_progress_bar_params(index_params["n_regions"])
 
     valid_variants_from_vcf = prune_invalid_variants(chrom, input_params["input_variants"], index_params["ref_index"], index_params["ref_sequence"])
@@ -414,8 +415,8 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # Applying variants to non-N regions
     for i in range(len(index_params["n_regions"]['non_N'])):
         last_non_n_index = index_params["n_regions"]['non_N'][i-1][1] if i>0 else 0
-        print("TEST3 last_non_n_index =",last_non_n_index)
-        print("TEST3 index_params['n_regions']['non_N'][i][0] =", index_params["n_regions"]['non_N'][i][0])
+        # print("TEST3 last_non_n_index =",last_non_n_index)
+        # print("TEST3 index_params['n_regions']['non_N'][i][0] =", index_params["n_regions"]['non_N'][i][0])
         preliminary_Ns = index_params["n_regions"]['non_N'][i][0] - last_non_n_index
         write_fasta(fasta_file_writer, chrom, index_params["ref_index"], 0, None ,preliminary_Ns)
         sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
@@ -452,7 +453,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
                     - any alt allele contains anything other than allowed characters"""
     valid_variants_from_vcf = []
     n_skipped = [0, 0, 0]
-    if ref_index[chrom][0] in input_variants:
+    if input_variants and ref_index[chrom][0] in input_variants:
         for n in input_variants[ref_index[chrom][0]]:
             span = (n[0], n[0] + len(n[1]))
             r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
