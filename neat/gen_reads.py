@@ -49,7 +49,7 @@ ALLOWED_NUCL = ['A', 'C', 'G', 'T']
 def simulate(args):
 
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
-    index_params = process_input_params(input_params, output_params["ploids"])
+    index_params = process_input_params(input_params) #, output_params["ploids"])
     load_sequencing_model(sequencing_params)
     load_mutation_model(mutation_params)
 
@@ -91,7 +91,8 @@ def parse_args(args):
 def extract_params(args):
     input_params = {
         "reference": args.r,
-        "input_vcf": args.v,
+        # "input_vcf": args.v,
+        "input_variants": args.input_variants,
         "input_bed": args.tr,
         "discard_bed": args.dr
     }
@@ -135,7 +136,7 @@ def extract_params(args):
 def params_sanity_check(input_params, output_params, general_params, sequencing_params):
     # Check that files are real, if provided
     check_file_open(input_params["reference"], 'ERROR: could not open reference, {}'.format(input_params["reference"]), required=True)
-    check_file_open(input_params["input_vcf"], 'ERROR: could not open input VCF, {}'.format(input_params["input_vcf"]), required=False)
+    # check_file_open(input_params["input_vcf"], 'ERROR: could not open input VCF, {}'.format(input_params["input_vcf"]), required=False)
     check_file_open(input_params["input_bed"], 'ERROR: could not open input BED, {}'.format(input_params["input_bed"]), required=False)
     # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
     if output_params["no_fastq"] and not output_params["save_bam"] and not output_params["save_vcf"]:
@@ -156,10 +157,10 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     if sequencing_params["n_max_qual"] != -1:
         is_in_range(sequencing_params["n_max_qual"], 1, 40, 'Error: -N must be between 1 and 40')
 
-def process_input_params(input_params, ploids):
+def process_input_params(input_params): #, ploids):
     index_params = index_reference(input_params)
-    # parse input variants, if present
-    load_input_variants(input_params, ploids)
+    # # parse input variants, if present
+    # load_input_variants(input_params, ploids)
     # parse input targeted regions, if present
     load_input_regions(input_params, index_params["ref_list"])
     # parse discard bed similarly
@@ -185,14 +186,14 @@ def index_reference(input_params):
     }
     return index_params
 
-def load_input_variants(input_params, ploids):
+def load_input_variants(input_vcf, ploids):
     # TODO read this in as a pandas dataframe
-    input_params["input_variants"] = None
-    if input_params["input_vcf"] is not None:
-        (sample_names, input_variants) = parse_vcf(input_params["input_vcf"], ploidy=ploids)
+    input_variants = None
+    if input_vcf:
+        (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
         for k in sorted(input_variants.keys()):
             input_variants[k].sort()
-        input_params["input_variants"] = input_variants
+    return input_variants
 
 def load_input_regions(input_params, ref_list):
     # TODO convert bed to pandas dataframe

@@ -6,6 +6,7 @@ import vcf
 from vcf import utils
 import os
 import Bio.bgzf as bgzf
+import random
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
@@ -72,6 +73,15 @@ def parse_args(raw_args=None):
 def main(raw_args=None):
     args = parse_args(raw_args)
 
+    # parse input variants, if present
+    if args.v:
+        # input_vcf = args.v
+        # ploids = args.p
+        gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
+        input_variants = gen_reads.load_input_variants(args.v, args.p)
+        print (input_variants)
+        args.input_variants = input_variants
+
     if not args.newick:
         print("No phylogenetic tree supplied")
         args.name = "simulation"
@@ -91,6 +101,8 @@ def main(raw_args=None):
     root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     ancestor_fasta = args.r
+    input_variants_used = dict.fromkeys(input_variants, 0)
+    random.shuffle(input_variants)
     for node in t.traverse("preorder"):
         if node is t:
             continue # This is the root
@@ -107,6 +119,7 @@ def main(raw_args=None):
         args.name = node.name
         args.internal = len(node.children) > 0
         print("Using the next args:",args)
+        args.input_variants, input_variants_used = get_input_variants_branch(args.dist, input_variants, input_variants_used)
         gen_reads.simulate(args)
     print('================================')
     print('Merging VCF files across the generations...')
@@ -126,6 +139,15 @@ def main(raw_args=None):
             add_parent_variants(parent_file, child_file, out_file)
     print('Done.')
 
+
+def get_input_variants_branch(branch_dist, input_variants, input_variants_used):
+    input_variants_branch ={}
+    for k in sorted(input_variants.keys()):
+        input_variants_branch_amount = round(branch_dist * len(input_variants[k]))
+        input_variants_branch[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + input_variants_branch_amount,len(input_variants[k]))]
+        input_variants_branch[k].sort()
+        input_variants_used[k] = input_variants_used[k] + input_variants_branch_amount
+    return input_variants_branch, input_variants_used
 
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0
