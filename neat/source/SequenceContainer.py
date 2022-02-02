@@ -488,7 +488,8 @@ class SequenceContainer:
         # add random indels
         all_indels = [[] for _ in self.sequences]
         for i in range(self.ploidy):
-            for j in range(self.indels_to_add[i]):
+            random_indels_minus_inserted = max(self.indels_to_add[i]-len(self.indel_list[i]),0)
+            for j in range(random_indels_minus_inserted):
                 # insert homozygous indel
                 if random.random() <= self.models[i][1]:
                     which_ploid = range(self.ploidy)
@@ -549,7 +550,8 @@ class SequenceContainer:
         # add random snps
         all_snps = [[] for _ in self.sequences]
         for i in range(self.ploidy):
-            for j in range(self.snps_to_add[i]):
+            random_snps_minus_inserted = max(self.snps_to_add[i]-len(self.snp_list[i]),0)
+            for j in range(random_snps_minus_inserted):
                 # insert homozygous SNP
                 if random.random() <= self.models[i][1]:
                     which_ploid = range(self.ploidy)
