@@ -7,6 +7,7 @@ from vcf import utils
 import os
 import Bio.bgzf as bgzf
 import random
+from neat.source.vcf_func import parse_vcf
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
@@ -72,25 +73,24 @@ def parse_args(raw_args=None):
 
 def main(raw_args=None):
     args = parse_args(raw_args)
+    print("Using the next args:", args)
 
     # parse input variants, if present
     if args.v:
-        # input_vcf = args.v
-        # ploids = args.p
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        input_variants = gen_reads.load_input_variants(args.v, args.p)
-        print (input_variants)
+        input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
         args.input_variants = input_variants
 
     if not args.newick:
         print("No phylogenetic tree supplied")
         args.name = "simulation"
         args.dist = 1
-        print("Using the next args:",args)
         args.internal = False
+        print("Generating sequence started")
+        start = time.time()
         gen_reads.simulate(args)
-        print('================================')
-        print('Done.')
+        end = time.time()
+        print("Done. Generating sequence took {} seconds.".format(int(end - start)))
         return
 
     t = ete3.Tree(args.newick, format=1)
@@ -108,6 +108,7 @@ def main(raw_args=None):
             continue # This is the root
         print('================================')
         print("Generating sequence for taxon (node):",node.name)
+        start = time.time()
         if node.up is t:
             print("The parent is the root")
             args.r = ancestor_fasta
@@ -118,11 +119,15 @@ def main(raw_args=None):
             args.dist = node.dist / total_dist
         args.name = node.name
         args.internal = len(node.children) > 0
-        print("Using the next args:",args)
         args.input_variants, input_variants_used = get_input_variants_branch(args.dist, input_variants, input_variants_used)
         gen_reads.simulate(args)
+        end = time.time()
+        print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
+
     print('================================')
+
     print('Merging VCF files across the generations...')
+    start = time.time()
     for node in t.traverse("preorder"):
         if node is t:
             continue # This is the root or its direct descendants
@@ -137,8 +142,21 @@ def main(raw_args=None):
             child_file = args.o + "_" + node.name + "_golden.vcf.gz"
             out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
             add_parent_variants(parent_file, child_file, out_file)
-    print('Done.')
+    end = time.time()
+    print("Done. Merging took {} seconds.".format(int(end - start)))
 
+def load_input_variants(input_vcf, ploids):
+    print("Loading input variants...")
+    start = time.time()
+    # TODO read this in as a pandas dataframe
+    input_variants = None
+    if input_vcf:
+        (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
+        for k in sorted(input_variants.keys()):
+            input_variants[k].sort()
+    end = time.time()
+    print("Loading input variants took {} seconds.".format(int(end - start)))
+    return input_variants
 
 def get_input_variants_branch(branch_dist, input_variants, input_variants_used):
     input_variants_branch ={}

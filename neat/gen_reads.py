@@ -30,7 +30,6 @@ from source.fastq_file_writer import FastqFileWriter
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref
 from source.vcf_file_writer import VcfFileWriter
-from source.vcf_func import parse_vcf
 from source.file_writer_utils import reverse_complement
 from source.bam_file_writer import sam_flag
 from source.probability import DiscreteDistribution, mean_ind_of_weighted_list
@@ -168,6 +167,8 @@ def process_input_params(input_params): #, ploids):
     return index_params
 
 def index_reference(input_params):
+    print("Indexing reference started:", input_params["reference"])
+    start = time.time()
     # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
     #                    2: byte index where the next contig begins, 3: contig seq length),
     #                    (repeat for every chrom)]
@@ -184,18 +185,13 @@ def index_reference(input_params):
         "ref_list": [n[0] for n in ref_index],
         "line_width": line_width
     }
+    end = time.time()
+    print("Indexing reference took {} seconds.".format(int(end - start)))
     return index_params
 
-def load_input_variants(input_vcf, ploids):
-    # TODO read this in as a pandas dataframe
-    input_variants = None
-    if input_vcf:
-        (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
-        for k in sorted(input_variants.keys()):
-            input_variants[k].sort()
-    return input_variants
-
 def load_input_regions(input_params, ref_list):
+    print("Loading input regions from BED file:", input_params["input_bed"])
+    start = time.time()
     # TODO convert bed to pandas dataframe
     input_params["input_regions"] = {}
     if input_params["input_bed"] is not None:
@@ -225,8 +221,12 @@ def load_input_regions(input_params, ref_list):
         if n_in_bed_only > 0:
             print(
                 'Warning: Targeted regions BED file contains sequence names not found in reference (regions ignored).')
+    end = time.time()
+    print("Loading input regions took {} seconds.".format(int(end - start)))
 
 def load_discard_regions(input_params):
+    print("Loading discard regions from BED file:", input_params["discard_bed"])
+    start = time.time()
     # TODO convert to pandas dataframe
     input_params["discard_regions"] = {}
     if input_params["discard_bed"] is not None:
@@ -240,6 +240,8 @@ def load_discard_regions(input_params):
         except IOError:
             print("\nProblem reading discard BED file.\n")
             sys.exit(1)
+    end = time.time()
+    print("Loading discard regions took {} seconds.".format(int(end - start)))
 
 def load_sequencing_model(sequencing_params):
     # absolute path to this script
@@ -376,9 +378,7 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
     else:
         print('Bypassing FASTQ generation...')
     fasta_file_writer = FastaFileWriter(output_params["save_fasta"], output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
-    output_params["only_vcf"] = output_params["no_fastq"] and not output_params["save_bam"] and output_params["save_vcf"]
-    if output_params["only_vcf"]:
-        print('Only producing VCF output...')
+    output_params["no_reads"] = output_params["no_fastq"] and not output_params["save_bam"]
 
     vcf_file_writer = None
     if output_params["save_vcf"]:
@@ -393,9 +393,6 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
         read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
-    # print("THIS IS A TEST")
-    # print('index_params["n_regions"] =')
-    # print(index_params["n_regions"])
     progress_params = intialize_progress_bar_params(index_params["n_regions"])
 
     valid_variants_from_vcf = prune_invalid_variants(chrom, input_params["input_variants"], index_params["ref_index"], index_params["ref_sequence"])
@@ -406,18 +403,13 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
 
     load_sampling_window_params(sequencing_params)
     print('--------------------------------')
-    if output_params["only_vcf"]:
-        print('generating vcf...')
-    else:
-        print('sampling reads...')
-    tt = time.time()
+    print('Simulating chromosome {} of sequence started...'.format(chrom))
+    t_start = time.time()
     # start the progress bar
     print('[', end='', flush=True)
     # Applying variants to non-N regions
     for i in range(len(index_params["n_regions"]['non_N'])):
         last_non_n_index = index_params["n_regions"]['non_N'][i-1][1] if i>0 else 0
-        # print("TEST3 last_non_n_index =",last_non_n_index)
-        # print("TEST3 index_params['n_regions']['non_N'][i][0] =", index_params["n_regions"]['non_N'][i][0])
         preliminary_Ns = index_params["n_regions"]['non_N'][i][0] - last_non_n_index
         write_fasta(fasta_file_writer, chrom, index_params["ref_index"], 0, None ,preliminary_Ns)
         sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
@@ -427,14 +419,12 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     closing_Ns = index_params["ref_index"][chrom][3]-index_params["n_regions"]['non_N'][-1][1]
     write_fasta(fasta_file_writer, chrom, index_params["ref_index"], 0, None, closing_Ns)
     print(']', flush=True)
-    if output_params["only_vcf"]:
-        print('VCF generation completed in ', end='')
-    else:
-        print('Read sampling completed in ', end='')
-    print(int(time.time() - tt), '(sec)')
+
     # write all output variants for this reference
     if output_params["save_vcf"]:
         write_vcf(vcf_file_writer, all_variants_out, chrom, index_params["ref_index"])
+
+    print("Simulating chromosome {} took {} seconds.".format(chrom, int(time.time() - t_start)))
 
 def intialize_progress_bar_params(n_regions):
     # count total bp we'll be spanning so we can get an idea of how far along we are
@@ -448,6 +438,8 @@ def intialize_progress_bar_params(n_regions):
     return progress_params
 
 def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
+    print("Pruning relevant variants from input VCF...")
+    start = time.time()
     """Prune invalid input variants, e.g variants that:
                     - try to delete or alter any N characters
                     - don't match the reference base at their specified position
@@ -482,6 +474,8 @@ def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
             print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
             print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
             print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
+    end = time.time()
+    print("Done. Pruning took {} seconds.".format(int(end - start)))
     return valid_variants_from_vcf
 
 def load_sampling_window_params(sequencing_params):
@@ -555,7 +549,7 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
         overlap_with_next = 0 if is_last_time else sequencing_params["overlap"]
         write_fasta(fasta_file_writer, chrom, index_params["ref_index"], overlap_with_next, sequences)
         # if we're only producing VCF, no need to go through the hassle of generating reads
-        if not output_params["only_vcf"]:
+        if not output_params["no_reads"]:
             sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,
                          coverage_avg, coverage_dat, start, end, fastq_file_writer, is_last_time, next_start,
                          read_name_count, sequences, unmapped_records)
@@ -674,7 +668,7 @@ def update_sequences(coverage_dat, end, output_params, mutation_params, sequenci
                                       sequencing_params["overlap"],sequencing_params["read_len"],
                                       [mutation_params["mut_model"]] * output_params["ploids"],
                                       mutation_params["mut_rate"], mutation_params["dist"],
-                                      only_vcf=output_params["only_vcf"])
+                                      no_reads=output_params["no_reads"])
         # if [cigar for cigar in sequences.all_cigar[0] if len(cigar) != 100] or \
         #         [cig for cig in sequences.all_cigar[1] if len(cig) != 100]:
         if [hap for hap in range(output_params["ploids"]) if [cigar for cigar in sequences.all_cigar[hap] if len(cigar) != 100]]:
@@ -853,7 +847,8 @@ def output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my
         sys.exit(1)
 
 def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
-    print('Writing output VCF...')
+    print('Writing output VCF started...')
+    start = time.time()
     for k in sorted(all_variants_out.keys()):
         current_ref = ref_index[chrom][0]
         my_id = '.'
@@ -862,6 +857,8 @@ def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
         # k[0] + 1 because we're going back to 1-based vcf coords
         vcf_file_writer.write_record(current_ref, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
                                      my_filter, k[4])
+    end = time.time()
+    print("Done. Writing output VCF took {} seconds.".format(int(end - start)))
 
 def write_fasta(fasta_file_writer, chrom, ref_index, overlap_with_next, sequences, N_seq_len=0):
     haploid_sequences = sequences.sequences if sequences else None

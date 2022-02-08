@@ -95,10 +95,10 @@ class SequenceContainer:
     """
 
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None,
-                 only_vcf=False):
+                 no_reads=False):
 
         # initialize basic variables
-        self.only_vcf = only_vcf
+        self.no_reads = no_reads
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
@@ -264,7 +264,7 @@ class SequenceContainer:
 
         # TODO this section is also quite slow and will need further investigation
         # If we're only creating a vcf, skip some expensive initialization related to coverage depth
-        if not self.only_vcf:
+        if not self.no_reads:
             (self.window_size, gc_scalars, target_cov_vals) = coverage_data
             gc_cov_vals = [[] for _ in self.sequences]
             tr_cov_vals = [[] for _ in self.sequences]
