@@ -424,7 +424,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     if output_params["save_vcf"]:
         write_vcf(vcf_file_writer, all_variants_out, chrom, index_params["ref_index"])
 
-    print("Simulating chromosome {} took {} seconds.".format(chrom, int(time.time() - t_start)))
+    print("Simulating chromosome {} took {} seconds.".format(index_params["ref_index"][chrom][0], int(time.time() - t_start)))
 
 def intialize_progress_bar_params(n_regions):
     # count total bp we'll be spanning so we can get an idea of how far along we are

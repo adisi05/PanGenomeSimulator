@@ -78,8 +78,9 @@ def main(raw_args=None):
     # parse input variants, if present
     if args.v:
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
-        args.input_variants = input_variants
+        args.input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
+    else:
+        args.input_variants = {}
 
     if not args.newick:
         print("No phylogenetic tree supplied")
@@ -101,8 +102,13 @@ def main(raw_args=None):
     root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     ancestor_fasta = args.r
-    input_variants_used = dict.fromkeys(input_variants, 0)
-    random.shuffle(input_variants)
+    input_variants_used = {}
+    if args.input_variants:
+        start = time.time()
+        input_variants_used = dict.fromkeys(args.input_variants, 0)
+        random.shuffle(args.input_variants)
+        end = time.time()
+        print("Suffling input variants was done in {} seconds.".format(int(end - start)))
     for node in t.traverse("preorder"):
         if node is t:
             continue # This is the root
@@ -119,7 +125,7 @@ def main(raw_args=None):
             args.dist = node.dist / total_dist
         args.name = node.name
         args.internal = len(node.children) > 0
-        args.input_variants, input_variants_used = get_input_variants_branch(args.dist, input_variants, input_variants_used)
+        args.input_variants, input_variants_used = get_input_variants_branch(args.dist, args.input_variants, input_variants_used)
         gen_reads.simulate(args)
         end = time.time()
         print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
