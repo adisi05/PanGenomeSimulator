@@ -106,8 +106,8 @@ def main(raw_args=None):
     if args.input_variants:
         start = time.time()
         input_variants_used = dict.fromkeys(args.input_variants, 0)
-        for chrome in args.input_variants.keys():
-            random.shuffle(args.input_variants[chrome])
+        for chrom in args.input_variants.keys():
+            random.shuffle(args.input_variants[chrom])
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
     for node in t.traverse("preorder"):
