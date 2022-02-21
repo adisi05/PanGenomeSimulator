@@ -91,7 +91,7 @@ def index_ref(reference_path: str) -> list:
 def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False): #TODO understand how my_dat is computed
     tt = time.time()
     # if not quiet:
-    print('Reading reference, chromosome:', ref_inds_i[0], '... ')
+    print('Reading & indexing reference, chromosome:', ref_inds_i[0], '... ')
 
     absolute_reference_path = pathlib.Path(ref_path)
     if absolute_reference_path.suffix == '.gz':
