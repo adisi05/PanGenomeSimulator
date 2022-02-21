@@ -23,10 +23,13 @@ import bisect
 import pickle
 import numpy as np
 import pathlib
+import subprocess
+
+from Bio.SeqUtils import seq1
 
 from source.bam_file_writer import BamFileWriter
 from source.fasta_file_writer import FastaFileWriter
-from source.fastq_file_writer import FastqFileWriter
+# from source.fastq_file_writer import FastqFileWriter
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref
 from source.vcf_file_writer import VcfFileWriter
@@ -53,7 +56,7 @@ def simulate(args):
     load_mutation_model(mutation_params)
 
     # initialize output writers
-    bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer = intialize_reads_writers(index_params,\
+    bam_file_writer, fasta_file_writer, vcf_file_writer = intialize_reads_writers(index_params,\
                                                                     input_params, output_params, sequencing_params)
 
     # Using pathlib to make this more machine agnostic
@@ -65,7 +68,7 @@ def simulate(args):
     for chrom in range(len(index_params["ref_index"])):
 
         simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer, chrom, read_name_count, unmapped_records)
+                       bam_file_writer, fasta_file_writer, vcf_file_writer, chrom, read_name_count, unmapped_records)
 
     #TODO translocation feature
 
@@ -76,9 +79,24 @@ def simulate(args):
     if output_params["save_bam"]:
         bam_file_writer.close_file()
     if not output_params["no_fastq"]:
-        fastq_file_writer.close_file()
+        generate_reads(output_params, sequencing_params)
     if output_params["save_vcf"]:
         vcf_file_writer.close_file()
+
+
+def generate_reads(output_params, sequencing_params):
+    print(output_params)
+    print(sequencing_params)
+    # TODO test didn't break anything...
+    paired = "-p" if sequencing_params['paired_end'] else ""
+    fasta_file = output_params['out_prefix']+".fasta"
+    fastq_file = output_params['out_prefix']+"_read"
+    read_length = sequencing_params['read_len']
+    coverage = sequencing_params['coverage']
+    insert_size = sequencing_params['fragment_size']
+    insert_std = sequencing_params['fragment_std']
+    art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}".format(paired,fasta_file,read_length,coverage,fastq_file,insert_size,insert_std)
+    ret = subprocess.run(art_command, shell=True)
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
@@ -371,12 +389,12 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
         bam_header = [
             copy.deepcopy(index_params["ref_index"])]  # TODO wondering if this is actually needed in the bam_header
         bam_file_writer = BamFileWriter(output_params["out_prefix"], bam_header)
-    fastq_file_writer = None
-    if not output_params["no_fastq"]:
-        fastq_file_writer = FastqFileWriter(output_params["out_prefix"], paired=sequencing_params["paired_end"],
-                                            no_fastq=output_params["no_fastq"])
-    else:
-        print('Bypassing FASTQ generation...')
+    # fastq_file_writer = None
+    # if not output_params["no_fastq"]:
+    #     fastq_file_writer = FastqFileWriter(output_params["out_prefix"], paired=sequencing_params["paired_end"],
+    #                                         no_fastq=output_params["no_fastq"])
+    # else:
+    #     print('Bypassing FASTQ generation...')
     fasta_file_writer = FastaFileWriter(output_params["save_fasta"], output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
     output_params["no_reads"] = output_params["no_fastq"] and not output_params["save_bam"]
 
@@ -385,10 +403,10 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
         vcf_header = [input_params["reference"]]
         vcf_file_writer = VcfFileWriter(output_params["out_prefix"],output_params["accession"],vcf_header)
 
-    return bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer
+    return bam_file_writer, fasta_file_writer, vcf_file_writer
 
 def simulate_chrom(general_params, input_params, output_params, mutation_params, sequencing_params, index_params,
-                       bam_file_writer, fastq_file_writer, fasta_file_writer, vcf_file_writer, chrom, read_name_count, unmapped_records):
+                       bam_file_writer, fasta_file_writer, vcf_file_writer, chrom, read_name_count, unmapped_records):
 
     # read in reference sequence and notate blocks of Ns
     index_params["ref_sequence"], index_params["n_regions"] = \
@@ -413,7 +431,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
         preliminary_Ns = index_params["n_regions"]['non_N'][i][0] - last_non_n_index
         write_fasta(fasta_file_writer, chrom, index_params["ref_index"], 0, None ,preliminary_Ns)
         sequences = apply_variants_to_region(general_params, input_params, output_params, mutation_params,
-                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer, fasta_file_writer,
+                                             sequencing_params, index_params, bam_file_writer, fasta_file_writer,
                                              chrom, read_name_count, unmapped_records, progress_params,
                                              valid_variants_from_vcf, all_variants_out, sequences, i)
     closing_Ns = index_params["ref_index"][chrom][3]-index_params["n_regions"]['non_N'][-1][1]
@@ -495,7 +513,7 @@ def load_sampling_window_params(sequencing_params):
         sequencing_params["overlap_min_window_size"] = sequencing_params["read_len"] + 10
 
 def apply_variants_to_region(general_params, input_params, output_params, mutation_params,
-                                             sequencing_params, index_params, bam_file_writer, fastq_file_writer, fasta_file_writer,
+                                             sequencing_params, index_params, bam_file_writer, fasta_file_writer,
                                              chrom, read_name_count, unmapped_records, progress_params,
                                              valid_variants_from_vcf, all_variants_out, sequences, i):
     (initial_position, final_position) = index_params["n_regions"]['non_N'][i]
@@ -551,7 +569,7 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
         # if we're only producing VCF, no need to go through the hassle of generating reads
         if not output_params["no_reads"]:
             sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom,
-                         coverage_avg, coverage_dat, start, end, fastq_file_writer, is_last_time, next_start,
+                         coverage_avg, coverage_dat, start, end, is_last_time, next_start,
                          read_name_count, sequences, unmapped_records)
 
         # tally up all the variants that got successfully introduced
@@ -703,7 +721,7 @@ def get_vars_for_next_window(all_inserted_variants, end, sequencing_params):
     return vars_from_prev_overlap
 
 def sample_reads(sequencing_params, input_params, index_params, output_params, bam_file_writer, chrom, coverage_avg,
-                         coverage_dat, start, end, fastq_file_writer, is_last_time, next_start,
+                         coverage_dat, start, end, is_last_time, next_start,
                          read_name_count, sequences, unmapped_records):
 
     reads_to_sample = compute_reads_to_sample(sequencing_params, coverage_avg, coverage_dat, start, end)
@@ -733,10 +751,10 @@ def sample_reads(sequencing_params, input_params, index_params, output_params, b
 
         my_ref_index = index_params["indices_by_ref_name"][index_params["ref_index"][chrom][0]]
 
-        output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
+        output_reads(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                      my_ref_index, output_params["no_fastq"], output_params["save_bam"])
-    if not output_params["no_fastq"]:
-        fastq_file_writer.flush_buffer(is_last_time)
+    # if not output_params["no_fastq"]:
+    #     fastq_file_writer.flush_buffer(is_last_time)
     if output_params["save_bam"]:
         bam_file_writer.flush_buffer(last_time=is_last_time, bam_max=(next_start if not is_last_time else end + 1))
 
@@ -832,15 +850,15 @@ def handle_unmapped_reads(is_forward, is_unmapped, my_read_data, my_read_name, p
             flag1 = sam_flag(['unmapped'])
             unmapped_records.append((my_read_name + '/1', my_read_data[0], flag1))
 
-def output_reads(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index,
+def output_reads(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index,
                  no_fastq, save_bam):
     # write SE output
     if len(my_read_data) == 1:
-        write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data,
+        write_SE_output(bam_file_writer, is_forward, is_unmapped, my_read_data,
                         my_read_name, my_ref_index, no_fastq, save_bam)
     # write PE output
     elif len(my_read_data) == 2:
-        write_PE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data,
+        write_PE_output(bam_file_writer, is_forward, is_unmapped, my_read_data,
                         my_read_name, my_ref_index, no_fastq, save_bam)
     else:
         print('\nError: Unexpected number of reads generated...\n')
@@ -864,21 +882,21 @@ def write_fasta(fasta_file_writer, chrom, ref_index, overlap_with_next, sequence
     haploid_sequences = sequences.sequences if sequences else None
     fasta_file_writer.write_record(haploid_sequences, ref_index[chrom][0], N_seq_len, overlap_with_next)
 
-def write_SE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
+def write_SE_output(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                     my_ref_index, no_fastq, save_bam):
-    if not no_fastq:
-        write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name)
+    # if not no_fastq:
+    #     write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name)
     if save_bam:
         write_SE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index)
 
-def write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name):
-    if is_forward:
-        fastq_file_writer.write_record(my_read_name, my_read_data[0][2],
-                                       my_read_data[0][3])
-    else:
-        fastq_file_writer.write_record(my_read_name,
-                                       reverse_complement(my_read_data[0][2]),
-                                       my_read_data[0][3][::-1])
+# def write_fastq_SE(fastq_file_writer, is_forward, my_read_data, my_read_name):
+#     if is_forward:
+#         fastq_file_writer.write_record(my_read_name, my_read_data[0][2],
+#                                        my_read_data[0][3])
+#     else:
+#         fastq_file_writer.write_record(my_read_name,
+#                                        reverse_complement(my_read_data[0][2]),
+#                                        my_read_data[0][3][::-1])
 
 def write_SE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index):
     if is_unmapped[0] is False:
@@ -897,19 +915,19 @@ def write_SE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_r
                                          my_read_data[0][3],
                                          output_sam_flag=flag1)
 
-def write_PE_output(bam_file_writer, fastq_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
+def write_PE_output(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name,
                     my_ref_index, no_fastq, save_bam):
-    if not no_fastq:
-        write_fastq_PE(fastq_file_writer, is_forward, my_read_data, my_read_name)
+    # if not no_fastq:
+    #     write_fastq_PE(fastq_file_writer, is_forward, my_read_data, my_read_name)
     if save_bam:
         write_PE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index)
 
-def write_fastq_PE(fastq_file_writer, is_forward, my_read_data, my_read_name):
-    fastq_file_writer.write_record(my_read_name, my_read_data[0][2],
-                                   my_read_data[0][3],
-                                   read2=my_read_data[1][2],
-                                   qual2=my_read_data[1][3],
-                                   orientation=is_forward)
+# def write_fastq_PE(fastq_file_writer, is_forward, my_read_data, my_read_name):
+#     fastq_file_writer.write_record(my_read_name, my_read_data[0][2],
+#                                    my_read_data[0][3],
+#                                    read2=my_read_data[1][2],
+#                                    qual2=my_read_data[1][3],
+#                                    orientation=is_forward)
 
 def write_PE_to_bam(bam_file_writer, is_forward, is_unmapped, my_read_data, my_read_name, my_ref_index):
     if is_unmapped[0] is False and is_unmapped[1] is False:
