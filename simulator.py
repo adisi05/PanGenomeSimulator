@@ -110,26 +110,27 @@ def main(raw_args=None):
             random.shuffle(args.input_variants[chrom])
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
-    for node in t.traverse("preorder"):
-        if node is t:
-            continue # This is the root
-        print('================================')
-        print("Generating sequence for taxon (node):",node.name)
-        start = time.time()
-        if node.up is t:
-            print("The parent is the root")
-            args.r = ancestor_fasta
-            args.dist = (node.dist + root_to_ref_dist)/ total_dist
-        else:
-            print("The parent is:", node.up.name)
-            args.r = args.o + "_" + node.up.name + ".fasta"
-            args.dist = node.dist / total_dist
-        args.name = node.name
-        args.internal = len(node.children) > 0
-        args.input_variants, input_variants_used = get_input_variants_branch(args.dist, args.input_variants, input_variants_used)
-        gen_reads.simulate(args)
-        end = time.time()
-        print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
+    # for node in t.traverse("preorder"):
+    #     if node is t:
+    #         continue # This is the root
+    #     print('================================')
+    #     print("Generating sequence for taxon (node):",node.name)
+    #     start = time.time()
+    #     if node.up is t:
+    #         print("The parent is the root")
+    #         args.r = ancestor_fasta
+    #         args.dist = (node.dist + root_to_ref_dist)/ total_dist
+    #     else:
+    #         print("The parent is:", node.up.name)
+    #         args.r = args.o + "_" + node.up.name + ".fasta"
+    #         args.dist = node.dist / total_dist
+    #     args.name = node.name
+    #     args.internal = len(node.children) > 0
+    #     args.input_variants, input_variants_used = get_input_variants_branch(args.dist, args.input_variants, input_variants_used)
+    #     gen_reads.simulate(args)
+    #     end = time.time()
+    #     print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
+    traverse_tree_in_parallel(t, ancestor_fasta, input_variants_used)
 
     print('================================')
 
@@ -151,6 +152,33 @@ def main(raw_args=None):
             add_parent_variants(parent_file, child_file, out_file)
     end = time.time()
     print("Done. Merging took {} seconds.".format(int(end - start)))
+
+def traverse_tree_in_parallel(node, args ,ancestor_fasta, total_dist, dist_to_add, input_variants_used):
+    if not node.up:
+        # This is the root
+        current_fasta = ancestor_fasta
+    else:
+        generate_for_node(node, args ,ancestor_fasta, total_dist, dist_to_add, input_variants_used)
+        current_fasta = args.o + "_" + node.name + ".fasta"
+        dist_to_add = 0
+    for child in node.children:
+        traverse_tree_in_parallel(child, args ,current_fasta, total_dist, dist_to_add, input_variants_used)
+
+
+def generate_for_node(node, args ,ancestor_fasta, total_dist, dist_to_add, input_variants_used):
+    print("Generating sequence for taxon (node):",node.name)
+    start = time.time()
+    print("The parent is:", node.up.name)
+    args.name = node.name
+    args.internal = len(node.children) > 0
+    args.r = ancestor_fasta
+    args.dist = (node.dist + dist_to_add) / total_dist
+    # TODO i'm not so sure about that.........................................:
+    args.input_variants, input_variants_used = get_input_variants_branch(args.dist, args.input_variants, input_variants_used)
+    gen_reads.simulate(args) # TODO move to parallelism with queue, see https://stackoverflow.com/questions/37923795/parallel-programming-on-binary-tree and test5.py
+    end = time.time()
+    print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
+
 
 def load_input_variants(input_vcf, ploids):
     print("Loading input variants...")
