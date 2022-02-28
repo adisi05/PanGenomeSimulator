@@ -1,4 +1,6 @@
 import argparse
+
+from TaskQueue import TaskQueue
 from neat import gen_reads
 import ete3
 import time
@@ -68,6 +70,8 @@ def parse_args(raw_args=None):
     parser.add_argument('--save-fasta', required=False, action='store_true', default=False,
                         help='outputs FASTA')
     parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
+    parser.add_argument('--max-threads', required=False, action='store_true', default=1, help='maximum threads number')
+
 
     return parser.parse_args(raw_args)
 
@@ -78,15 +82,16 @@ def main(raw_args=None):
     # parse input variants, if present
     if args.v:
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        args.input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
+        all_input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
     else:
-        args.input_variants = {}
+        all_input_variants = {}
 
     if not args.newick:
         print("No phylogenetic tree supplied")
         args.name = "simulation"
         args.dist = 1
         args.internal = False
+        args.input_variants = all_input_variants
         print("Generating sequence started")
         start = time.time()
         gen_reads.simulate(args)
@@ -96,20 +101,21 @@ def main(raw_args=None):
 
     t = ete3.Tree(args.newick, format=1)
     print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
-    total_dist = tree_total_dist(t)
+    args.total_dist = tree_total_dist(t)
 
     # Relate to one of the accessions (given by -a param) as the reference
-    root_to_ref_dist = set_ref_as_accession(args.a, t)
+    args.root_to_ref_dist = set_ref_as_accession(args.a, t)
 
-    ancestor_fasta = args.r
+    args.root_fasta = args.r
     input_variants_used = {}
-    if args.input_variants:
+    if all_input_variants:
         start = time.time()
-        input_variants_used = dict.fromkeys(args.input_variants, 0)
-        for chrom in args.input_variants.keys():
-            random.shuffle(args.input_variants[chrom])
+        input_variants_used = dict.fromkeys(all_input_variants, 0)
+        for chrom in all_input_variants.keys():
+            random.shuffle(all_input_variants[chrom])
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
+    task_queue = TaskQueue(generate_for_node, args.max_threads)
     # for node in t.traverse("preorder"):
     #     if node is t:
     #         continue # This is the root
@@ -126,11 +132,11 @@ def main(raw_args=None):
     #         args.dist = node.dist / total_dist
     #     args.name = node.name
     #     args.internal = len(node.children) > 0
-    #     args.input_variants, input_variants_used = get_input_variants_branch(args.dist, args.input_variants, input_variants_used)
+    #     all_input_variants, input_variants_used = get_branch_input_variants(args.dist, all_input_variants, input_variants_used)
     #     gen_reads.simulate(args)
     #     end = time.time()
     #     print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
-    traverse_tree_in_parallel(t, ancestor_fasta, input_variants_used)
+    task_queue.add_task(t, args, task_queue, all_input_variants, input_variants_used)
 
     print('================================')
 
@@ -153,31 +159,33 @@ def main(raw_args=None):
     end = time.time()
     print("Done. Merging took {} seconds.".format(int(end - start)))
 
-def traverse_tree_in_parallel(node, args ,ancestor_fasta, total_dist, dist_to_add, input_variants_used):
+def generate_for_node(node, args ,task_queue, all_input_variants, input_variants_used):
     if not node.up:
         # This is the root
-        current_fasta = ancestor_fasta
+        pass
     else:
-        generate_for_node(node, args ,ancestor_fasta, total_dist, dist_to_add, input_variants_used)
-        current_fasta = args.o + "_" + node.name + ".fasta"
-        dist_to_add = 0
-    for child in node.children:
-        traverse_tree_in_parallel(child, args ,current_fasta, total_dist, dist_to_add, input_variants_used)
+        print("Generating sequence for taxon (node):", args.name)
+        start = time.time()
+        loag_args_for_simulation(node, args, all_input_variants, input_variants_used)
+        gen_reads.simulate(args)
+        end = time.time()
+        print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 
+    if node.children:
+        for child in node.children:
+            task_queue.add_task(child, args ,task_queue, all_input_variants, input_variants_used)
 
-def generate_for_node(node, args ,ancestor_fasta, total_dist, dist_to_add, input_variants_used):
-    print("Generating sequence for taxon (node):",node.name)
-    start = time.time()
-    print("The parent is:", node.up.name)
+def loag_args_for_simulation(node, args, all_input_variants, input_variants_used):
     args.name = node.name
     args.internal = len(node.children) > 0
-    args.r = ancestor_fasta
-    args.dist = (node.dist + dist_to_add) / total_dist
-    # TODO i'm not so sure about that.........................................:
-    args.input_variants, input_variants_used = get_input_variants_branch(args.dist, args.input_variants, input_variants_used)
-    gen_reads.simulate(args) # TODO move to parallelism with queue, see https://stackoverflow.com/questions/37923795/parallel-programming-on-binary-tree and test5.py
-    end = time.time()
-    print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
+    if not node.up.up:
+        # Root direct descendants
+        args.dist = (node.dist + args.root_to_ref_dist) / args.total_dist
+        args.r = args.root_fasta
+    else:
+        args.dist = node.dist / args.total_dist
+        args.r = args.o + "_" + node.up.name + ".fasta"
+    args.input_variants, input_variants_used = get_branch_input_variants(args.dist, all_input_variants, input_variants_used)
 
 
 def load_input_variants(input_vcf, ploids):
@@ -193,14 +201,14 @@ def load_input_variants(input_vcf, ploids):
     print("Loading input variants took {} seconds.".format(int(end - start)))
     return input_variants
 
-def get_input_variants_branch(branch_dist, input_variants, input_variants_used):
-    input_variants_branch ={}
+def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
+    branch_input_variants ={}
     for k in sorted(input_variants.keys()):
-        input_variants_branch_amount = round(branch_dist * len(input_variants[k]))
-        input_variants_branch[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + input_variants_branch_amount,len(input_variants[k]))]
-        input_variants_branch[k].sort()
-        input_variants_used[k] = input_variants_used[k] + input_variants_branch_amount
-    return input_variants_branch, input_variants_used
+        branch_input_variants_amount = round(branch_dist * len(input_variants[k]))
+        branch_input_variants[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + branch_input_variants_amount,len(input_variants[k]))]
+        branch_input_variants[k].sort()
+        input_variants_used[k] = input_variants_used[k] + branch_input_variants_amount
+    return branch_input_variants, input_variants_used
 
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0
