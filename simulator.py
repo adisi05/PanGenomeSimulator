@@ -140,24 +140,25 @@ def main(raw_args=None):
 
     print('================================')
 
-    print('Merging VCF files across the generations...')
-    start = time.time()
-    for node in t.traverse("preorder"):
-        if node is t:
-            continue # This is the root or its direct descendants
-        if node.up is t:
-            newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
-            oldname = args.o + "_" + node.name + "_golden.vcf.gz"
-            if os.path.exists(newname):
-                os.remove(newname)
-            os.rename(oldname, newname)
-        else:
-            parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
-            child_file = args.o + "_" + node.name + "_golden.vcf.gz"
-            out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
-            add_parent_variants(parent_file, child_file, out_file)
-    end = time.time()
-    print("Done. Merging took {} seconds.".format(int(end - start)))
+    # TODO take care of this:
+    # print('Merging VCF files across the generations...')
+    # start = time.time()
+    # for node in t.traverse("preorder"):
+    #     if node is t:
+    #         continue # This is the root or its direct descendants
+    #     if node.up is t:
+    #         newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
+    #         oldname = args.o + "_" + node.name + "_golden.vcf.gz"
+    #         if os.path.exists(newname):
+    #             os.remove(newname)
+    #         os.rename(oldname, newname)
+    #     else:
+    #         parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
+    #         child_file = args.o + "_" + node.name + "_golden.vcf.gz"
+    #         out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
+    #         add_parent_variants(parent_file, child_file, out_file)
+    # end = time.time()
+    # print("Done. Merging took {} seconds.".format(int(end - start)))
 
 def generate_for_node(node, args ,task_queue, all_input_variants, input_variants_used):
     if not node.up:
