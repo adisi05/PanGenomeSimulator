@@ -1,3 +1,5 @@
+########################################## Old stuff: ##########################################
+
 # import time
 # from multiprocessing import Process, Manager, Pool, Queue
 # from multiprocessing.managers import SyncManager
@@ -78,11 +80,12 @@
 #     # pool.close()
 #     # pool.join()
 
-from multiprocessing import Pool
-import time
 
-
+########################################## First example: ##########################################
 # https://stackoverflow.com/questions/35908987/multiprocessing-map-vs-map-async
+
+from multiprocessing import Pool
+
 def f(x):
     time.sleep(1)
     print(x*x) #TODO hsould acquire lock
@@ -99,7 +102,7 @@ def main1():
 
 #--------------------------------------------------------------------------------#
 
-
+########################################## Second example: ##########################################
 # https://stackoverflow.com/a/3232026
 import multiprocessing, time
 
@@ -120,6 +123,8 @@ def main2():
     while not q.empty():
         print(q.get())
     print(result.get())
+
+#--------------------------------------------------------------------------------#
 
 if __name__ == "__main__":
     main2()
