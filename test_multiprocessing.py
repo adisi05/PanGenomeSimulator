@@ -86,27 +86,26 @@
 
 from multiprocessing import Pool
 
-def f(x):
+def my_task1(x):
     time.sleep(1)
     print(x*x) #TODO hsould acquire lock
 
 def main1():
     pool = Pool(processes=4)
     # pool.map(f, range(10))
-    r = pool.map_async(f, range(10))
+    r = pool.map_async(my_task1, range(10))
     # DO STUFF
     print('HERE')
     print('MORE')
     r.wait()
     print('DONE')
 
-#--------------------------------------------------------------------------------#
-
 ########################################## Second example: ##########################################
 # https://stackoverflow.com/a/3232026
+
 import multiprocessing, time
 
-def task(args):
+def my_task2(args):
     count = args[0]
     queue = args[1]
     for i in range(count):
@@ -118,13 +117,104 @@ def main2():
     manager = multiprocessing.Manager()
     q = manager.Queue()
     pool = multiprocessing.Pool()
-    result = pool.map_async(task, [(x, q) for x in range(10)])
+    result = pool.map_async(my_task2, [(x, q) for x in range(10)])
     time.sleep(1)
     while not q.empty():
         print(q.get())
     print(result.get())
 
-#--------------------------------------------------------------------------------#
+########################################## Third example: ##########################################
+
+def my_task3(args):
+    x = args[0]
+    queue = args[1]
+    queue.put("%d mississippi" % x)
+    while not queue.empty():
+        print(queue.get())
+        time.sleep(5)
+    return "Done"
+
+def main3():
+    manager = multiprocessing.Manager()
+    pool = multiprocessing.Pool(processes=4)
+
+    q = manager.Queue()
+    half_amount = 5
+    for i in range(half_amount):
+        q.put("task number %d" % i)
+    result = pool.map_async(my_task3, [(x, q) for x in range(10)])
+    time.sleep(5)
+    for i in range(half_amount, 2*half_amount):
+        q.put("task number %d" % i)
+    result.wait()
+    print(result.get())
+
+########################################## Forth example: ##########################################
+
+def my_task4(x, queue):
+    curr_proc = multiprocessing.current_process()
+    print('Hi there! current process:', curr_proc.name, curr_proc._identity)
+    queue.put("%d mississippi" % x)
+    while not queue.empty():
+        print(queue.get())
+        time.sleep(5)
+    return "Done"
+
+def main4():
+    manager = multiprocessing.Manager()
+    pool = multiprocessing.Pool(processes=4)
+
+    q = manager.Queue()
+    half_amount = 5
+    re = [0]*10
+    for i in range(half_amount):
+        q.put("task number %d" % i)
+    for x in range(10):
+        re[x]=pool.apply_async(my_task4, args=(x, q))
+    for i in range(half_amount, 2*half_amount):
+        q.put("task number %d" % i)
+    pool.close()
+    pool.join()
+
+
+
+########################################## Fifth example: ##########################################
+
+def my_task5(lock, x, queue):
+
+
+    curr_proc = multiprocessing.current_process()
+    print('Hi there! current process:', curr_proc.name, curr_proc._identity)
+    queue.put("%d mississippi" % x)
+    bye = False
+    while not queue.empty() and not bye:
+        lock.acquire()
+        if queue.empty():
+            bye = True
+        else:
+            print(queue.get())
+        lock.release()
+        if bye:
+            break
+        time.sleep(5)
+    return "Done"
+
+def main5():
+    manager = multiprocessing.Manager()
+    pool = multiprocessing.Pool(processes=4)
+    lock = manager.Lock()
+    q = manager.Queue()
+    half_amount = 5
+    re = [0]*10
+    for i in range(half_amount):
+        q.put("task number %d" % i)
+    for x in range(10):
+        pool.apply_async(my_task5, args=(lock, x, q))
+    for i in range(half_amount, 2*half_amount):
+        q.put("task number %d" % i)
+    pool.close()
+    pool.join()
+
 
 if __name__ == "__main__":
-    main2()
+    main5()
