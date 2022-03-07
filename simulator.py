@@ -165,40 +165,49 @@ def pool_handler(ncpu, simulation_func, simulation_params):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     lock = manager.Lock()
-    queue = manager.Queue()
-    queue.put(simulation_params)
+    queue = create_task_queue(manager, simulation_params)
     pool.apply_async(process_handler, args=(lock, queue, simulation_func))
     pool.close()
     pool.join()
 
 def process_handler(lock, queue, simulation_func):
     curr_proc = multiprocessing.current_process()
-    print('THIS IS A TEST. current process:', curr_proc.name, curr_proc._identity)
+    print('THIS IS A TEST - 1. current process:', curr_proc.name, curr_proc._identity)
     stop = False
-    while not stop:
+    print('THIS IS A TEST - 2. stop:', stop)
 
+    while not stop:
+        print("This is a test: after while not stop")
         # Checking if queue not empty
         lock.acquire()
         if not queue.empty():
             simulation_params = queue.get()
+            print("if not queue.empty(). simulation_params:", simulation_params)
         else:
             stop = True
+            print("Queue is empty")
         lock.release()
         if stop:
             break
-
+        print("This is another test1, simulation_func=",simulation_func, "simulation_params=", simulation_params)
         # Simulating
-        next_simulation_params = simulation_func(simulation_params)
+        next_simulation_params = simulation_func(*simulation_params)
+        print("This is another test2,", next_simulation_params)
 
         # Next simulations
         if next_simulation_params:
             lock.acquire()
+            print("This is another test3,",next_simulation_params)
             map(queue.put, next_simulation_params)
             # [queue.put(params) for params in next_simulation_params]
             lock.release()
     return "Done"
 
 def generate_for_node(node, args, all_input_variants, input_variants_used):
+    print("TEST inside generate_for_node")
+    print("TEST node=",node)
+    print("TEST args=",args)
+
     if not node.up:
         # This is the root
         pass
@@ -206,14 +215,20 @@ def generate_for_node(node, args, all_input_variants, input_variants_used):
         print("Generating sequence for taxon (node):", args.name)
         start = time.time()
         loag_args_for_simulation(node, args, all_input_variants, input_variants_used)
-        gen_reads.simulate(args)
+        dummy_simulation(args)  # TODO revert to real simulation
         end = time.time()
         print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 
+    print("TEST inside generate_for_node - before children_simulation_params")
+
     children_simulation_params = []
     if node.children:
+        print("TEST inside generate_for_node - node.children exist")
         for child in node.children:
-            children_simulation_params.add((child, args ,all_input_variants, input_variants_used))
+            child_simulation_params = (child, args ,all_input_variants, input_variants_used)
+            print("TEST inside generate_for_node - child_simulation_params=", child_simulation_params)
+            children_simulation_params.append(child_simulation_params)
+    print("TEST inside generate_for_node - children_simulation_params=",children_simulation_params)
     return children_simulation_params
 
 def loag_args_for_simulation(node, args, all_input_variants, input_variants_used):
@@ -280,6 +295,14 @@ def add_parent_variants(parent_file, child_file, out_file):
             vcf_writer.write_record(readers[0])
 
     out.close()
+
+def dummy_simulation(args):
+    print(args)
+
+def create_task_queue(manager, simulation_params):
+    queue = manager.Queue()
+    queue.put(simulation_params)
+    return queue
 
 if __name__ == "__main__":
     tt = time.time()
