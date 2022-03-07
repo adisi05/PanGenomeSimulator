@@ -1,4 +1,5 @@
 import argparse
+import multiprocessing
 
 from TaskQueue import TaskQueue
 from neat import gen_reads
@@ -115,7 +116,6 @@ def main(raw_args=None):
             random.shuffle(all_input_variants[chrom])
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
-    task_queue = TaskQueue(generate_for_node, args.max_threads)
     # for node in t.traverse("preorder"):
     #     if node is t:
     #         continue # This is the root
@@ -136,7 +136,8 @@ def main(raw_args=None):
     #     gen_reads.simulate(args)
     #     end = time.time()
     #     print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
-    task_queue.add_task(t, args, task_queue, all_input_variants, input_variants_used)
+    simulation_params = (t, args, all_input_variants, input_variants_used)
+    pool_handler(args.max_threads, generate_for_node, simulation_params)
 
     print('================================')
 
@@ -160,7 +161,44 @@ def main(raw_args=None):
     # end = time.time()
     # print("Done. Merging took {} seconds.".format(int(end - start)))
 
-def generate_for_node(node, args ,task_queue, all_input_variants, input_variants_used):
+def pool_handler(ncpu, simulation_func, simulation_params):
+    manager = multiprocessing.Manager()
+    pool = multiprocessing.Pool(processes=ncpu)
+    lock = manager.Lock()
+    queue = manager.Queue()
+    queue.put(simulation_params)
+    pool.apply_async(process_handler, args=(lock, queue, simulation_func))
+    pool.close()
+    pool.join()
+
+def process_handler(lock, queue, simulation_func):
+    curr_proc = multiprocessing.current_process()
+    print('THIS IS A TEST. current process:', curr_proc.name, curr_proc._identity)
+    stop = False
+    while not stop:
+
+        # Checking if queue not empty
+        lock.acquire()
+        if not queue.empty():
+            simulation_params = queue.get()
+        else:
+            stop = True
+        lock.release()
+        if stop:
+            break
+
+        # Simulating
+        next_simulation_params = simulation_func(simulation_params)
+
+        # Next simulations
+        if next_simulation_params:
+            lock.acquire()
+            map(queue.put, next_simulation_params)
+            # [queue.put(params) for params in next_simulation_params]
+            lock.release()
+    return "Done"
+
+def generate_for_node(node, args, all_input_variants, input_variants_used):
     if not node.up:
         # This is the root
         pass
@@ -172,9 +210,11 @@ def generate_for_node(node, args ,task_queue, all_input_variants, input_variants
         end = time.time()
         print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 
+    children_simulation_params = []
     if node.children:
         for child in node.children:
-            task_queue.add_task(child, args ,task_queue, all_input_variants, input_variants_used)
+            children_simulation_params.add((child, args ,all_input_variants, input_variants_used))
+    return children_simulation_params
 
 def loag_args_for_simulation(node, args, all_input_variants, input_variants_used):
     args.name = node.name
@@ -187,7 +227,6 @@ def loag_args_for_simulation(node, args, all_input_variants, input_variants_used
         args.dist = node.dist / args.total_dist
         args.r = args.o + "_" + node.up.name + ".fasta"
     args.input_variants, input_variants_used = get_branch_input_variants(args.dist, all_input_variants, input_variants_used)
-
 
 def load_input_variants(input_vcf, ploids):
     print("Loading input variants...")
@@ -220,7 +259,6 @@ def set_ref_as_accession(accession, t):
         ref_node.delete()
     return root_to_ref_dist
 
-
 def tree_total_dist(t):
     total_dist = 0
     for node in t.traverse("preorder"):
@@ -242,7 +280,6 @@ def add_parent_variants(parent_file, child_file, out_file):
             vcf_writer.write_record(readers[0])
 
     out.close()
-
 
 if __name__ == "__main__":
     tt = time.time()
