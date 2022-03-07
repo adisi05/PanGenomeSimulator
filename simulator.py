@@ -2,7 +2,6 @@ import argparse
 import copy
 import multiprocessing
 
-from TaskQueue import TaskQueue
 from neat import gen_reads
 import ete3
 import time
@@ -117,50 +116,30 @@ def main(raw_args=None):
             random.shuffle(all_input_variants[chrom])
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
-    # for node in t.traverse("preorder"):
-    #     if node is t:
-    #         continue # This is the root
-    #     print('================================')
-    #     print("Generating sequence for taxon (node):",node.name)
-    #     start = time.time()
-    #     if node.up is t:
-    #         print("The parent is the root")
-    #         args.r = ancestor_fasta
-    #         args.dist = (node.dist + root_to_ref_dist)/ total_dist
-    #     else:
-    #         print("The parent is:", node.up.name)
-    #         args.r = args.o + "_" + node.up.name + ".fasta"
-    #         args.dist = node.dist / total_dist
-    #     args.name = node.name
-    #     args.internal = len(node.children) > 0
-    #     all_input_variants, input_variants_used = get_branch_input_variants(args.dist, all_input_variants, input_variants_used)
-    #     gen_reads.simulate(args)
-    #     end = time.time()
-    #     print("Done. Generating sequence for taxon {} took {} seconds.".format(node.name, int(end - start)))
     simulation_params = (t, args, all_input_variants, input_variants_used)
     pool_handler(args.max_threads, generate_for_node, simulation_params)
 
     print('================================')
 
-    # TODO take care of this:
-    # print('Merging VCF files across the generations...')
-    # start = time.time()
-    # for node in t.traverse("preorder"):
-    #     if node is t:
-    #         continue # This is the root or its direct descendants
-    #     if node.up is t:
-    #         newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
-    #         oldname = args.o + "_" + node.name + "_golden.vcf.gz"
-    #         if os.path.exists(newname):
-    #             os.remove(newname)
-    #         os.rename(oldname, newname)
-    #     else:
-    #         parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
-    #         child_file = args.o + "_" + node.name + "_golden.vcf.gz"
-    #         out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
-    #         add_parent_variants(parent_file, child_file, out_file)
-    # end = time.time()
-    # print("Done. Merging took {} seconds.".format(int(end - start)))
+    # TODO take care of this - to do also in parallel?
+    print('Merging VCF files across the generations...')
+    start = time.time()
+    for node in t.traverse("preorder"):
+        if node is t:
+            continue # This is the root or its direct descendants
+        if node.up is t:
+            newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
+            oldname = args.o + "_" + node.name + "_golden.vcf.gz"
+            if os.path.exists(newname):
+                os.remove(newname)
+            os.rename(oldname, newname)
+        else:
+            parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
+            child_file = args.o + "_" + node.name + "_golden.vcf.gz"
+            out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
+            add_parent_variants(parent_file, child_file, out_file)
+    end = time.time()
+    print("Done. Merging took {} seconds.".format(int(end - start)))
 
 def pool_handler(ncpu, simulation_func, simulation_params):
     manager = multiprocessing.Manager()
@@ -196,43 +175,18 @@ def process_handler(lock, queue, simulation_func):
         while not os.path.exists(ancestor_path):
             time.sleep(60)
         simulation_func(simulation_params)
-        # print("This is another test2,", next_simulation_params)
 
-        # # Next simulations
-        # if next_simulation_params:
-        #     lock.acquire()
-        #     print("This is another test3,",next_simulation_params)
-        #     map(queue.put, next_simulation_params)
-        #     # [queue.put(params) for params in next_simulation_params]
-        #     lock.release()
     return "Done"
 
 def generate_for_node(args):
     print("TEST inside generate_for_node")
     print("TEST args=",args)
 
-    # if not node.up:
-    #     # This is the root
-    #     pass
-    # else:
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
-    # loag_args_for_simulation(node, args, all_input_variants, input_variants_used)
     gen_reads.simulate(args)
     end = time.time()
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
-
-    # print("TEST inside generate_for_node - before children_simulation_params")
-    #
-    # children_simulation_params = []
-    # if node.children:
-    #     print("TEST inside generate_for_node - node.children exist")
-    #     for child in node.children:
-    #         child_simulation_params = (child, args ,all_input_variants, input_variants_used)
-    #         print("TEST inside generate_for_node - child_simulation_params=", child_simulation_params)
-    #         children_simulation_params.append(child_simulation_params)
-    # print("TEST inside generate_for_node - children_simulation_params=",children_simulation_params)
-    # return children_simulation_params
 
 def loag_args_for_simulation(node, args, all_input_variants, input_variants_used):
     args.name = node.name
@@ -329,7 +283,7 @@ def create_task_queue(manager, simulation_params):
     args = simulation_params[1]
     all_input_variants = simulation_params[2]
     input_variants_used = simulation_params[3]
-    for node in t.traverse("levelorder"): #TODO Is this BFS??? check...
+    for node in t.traverse("levelorder"):
         if node is t:
             continue # This is the root
         else:
