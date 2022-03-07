@@ -215,6 +215,23 @@ def main5():
     pool.close()
     pool.join()
 
+# def main6():
+#     manager = multiprocessing.Manager()
+#     # pool = multiprocessing.Pool(processes=4)
+#     lock = manager.Lock()
+#     q = manager.Queue()
+#     half_amount = 5
+#     ncpu = 4
+#     with multiprocessing.Pool(processes=ncpu) as pool:
+#         for i in range(half_amount):
+#             q.put("task number %d" % i)
+#         for x in range(10):
+#             pool.apply_async(my_task5, args=(lock, x, q))
+#         for i in range(half_amount, 2 * half_amount):
+#             q.put("task number %d" % i)
+#     pool.close()
+#     pool.join()
+
 
 if __name__ == "__main__":
     main5()

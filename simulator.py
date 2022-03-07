@@ -1,4 +1,5 @@
 import argparse
+import copy
 import multiprocessing
 
 from TaskQueue import TaskQueue
@@ -189,47 +190,49 @@ def process_handler(lock, queue, simulation_func):
         lock.release()
         if stop:
             break
-        print("This is another test1, simulation_func=",simulation_func, "simulation_params=", simulation_params)
-        # Simulating
-        next_simulation_params = simulation_func(*simulation_params)
-        print("This is another test2,", next_simulation_params)
+        print("This is another test1, simulation_func=",simulation_func, "simulation_params=", simulation_params, "simulation_params.r=",simulation_params.r)
+        # When ancestor is ready - then start simulating
+        ancestor_path=simulation_params.r
+        while not os.path.exists(ancestor_path):
+            time.sleep(60)
+        simulation_func(simulation_params)
+        # print("This is another test2,", next_simulation_params)
 
-        # Next simulations
-        if next_simulation_params:
-            lock.acquire()
-            print("This is another test3,",next_simulation_params)
-            map(queue.put, next_simulation_params)
-            # [queue.put(params) for params in next_simulation_params]
-            lock.release()
+        # # Next simulations
+        # if next_simulation_params:
+        #     lock.acquire()
+        #     print("This is another test3,",next_simulation_params)
+        #     map(queue.put, next_simulation_params)
+        #     # [queue.put(params) for params in next_simulation_params]
+        #     lock.release()
     return "Done"
 
-def generate_for_node(node, args, all_input_variants, input_variants_used):
+def generate_for_node(args):
     print("TEST inside generate_for_node")
-    print("TEST node=",node)
     print("TEST args=",args)
 
-    if not node.up:
-        # This is the root
-        pass
-    else:
-        print("Generating sequence for taxon (node):", args.name)
-        start = time.time()
-        loag_args_for_simulation(node, args, all_input_variants, input_variants_used)
-        dummy_simulation(args)  # TODO revert to real simulation
-        end = time.time()
-        print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
+    # if not node.up:
+    #     # This is the root
+    #     pass
+    # else:
+    print("Generating sequence for taxon (node):", args.name)
+    start = time.time()
+    # loag_args_for_simulation(node, args, all_input_variants, input_variants_used)
+    gen_reads.simulate(args)
+    end = time.time()
+    print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 
-    print("TEST inside generate_for_node - before children_simulation_params")
-
-    children_simulation_params = []
-    if node.children:
-        print("TEST inside generate_for_node - node.children exist")
-        for child in node.children:
-            child_simulation_params = (child, args ,all_input_variants, input_variants_used)
-            print("TEST inside generate_for_node - child_simulation_params=", child_simulation_params)
-            children_simulation_params.append(child_simulation_params)
-    print("TEST inside generate_for_node - children_simulation_params=",children_simulation_params)
-    return children_simulation_params
+    # print("TEST inside generate_for_node - before children_simulation_params")
+    #
+    # children_simulation_params = []
+    # if node.children:
+    #     print("TEST inside generate_for_node - node.children exist")
+    #     for child in node.children:
+    #         child_simulation_params = (child, args ,all_input_variants, input_variants_used)
+    #         print("TEST inside generate_for_node - child_simulation_params=", child_simulation_params)
+    #         children_simulation_params.append(child_simulation_params)
+    # print("TEST inside generate_for_node - children_simulation_params=",children_simulation_params)
+    # return children_simulation_params
 
 def loag_args_for_simulation(node, args, all_input_variants, input_variants_used):
     args.name = node.name
@@ -242,6 +245,21 @@ def loag_args_for_simulation(node, args, all_input_variants, input_variants_used
         args.dist = node.dist / args.total_dist
         args.r = args.o + "_" + node.up.name + ".fasta"
     args.input_variants, input_variants_used = get_branch_input_variants(args.dist, all_input_variants, input_variants_used)
+
+def get_node_args_for_simulation(node, args, all_input_variants, input_variants_used):
+    new_args = copy.copy(args)
+    new_args.name = node.name
+    new_args.internal = len(node.children) > 0
+    if not node.up.up:
+        # Root direct descendants
+        new_args.dist = (node.dist + new_args.root_to_ref_dist) / new_args.total_dist
+        new_args.r = new_args.root_fasta
+    else:
+        new_args.dist = node.dist / new_args.total_dist
+        new_args.r = new_args.o + "_" + node.up.name + ".fasta"
+    new_args.input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
+    return new_args
+
 
 def load_input_variants(input_vcf, ploids):
     print("Loading input variants...")
@@ -301,8 +319,25 @@ def dummy_simulation(args):
 
 def create_task_queue(manager, simulation_params):
     queue = manager.Queue()
-    queue.put(simulation_params)
+    print("TEST123 simulation_params=", simulation_params)
+    print("TEST456 simulation_params[0]=", simulation_params[0])
+    print("TEST456 simulation_params[1]=", simulation_params[1])
+    print("TEST456 simulation_params[2]=", simulation_params[2])
+    print("TEST456 simulation_params[3]=", simulation_params[3])
+
+    t = simulation_params[0]
+    args = simulation_params[1]
+    all_input_variants = simulation_params[2]
+    input_variants_used = simulation_params[3]
+    for node in t.traverse("levelorder"): #TODO Is this BFS??? check...
+        if node is t:
+            continue # This is the root
+        else:
+            node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
+            print("TEST node_paramsnode_params=",node_params)
+            queue.put(node_params)
     return queue
+
 
 if __name__ == "__main__":
     tt = time.time()
