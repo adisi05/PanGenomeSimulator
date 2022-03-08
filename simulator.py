@@ -152,12 +152,10 @@ def pool_handler(ncpu, simulation_func, simulation_params):
 
 def process_handler(lock, queue, simulation_func):
     curr_proc = multiprocessing.current_process()
-    print('THIS IS A TEST - 1. current process:', curr_proc.name, curr_proc._identity)
+    print('TEST - current process:', curr_proc.name, curr_proc._identity)
     stop = False
-    print('THIS IS A TEST - 2. stop:', stop)
 
     while not stop:
-        print("This is a test: after while not stop")
         # Checking if queue not empty
         lock.acquire()
         if not queue.empty():
@@ -169,18 +167,18 @@ def process_handler(lock, queue, simulation_func):
         lock.release()
         if stop:
             break
-        print("This is another test1, simulation_func=",simulation_func, "simulation_params=", simulation_params, "simulation_params.r=",simulation_params.r)
+        print("TEST, simulation_func=",simulation_func, "simulation_params.r=",simulation_params.r)
         # When ancestor is ready - then start simulating
         ancestor_path=simulation_params.r
         while not os.path.exists(ancestor_path):
             time.sleep(60)
+        print("TEST, ancestor_path=",ancestor_path, "is ready")
         simulation_func(simulation_params)
 
     return "Done"
 
 def generate_for_node(args):
-    print("TEST inside generate_for_node")
-    print("TEST args=",args)
+    print("TEST inside generate_for_node, args.r=",args.r)
 
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
@@ -273,12 +271,6 @@ def dummy_simulation(args):
 
 def create_task_queue(manager, simulation_params):
     queue = manager.Queue()
-    print("TEST123 simulation_params=", simulation_params)
-    print("TEST456 simulation_params[0]=", simulation_params[0])
-    print("TEST456 simulation_params[1]=", simulation_params[1])
-    print("TEST456 simulation_params[2]=", simulation_params[2])
-    print("TEST456 simulation_params[3]=", simulation_params[3])
-
     t = simulation_params[0]
     args = simulation_params[1]
     all_input_variants = simulation_params[2]
@@ -288,7 +280,7 @@ def create_task_queue(manager, simulation_params):
             continue # This is the root
         else:
             node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
-            print("TEST node_paramsnode_params=",node_params)
+            print("TEST, inside create_task_queue, node_params.name=",node_params.name)
             queue.put(node_params)
     return queue
 
