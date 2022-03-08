@@ -1,7 +1,6 @@
 import argparse
 import copy
 import multiprocessing
-
 from neat import gen_reads
 import ete3
 import time
@@ -72,7 +71,6 @@ def parse_args(raw_args=None):
                         help='outputs FASTA')
     parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
     parser.add_argument('--max-threads', required=False, action='store_true', default=1, help='maximum threads number')
-
 
     return parser.parse_args(raw_args)
 
@@ -179,24 +177,11 @@ def process_handler(lock, queue, simulation_func):
 
 def generate_for_node(args):
     print("TEST inside generate_for_node, args.r=",args.r)
-
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
     gen_reads.simulate(args)
     end = time.time()
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
-
-def loag_args_for_simulation(node, args, all_input_variants, input_variants_used):
-    args.name = node.name
-    args.internal = len(node.children) > 0
-    if not node.up.up:
-        # Root direct descendants
-        args.dist = (node.dist + args.root_to_ref_dist) / args.total_dist
-        args.r = args.root_fasta
-    else:
-        args.dist = node.dist / args.total_dist
-        args.r = args.o + "_" + node.up.name + ".fasta"
-    args.input_variants, input_variants_used = get_branch_input_variants(args.dist, all_input_variants, input_variants_used)
 
 def get_node_args_for_simulation(node, args, all_input_variants, input_variants_used):
     new_args = copy.copy(args)
@@ -209,9 +194,8 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
     else:
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = new_args.o + "_" + node.up.name + ".fasta"
-    new_args.input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
+    new_args.input_variants = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
     return new_args
-
 
 def load_input_variants(input_vcf, ploids):
     print("Loading input variants...")
@@ -233,7 +217,7 @@ def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
         branch_input_variants[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + branch_input_variants_amount,len(input_variants[k]))]
         branch_input_variants[k].sort()
         input_variants_used[k] = input_variants_used[k] + branch_input_variants_amount
-    return branch_input_variants, input_variants_used
+    return branch_input_variants
 
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0
@@ -266,24 +250,20 @@ def add_parent_variants(parent_file, child_file, out_file):
 
     out.close()
 
-def dummy_simulation(args):
-    print(args)
-
 def create_task_queue(manager, simulation_params):
     queue = manager.Queue()
     t = simulation_params[0]
     args = simulation_params[1]
     all_input_variants = simulation_params[2]
     input_variants_used = simulation_params[3]
-    for node in t.traverse("levelorder"):
+    for node in t.traverse("levelorder"): # AKA breadth first search
         if node is t:
-            continue # This is the root
+            continue # This is the root - don't simulate for it
         else:
             node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
             print("TEST, inside create_task_queue, node_params.name=",node_params.name)
             queue.put(node_params)
     return queue
-
 
 if __name__ == "__main__":
     tt = time.time()
