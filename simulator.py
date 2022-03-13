@@ -70,7 +70,7 @@ def parse_args(raw_args=None):
     parser.add_argument('--save-fasta', required=False, action='store_true', default=False,
                         help='outputs FASTA')
     parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
-    parser.add_argument('--max-threads', required=False, action='store_true', default=1, help='maximum threads number')
+    parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1, help='maximum threads number')
 
     return parser.parse_args(raw_args)
 
@@ -143,12 +143,13 @@ def pool_handler(ncpu, simulation_func, simulation_params):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     lock = manager.Lock()
+    cond = manager.Condition()
     queue = create_task_queue(manager, simulation_params)
-    pool.apply_async(process_handler, args=(lock, queue, simulation_func))
+    pool.apply_async(process_handler, args=(lock, queue, cond, simulation_func))
     pool.close()
     pool.join()
 
-def process_handler(lock, queue, simulation_func):
+def process_handler(lock, queue, cond, simulation_func):
     curr_proc = multiprocessing.current_process()
     print('TEST - current process:', curr_proc.name, curr_proc._identity)
     stop = False
@@ -169,9 +170,15 @@ def process_handler(lock, queue, simulation_func):
         # When ancestor is ready - then start simulating
         ancestor_path=simulation_params.r
         while not os.path.exists(ancestor_path):
-            time.sleep(60)
-        print("TEST, ancestor_path=",ancestor_path, "is ready")
+            print("TEST: ", curr_proc.name, 'checking if ancestor exists')
+            with cond:
+                cond.wait()
+                print("TEST: " ,curr_proc.name, 'checking again if ancestor exists')
+        print("TEST: ", curr_proc, ", ancestor_path=",ancestor_path, "is ready")
         simulation_func(simulation_params)
+        with cond:
+            print("TEST: ", curr_proc, " has finished simulation for ", simulation_params.name)
+            cond.notify_all()
 
     return "Done"
 
