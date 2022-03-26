@@ -159,7 +159,7 @@ def process_handler(lock, queue, cond, simulation_func):
         lock.acquire()
         if not queue.empty():
             simulation_params = queue.get()
-            print("if not queue.empty(). simulation_params:", simulation_params)
+            print("if not queue.empty(). simulation_params.r:", simulation_params.r)
         else:
             stop = True
             print("Queue is empty")
