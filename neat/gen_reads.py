@@ -23,7 +23,7 @@ import bisect
 import pickle
 import numpy as np
 import pathlib
-import subprocess
+import os
 
 from Bio.SeqUtils import seq1
 
@@ -96,7 +96,7 @@ def generate_reads(output_params, sequencing_params):
     insert_size = sequencing_params['fragment_size']
     insert_std = sequencing_params['fragment_std']
     art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}".format(paired,fasta_file,read_length,coverage,fastq_file,insert_size,insert_std)
-    ret = subprocess.run(art_command, shell=True)
+    os.system(art_command)
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
