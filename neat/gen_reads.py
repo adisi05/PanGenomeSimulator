@@ -96,7 +96,11 @@ def generate_reads(output_params, sequencing_params):
     insert_size = sequencing_params['fragment_size']
     insert_std = sequencing_params['fragment_std']
     art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}".format(paired,fasta_file,read_length,coverage,fastq_file,insert_size,insert_std)
+    start = time.time()
     os.system(art_command)
+    end = time.time()
+    print("ART reads simulation took {} seconds.".format(int(end - start)))
+
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
