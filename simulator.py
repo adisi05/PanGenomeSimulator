@@ -10,6 +10,7 @@ import os
 import Bio.bgzf as bgzf
 import random
 from neat.source.vcf_func import parse_vcf
+from queue import Queue
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
@@ -114,37 +115,48 @@ def main(raw_args=None):
             random.shuffle(all_input_variants[chrom])
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
+
     simulation_params = (t, args, all_input_variants, input_variants_used)
-    pool_handler(args.max_threads, generate_for_node, simulation_params)
+    if args.max_threads > 1:
+        pool_handler(args.max_threads, generate_for_node, simulation_params)
+    else:
+        print("TEST this is a single-process simulation")
+        queue = load_task_queue(Queue(), simulation_params)
+        while not queue.empty():
+            args = queue.get()
+            generate_for_node(args)
+
+
+
 
     print('================================')
 
     # TODO take care of this - to do also in parallel?
-    print('Merging VCF files across the generations...')
-    start = time.time()
-    for node in t.traverse("preorder"):
-        if node is t:
-            continue # This is the root or its direct descendants
-        if node.up is t:
-            newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
-            oldname = args.o + "_" + node.name + "_golden.vcf.gz"
-            if os.path.exists(newname):
-                os.remove(newname)
-            os.rename(oldname, newname)
-        else:
-            parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
-            child_file = args.o + "_" + node.name + "_golden.vcf.gz"
-            out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
-            add_parent_variants(parent_file, child_file, out_file)
-    end = time.time()
-    print("Done. Merging took {} seconds.".format(int(end - start)))
+    # print('Merging VCF files across the generations...')
+    # start = time.time()
+    # for node in t.traverse("preorder"):
+    #     if node is t:
+    #         continue # This is the root or its direct descendants
+    #     if node.up is t:
+    #         newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
+    #         oldname = args.o + "_" + node.name + "_golden.vcf.gz"
+    #         if os.path.exists(newname):
+    #             os.remove(newname)
+    #         os.rename(oldname, newname)
+    #     else:
+    #         parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
+    #         child_file = args.o + "_" + node.name + "_golden.vcf.gz"
+    #         out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
+    #         add_parent_variants(parent_file, child_file, out_file)
+    # end = time.time()
+    # print("Done. Merging took {} seconds.".format(int(end - start)))
 
 def pool_handler(ncpu, simulation_func, simulation_params):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     lock = manager.Lock()
     cond = manager.Condition()
-    queue = create_task_queue(manager, simulation_params)
+    queue = load_task_queue(manager.Queue(), simulation_params)
     pool.apply_async(process_handler, args=(lock, queue, cond, simulation_func))
     pool.close()
     pool.join()
@@ -242,23 +254,22 @@ def tree_total_dist(t):
     print("Total branches distance =", total_dist)
     return total_dist
 
-def add_parent_variants(parent_file, child_file, out_file):
-    vcf_reader_parent = vcf.Reader(filename=parent_file, strict_whitespace=True)
-    vcf_reader_child = vcf.Reader(filename=child_file, strict_whitespace=True)
-    out = bgzf.open(out_file, 'wb')
-    vcf_writer = vcf.Writer(out, vcf_reader_child)
+# def add_parent_variants(parent_file, child_file, out_file):
+#     vcf_reader_parent = vcf.Reader(filename=parent_file, strict_whitespace=True)
+#     vcf_reader_child = vcf.Reader(filename=child_file, strict_whitespace=True)
+#     out = bgzf.open(out_file, 'wb')
+#     vcf_writer = vcf.Writer(out, vcf_reader_child)
+#
+#     iterate_simulatnously = utils.walk_together(vcf_reader_parent,vcf_reader_child)
+#     for readers in iterate_simulatnously:
+#         if readers[1]:
+#             vcf_writer.write_record(readers[1])
+#         elif (readers[0]):
+#             vcf_writer.write_record(readers[0])
+#
+#     out.close()
 
-    iterate_simulatnously = utils.walk_together(vcf_reader_parent,vcf_reader_child)
-    for readers in iterate_simulatnously:
-        if readers[1]:
-            vcf_writer.write_record(readers[1])
-        elif (readers[0]):
-            vcf_writer.write_record(readers[0])
-
-    out.close()
-
-def create_task_queue(manager, simulation_params):
-    queue = manager.Queue()
+def load_task_queue(queue, simulation_params):
     t = simulation_params[0]
     args = simulation_params[1]
     all_input_variants = simulation_params[2]
