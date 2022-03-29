@@ -81,7 +81,7 @@ def simulate(args):
     if not output_params["no_fastq"]:
         generate_reads(output_params, sequencing_params)
     if output_params["save_vcf"]:
-        vcf_file_writer.close_file()
+        vcf_file_writer.close_file(add_parent_variants=True)
 
 
 def generate_reads(output_params, sequencing_params):
@@ -126,6 +126,7 @@ def extract_params(args):
     output_params = {
         "accession": args.name,
         "out_prefix": args.o+'_'+args.name,
+        "parent_prefix": args.o+'_'+args.parent_name if args.parent_name else None,
         "save_bam": args.bam,
         "save_vcf": args.vcf,
         "save_fasta": args.save_fasta or args.internal,
@@ -405,7 +406,7 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
     vcf_file_writer = None
     if output_params["save_vcf"]:
         vcf_header = [input_params["reference"]]
-        vcf_file_writer = VcfFileWriter(output_params["out_prefix"],output_params["accession"],vcf_header)
+        vcf_file_writer = VcfFileWriter(output_params["out_prefix"],output_params["parent_prefix"],output_params["accession"],vcf_header)
 
     return bam_file_writer, fasta_file_writer, vcf_file_writer
 

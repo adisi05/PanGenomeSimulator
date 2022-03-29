@@ -1,12 +1,16 @@
 import Bio.bgzf as bgzf
 import pathlib
-
+import vcf
+from vcf import utils
 
 
 class VcfFileWriter:
-    def __init__(self, out_prefix, accession, header=None):
+    def __init__(self, out_prefix, parent_prefix, accession, header=None):
+        self._out_prefix = out_prefix
+        self._parent_prefix = parent_prefix
 
-        vcf = pathlib.Path(out_prefix + '_golden.vcf.gz')
+        path = self._out_prefix + '_golden.vcf.gz' if self._parent_prefix else self._out_prefix + '_golden_final.vcf.gz'
+        vcf = pathlib.Path(path)
 
         # VCF OUTPUT
         self._file = None
@@ -50,7 +54,31 @@ class VcfFileWriter:
     def flush_buffer(self, last_time=False):
         pass
 
-    def close_file(self):
+    def close_file(self, add_parent_variants=False):
+        if add_parent_variants:
+            self.merge_parent_variants()
+
         self.flush_buffer(last_time=True)
         if self._file is not None:
             self._file.close()
+
+    def merge_parent_variants(self):
+        if not self._parent_prefix:
+            return
+
+        file_path = self._out_prefix + '_golden.vcf.gz'
+        parent_path = self._parent_prefix + '_golden_final.vcf.gz'
+        out_file = self._out_prefix + '_golden_final.vcf.gz'
+
+        vcf_reader_parent = vcf.Reader(filename=parent_path, strict_whitespace=True)
+        vcf_reader_child = vcf.Reader(filename=file_path, strict_whitespace=True)
+        out = bgzf.open(out_file, 'wb')
+        vcf_writer = vcf.Writer(out, vcf_reader_child)
+
+        iterate_simulatnously = utils.walk_together(vcf_reader_parent,vcf_reader_child)
+        for readers in iterate_simulatnously:
+            if readers[1]:
+                vcf_writer.write_record(readers[1])
+            elif (readers[0]):
+                vcf_writer.write_record(readers[0])
+        out.close()

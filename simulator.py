@@ -210,9 +210,11 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         # Root direct descendants
         new_args.dist = (node.dist + new_args.root_to_ref_dist) / new_args.total_dist
         new_args.r = new_args.root_fasta
+        new_args.parent_name = None
     else:
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = new_args.o + "_" + node.up.name + ".fasta"
+        new_args.parent_name = node.up.name
     new_args.input_variants = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
     return new_args
 
@@ -253,21 +255,6 @@ def tree_total_dist(t):
         total_dist += node.dist
     print("Total branches distance =", total_dist)
     return total_dist
-
-# def add_parent_variants(parent_file, child_file, out_file):
-#     vcf_reader_parent = vcf.Reader(filename=parent_file, strict_whitespace=True)
-#     vcf_reader_child = vcf.Reader(filename=child_file, strict_whitespace=True)
-#     out = bgzf.open(out_file, 'wb')
-#     vcf_writer = vcf.Writer(out, vcf_reader_child)
-#
-#     iterate_simulatnously = utils.walk_together(vcf_reader_parent,vcf_reader_child)
-#     for readers in iterate_simulatnously:
-#         if readers[1]:
-#             vcf_writer.write_record(readers[1])
-#         elif (readers[0]):
-#             vcf_writer.write_record(readers[0])
-#
-#     out.close()
 
 def load_task_queue(queue, simulation_params):
     t = simulation_params[0]
