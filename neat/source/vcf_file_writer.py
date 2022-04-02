@@ -55,12 +55,12 @@ class VcfFileWriter:
         pass
 
     def close_file(self, add_parent_variants=False):
-        if add_parent_variants:
-            self.merge_parent_variants()
-
         self.flush_buffer(last_time=True)
         if self._file is not None:
             self._file.close()
+
+        if add_parent_variants:
+            self.merge_parent_variants()
 
     def merge_parent_variants(self):
         if not self._parent_prefix:
