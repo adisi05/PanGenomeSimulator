@@ -129,7 +129,6 @@ def extract_params(args):
         "parent_prefix": args.o+'_'+args.parent_name if args.parent_name else None,
         "save_bam": args.bam,
         "save_vcf": args.vcf,
-        "save_fasta": args.save_fasta or args.internal,
         "no_fastq": args.no_fastq or args.internal,  # TODO maybe convert to save-fastq?
         "ploids": args.p  # TODO validate it's an output param
     }
@@ -400,7 +399,7 @@ def intialize_reads_writers(index_params, input_params, output_params, sequencin
     #                                         no_fastq=output_params["no_fastq"])
     # else:
     #     print('Bypassing FASTQ generation...')
-    fasta_file_writer = FastaFileWriter(output_params["save_fasta"], output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
+    fasta_file_writer = FastaFileWriter(output_params["out_prefix"], output_params["ploids"], index_params["line_width"])
     output_params["no_reads"] = output_params["no_fastq"] and not output_params["save_bam"]
 
     vcf_file_writer = None
