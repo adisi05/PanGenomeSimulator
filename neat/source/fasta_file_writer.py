@@ -1,3 +1,6 @@
+import os
+
+
 class FastaFileWriter:
     def __init__(self, out_prefix, ploidy, line_width):
 
@@ -7,8 +10,9 @@ class FastaFileWriter:
         self.line_width = line_width
         self.last_line_len = 0
         for hapl_idx in range(self.ploidy):
-            file_name = '{0}.fasta'.format(out_prefix) if ploidy == 1 else '{0}_{hapl_idx}.fasta'.format(
+            file_name = '{0}.fasta_temp'.format(out_prefix) if ploidy == 1 else '{0}_{hapl_idx}.fasta_temp'.format(
                 out_prefix, hapl_idx)
+            print("TEST file_name",file_name)
             open(file_name, 'w').close()
             self.files[hapl_idx] = file_name
 
@@ -50,7 +54,7 @@ class FastaFileWriter:
                     fasta_file.write(strDNA[i:strDNA_len])
                     self.last_line_len = strDNA_len - i
             fasta_file.close()
-
+            os.rename(self.files[hapl_idx], self.files[hapl_idx].removesuffix('_temp'))
 
     def flush_buffer(self, last_time=False):
         pass
