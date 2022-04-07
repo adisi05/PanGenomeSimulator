@@ -152,43 +152,29 @@ def main(raw_args=None):
 def pool_handler(ncpu, simulation_func, simulation_params):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
-    lock = manager.Lock()
     cond = manager.Condition()
-    queue = load_task_queue(manager.Queue(), simulation_params)
-    pool.apply_async(process_handler, args=(lock, queue, cond, simulation_func))
+    queue = Queue()
+    load_task_queue(queue, simulation_params)
+    for params in queue.queue:
+        pool.apply_async(process_handler, args=(params, cond, simulation_func))
     pool.close()
     pool.join()
 
-def process_handler(lock, queue, cond, simulation_func):
+def process_handler(simulation_params, cond, simulation_func):
     curr_proc = multiprocessing.current_process()
     print('TEST - current process:', curr_proc.name, curr_proc._identity)
-    stop = False
-
-    while not stop:
-        # Checking if queue not empty
-        lock.acquire()
-        if not queue.empty():
-            simulation_params = queue.get()
-            print("if not queue.empty(). simulation_params.r:", simulation_params.r)
-        else:
-            stop = True
-            print("Queue is empty")
-        lock.release()
-        if stop:
-            break
-        print("TEST, simulation_func=",simulation_func, "simulation_params.r=",simulation_params.r)
-        # When ancestor is ready - then start simulating
-        ancestor_path=simulation_params.r
-        while not os.path.exists(ancestor_path):
-            print("TEST: ", curr_proc.name, 'checking if ancestor exists')
-            with cond:
-                cond.wait()
-                print("TEST: " ,curr_proc.name, 'checking again if ancestor exists')
-        print("TEST: ", curr_proc, ", ancestor_path=",ancestor_path, "is ready")
-        simulation_func(simulation_params)
+    # When ancestor is ready - then start simulating
+    ancestor_path=simulation_params.r
+    while not os.path.exists(ancestor_path):
+        print("TEST: ", curr_proc.name, 'checking if ancestor exists')
         with cond:
-            print("TEST: ", curr_proc, " has finished simulation for ", simulation_params.name)
-            cond.notify_all()
+            cond.wait()
+            print("TEST: " ,curr_proc.name, 'checking again if ancestor exists')
+    print("TEST: ", curr_proc, ", ancestor_path=",ancestor_path, "is ready")
+    simulation_func(simulation_params)
+    with cond:
+        print("TEST: ", curr_proc, " has finished simulation for ", simulation_params.name)
+        cond.notify_all()
 
     return "Done"
 
@@ -266,7 +252,6 @@ def load_task_queue(queue, simulation_params):
             node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
             print("TEST, inside create_task_queue, node_params.name=",node_params.name)
             queue.put(node_params)
-    return queue
 
 if __name__ == "__main__":
     tt = time.time()
