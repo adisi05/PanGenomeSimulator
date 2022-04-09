@@ -76,30 +76,31 @@ def simulate(args):
     write_unmapped_to_bam(bam_file_writer, sequencing_params["paired_end"], output_params["save_bam"], unmapped_records)
 
     # close output files
+    fasta_file_writer.close_file()
     if output_params["save_bam"]:
         bam_file_writer.close_file()
     if not output_params["no_fastq"]:
-        generate_reads(output_params, sequencing_params)
+        generate_reads(fasta_file_writer.get_file(), sequencing_params)
     if output_params["save_vcf"]:
         vcf_file_writer.close_file(add_parent_variants=True)
 
 
-def generate_reads(output_params, sequencing_params):
-    print(output_params)
+def generate_reads(fasta_files, sequencing_params):
+    print(fasta_files)
     print(sequencing_params)
     # TODO test didn't break anything...
     paired = "-p" if sequencing_params['paired_end'] else ""
-    fasta_file = output_params['out_prefix']+".fasta"
-    fastq_file = output_params['out_prefix']+"_read"
+    fastq_files = [filename.removesuffix('.fasta') +"_read" for filename in fasta_files]
     read_length = sequencing_params['read_len']
     coverage = sequencing_params['coverage']
     insert_size = sequencing_params['fragment_size']
     insert_std = sequencing_params['fragment_std']
-    art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}".format(paired,fasta_file,read_length,coverage,fastq_file,insert_size,insert_std)
-    start = time.time()
-    os.system(art_command)
-    end = time.time()
-    print("ART reads simulation took {} seconds.".format(int(end - start)))
+    for fasta, fastq in zip(fasta_files,fastq_files):
+        art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}".format(paired,fasta,read_length,coverage,fastq,insert_size,insert_std)
+        start = time.time()
+        os.system(art_command)
+        end = time.time()
+        print("ART reads simulation took {} seconds.".format(int(end - start)))
 
 
 def parse_args(args):

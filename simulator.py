@@ -99,6 +99,7 @@ def main(raw_args=None):
 
     t = ete3.Tree(args.newick, format=1)
     print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
+    clear_previous_tree_output(args.o, t)
     args.total_dist = tree_total_dist(t)
 
     # Relate to one of the accessions (given by -a param) as the reference
@@ -119,7 +120,7 @@ def main(raw_args=None):
         pool_handler(args.max_threads, generate_for_node, simulation_params)
     else:
         print("TEST this is a single-process simulation")
-        queue = load_task_queue(Queue(), simulation_params)
+        queue = load_task_queue(simulation_params)
         while not queue.empty():
             args = queue.get()
             generate_for_node(args)
@@ -153,8 +154,7 @@ def pool_handler(ncpu, simulation_func, simulation_params):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     cond = manager.Condition()
-    queue = Queue()
-    load_task_queue(queue, simulation_params)
+    queue = load_task_queue(simulation_params)
     for params in queue.queue:
         pool.apply_async(process_handler, args=(params, cond, simulation_func))
     pool.close()
@@ -197,10 +197,44 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.parent_name = None
     else:
         new_args.dist = node.dist / new_args.total_dist
-        new_args.r = new_args.o + "_" + node.up.name + ".fasta"
+        new_args.r = get_fasta_filename(new_args.o, node.up.name)
         new_args.parent_name = node.up.name
     new_args.input_variants = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
     return new_args
+
+def get_output_filenames(prefix, name):
+    res = []
+    res.append(get_fasta_filename(prefix, name))
+    res.extend(get_reads_filenames(prefix, name))
+    res.extend(get_vcf_filenames(prefix, name))
+    res.append(get_bam_filename(prefix, name))
+    return res
+
+def get_fasta_filename(prefix, name):
+    return prefix + "_" + name + ".fasta"
+
+def get_reads_filenames(prefix, name):
+    return [prefix + "_" + name + "_read1.fq",
+            prefix + "_" + name + "_read2.fq",
+            prefix + "_" + name + "_read1.aln",
+            prefix + "_" + name + "_read2.aln"]
+
+def get_vcf_filenames(prefix, name):
+    return [prefix + "_" + name + "_golden.vcf.gz",
+            prefix + "_" + name + "_golden_final.vcf.gz"]
+
+def get_bam_filename(prefix, name):
+    return prefix + "_" + name + "_golden.bam"
+
+def clear_previous_tree_output(prefix, t):
+    for node in t.traverse("preorder"):
+        if node is t:
+            continue
+        else:
+            output_filenames = get_output_filenames(prefix, node.name)
+            for filename in output_filenames:
+                if os.path.exists(filename):
+                    os.remove(filename)
 
 def load_input_variants(input_vcf, ploids):
     print("Loading input variants...")
@@ -240,7 +274,8 @@ def tree_total_dist(t):
     print("Total branches distance =", total_dist)
     return total_dist
 
-def load_task_queue(queue, simulation_params):
+def load_task_queue(simulation_params):
+    queue = Queue()
     t = simulation_params[0]
     args = simulation_params[1]
     all_input_variants = simulation_params[2]
@@ -252,6 +287,7 @@ def load_task_queue(queue, simulation_params):
             node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
             print("TEST, inside create_task_queue, node_params.name=",node_params.name)
             queue.put(node_params)
+    return queue
 
 if __name__ == "__main__":
     tt = time.time()

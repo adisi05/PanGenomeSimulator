@@ -54,10 +54,15 @@ class FastaFileWriter:
                     fasta_file.write(strDNA[i:strDNA_len])
                     self.last_line_len = strDNA_len - i
             fasta_file.close()
-            os.rename(self.files[hapl_idx], self.files[hapl_idx].removesuffix('_temp'))
 
     def flush_buffer(self, last_time=False):
         pass
 
     def close_file(self):
-        pass
+        for hapl_idx in range(self.ploidy):
+            final_name = self.files[hapl_idx].removesuffix('_temp')
+            os.rename(self.files[hapl_idx], final_name)
+            self.files[hapl_idx] = final_name
+
+    def get_file(self):
+        return [self.files[hapl_idx] for hapl_idx in range(self.ploidy)]
