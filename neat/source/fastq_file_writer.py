@@ -1,59 +1,32 @@
-# import Bio.bgzf as bgzf
-# import pathlib
-#
-# from file_writer_utils import BUFFER_BATCH_SIZE
-#
-#
-# class FastqFileWriter:
-#     def __init__(self, out_prefix, paired=False, no_fastq=False):
-#         self.no_fastq = no_fastq
-#         if self.no_fastq:
-#             return
-#
-#         fq1 = pathlib.Path(out_prefix + '_read1.fq.gz')
-#         fq2 = pathlib.Path(out_prefix + '_read2.fq.gz')
-#         self._file1 = bgzf.open(fq1, 'w')
-#         self._file2 = None
-#         if paired:
-#             self._file2 = bgzf.open(fq2, 'w')
-#         self._buffer1 = []
-#         self._buffer2 = []
-#
-#     def write_record(self, read_name, read1, qual1, read2=None, qual2=None, orientation=None):
-#         if self.no_fastq:
-#             return
-#
-#         # Since read1 and read2 are Seq objects from Biopython, they have reverse_complement methods built-in
-#         (read1, quality1) = (read1, qual1)
-#         if read2 is not None and orientation is True:
-#             (read2, quality2) = (read2.reverse_complement(), qual2[::-1])
-#         elif read2 is not None and orientation is False:
-#             read2_tmp = read2
-#             qual2_tmp = qual2
-#             (read2, quality2) = (read1, qual1)
-#             (read1, quality1) = (read2_tmp.reverse_complement(), qual2_tmp[::-1])
-#
-#         self._buffer1.append('@' + read_name + '/1\n' + str(read1) + '\n+\n' + quality1 + '\n')
-#         if read2 is not None:
-#             self._buffer2.append('@' + read_name + '/2\n' + str(read2) + '\n+\n' + quality2 + '\n')
-#
-#     def flush_buffer(self, last_time=False):
-#         if self.no_fastq:
-#             return
-#
-#         if (len(self._buffer1) >= BUFFER_BATCH_SIZE) or (len(self._buffer1) and last_time):
-#             if not self.no_fastq:
-#                 self._file1.write(''.join(self._buffer1))
-#                 if len(self._buffer2):
-#                     self._file2.write(''.join(self._buffer2))
-#             self._buffer1 = []
-#             self._buffer2 = []
-#
-#     def close_file(self):
-#         if self.no_fastq:
-#             return
-#
-#         self.flush_buffer(last_time=True)
-#         self._file1.close()
-#         if self._file2 is not None:
-#             self._file2.close()
+import time
+import os
+
+
+class FastqFileWriter:
+
+    @staticmethod
+    def get_output_filenames(prefix, name):
+        return [prefix + "_" + name + "_read.fq",
+                prefix + "_" + name + "_read.aln",
+                prefix + "_" + name + "_read1.fq",
+                prefix + "_" + name + "_read2.fq",
+                prefix + "_" + name + "_read1.aln",
+                prefix + "_" + name + "_read2.aln"]
+
+    @staticmethod
+    def generate_reads(fasta_files, sequencing_params):
+        print(fasta_files)
+        print(sequencing_params)
+        paired = "-p" if sequencing_params['paired_end'] else ""
+        fastq_files = [filename.removesuffix('.fasta') + "_read" for filename in fasta_files]
+        read_length = sequencing_params['read_len']
+        coverage = sequencing_params['coverage']
+        insert_size = sequencing_params['fragment_size']
+        insert_std = sequencing_params['fragment_std']
+        for fasta, fastq in zip(fasta_files, fastq_files):
+            art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}"\
+                .format(paired, fasta, read_length, coverage, fastq, insert_size, insert_std)
+            start = time.time()
+            os.system(art_command)
+            end = time.time()
+            print("ART reads simulation took {} seconds.".format(int(end - start)))

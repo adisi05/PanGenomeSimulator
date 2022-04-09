@@ -9,6 +9,11 @@ from vcf import utils
 import os
 import Bio.bgzf as bgzf
 import random
+
+from neat.source.bam_file_writer import BamFileWriter
+from neat.source.fasta_file_writer import FastaFileWriter
+from neat.source.fastq_file_writer import FastqFileWriter
+from neat.source.vcf_file_writer import VcfFileWriter
 from neat.source.vcf_func import parse_vcf
 from queue import Queue
 
@@ -197,35 +202,37 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.parent_name = None
     else:
         new_args.dist = node.dist / new_args.total_dist
-        new_args.r = get_fasta_filename(new_args.o, node.up.name)
+        new_args.r = FastaFileWriter.get_output_filenames(new_args.o, node.up.name)[0]
         new_args.parent_name = node.up.name
     new_args.input_variants = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
     return new_args
 
 def get_output_filenames(prefix, name):
     res = []
-    res.append(get_fasta_filename(prefix, name))
-    res.extend(get_reads_filenames(prefix, name))
-    res.extend(get_vcf_filenames(prefix, name))
-    res.append(get_bam_filename(prefix, name))
+    res.extend(FastaFileWriter.get_output_filenames(prefix, name))
+    res.extend(FastqFileWriter.get_output_filenames(prefix, name))
+    res.extend(VcfFileWriter.get_output_filenames(prefix, name))
+    res.extend(BamFileWriter.get_output_filenames(prefix, name))
     return res
 
-def get_fasta_filename(prefix, name):
-    return prefix + "_" + name + ".fasta"
+# def get_fasta_filename(prefix, name):
+#     return prefix + "_" + name + ".fasta"
 
-def get_reads_filenames(prefix, name):
-    return [prefix + "_" + name + "_read1.fq",
-            prefix + "_" + name + "_read2.fq",
-            prefix + "_" + name + "_read1.aln",
-            prefix + "_" + name + "_read2.aln"]
+# def get_reads_filenames(prefix, name):
+#     return [prefix + "_" + name + "_read.fq",
+#             prefix + "_" + name + "_read.aln",
+#             prefix + "_" + name + "_read1.fq",
+#             prefix + "_" + name + "_read2.fq",
+#             prefix + "_" + name + "_read1.aln",
+#             prefix + "_" + name + "_read2.aln"]
 
-def get_vcf_filenames(prefix, name):
-    return [prefix + "_" + name + "_golden.vcf.gz",
-            prefix + "_" + name + "_golden_final.vcf.gz"]
-
-def get_bam_filename(prefix, name):
-    return prefix + "_" + name + "_golden.bam"
-
+# def get_vcf_filenames(prefix, name):
+#     return [prefix + "_" + name + "_golden.vcf.gz",
+#             prefix + "_" + name + "_golden_final.vcf.gz"]
+#
+# def get_bam_filename(prefix, name):
+#     return prefix + "_" + name + "_golden.bam"
+#
 def clear_previous_tree_output(prefix, t):
     for node in t.traverse("preorder"):
         if node is t:

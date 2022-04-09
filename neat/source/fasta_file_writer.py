@@ -2,6 +2,11 @@ import os
 
 
 class FastaFileWriter:
+
+    @staticmethod
+    def get_output_filenames(prefix, name):
+        return [prefix + "_" + name + ".fasta"]
+
     def __init__(self, out_prefix, ploidy, line_width):
 
         self.files = {}

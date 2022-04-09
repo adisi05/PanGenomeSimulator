@@ -71,6 +71,11 @@ SEQ_PACKED = {'=': 0, 'A': 1, 'C': 2, 'M': 3, 'G': 4, 'R': 5, 'S': 6, 'V': 7,
 
 # TODO find a better way to write output files
 class BamFileWriter:
+
+    @staticmethod
+    def get_output_filenames(prefix, name):
+        return [prefix + "_" + name + "_golden.bam"]
+
     def __init__(self, out_prefix, header=None):
 
         bam = pathlib.Path(out_prefix + '_golden.bam')

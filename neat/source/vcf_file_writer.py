@@ -5,6 +5,12 @@ from vcf import utils
 
 
 class VcfFileWriter:
+
+    @staticmethod
+    def get_output_filenames(prefix, name):
+        return [prefix + "_" + name + "_golden.vcf.gz",
+                prefix + "_" + name + "_golden_final.vcf.gz"]
+
     def __init__(self, out_prefix, parent_prefix, accession, header=None):
         self._out_prefix = out_prefix
         self._parent_prefix = parent_prefix
