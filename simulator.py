@@ -120,12 +120,13 @@ def main(raw_args=None):
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
 
-    simulation_params = (t, args, all_input_variants, input_variants_used)
+    queue = load_task_queue(t, args, all_input_variants, input_variants_used)
+    del all_input_variants
+
     if args.max_threads > 1:
-        pool_handler(args.max_threads, generate_for_node, simulation_params)
+        pool_handler(args.max_threads, generate_for_node, queue)
     else:
         print("TEST this is a single-process simulation")
-        queue = load_task_queue(simulation_params)
         while not queue.empty():
             args = queue.get()
             generate_for_node(args)
@@ -155,11 +156,10 @@ def main(raw_args=None):
     # end = time.time()
     # print("Done. Merging took {} seconds.".format(int(end - start)))
 
-def pool_handler(ncpu, simulation_func, simulation_params):
+def pool_handler(ncpu, simulation_func, queue):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     cond = manager.Condition()
-    queue = load_task_queue(simulation_params)
     for params in queue.queue:
         pool.apply_async(process_handler, args=(params, cond, simulation_func))
     pool.close()
@@ -281,12 +281,8 @@ def tree_total_dist(t):
     print("Total branches distance =", total_dist)
     return total_dist
 
-def load_task_queue(simulation_params):
+def load_task_queue(t, args, all_input_variants, input_variants_used):
     queue = Queue()
-    t = simulation_params[0]
-    args = simulation_params[1]
-    all_input_variants = simulation_params[2]
-    input_variants_used = simulation_params[3]
     for node in t.traverse("levelorder"): # AKA breadth first search
         if node is t:
             continue # This is the root - don't simulate for it
