@@ -164,7 +164,7 @@ def generate_concurrently(ncpu, queue):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     cond = manager.Condition()
-    pool.starmap(process_handler, zip(queue, repeat(cond)))
+    pool.imap(process_handler, zip(queue, repeat(cond)))
 
 def process_handler(simulation_params, cond):
     curr_proc = multiprocessing.current_process()
