@@ -1,6 +1,8 @@
 import argparse
 import copy
 import multiprocessing
+from itertools import repeat
+
 from neat import gen_reads
 import ete3
 import time
@@ -124,15 +126,9 @@ def main(raw_args=None):
     del all_input_variants
 
     if args.max_threads > 1:
-        pool_handler(args.max_threads, generate_for_node, queue)
+        generate_concurrently(args.max_threads, queue)
     else:
-        print("TEST this is a single-process simulation")
-        while not queue.empty():
-            args = queue.get()
-            generate_for_node(args)
-
-
-
+        generate_sequentially(queue)
 
     print('================================')
 
@@ -156,16 +152,21 @@ def main(raw_args=None):
     # end = time.time()
     # print("Done. Merging took {} seconds.".format(int(end - start)))
 
-def pool_handler(ncpu, simulation_func, queue):
+
+def generate_sequentially(queue):
+    print("TEST this is a single-process simulation")
+    while not queue.empty():
+        args = queue.get()
+        generate_for_node(args)
+
+
+def generate_concurrently(ncpu, queue):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     cond = manager.Condition()
-    for params in queue.queue:
-        pool.apply_async(process_handler, args=(params, cond, simulation_func))
-    pool.close()
-    pool.join()
+    pool.starmap(process_handler, zip(queue, repeat(cond)))
 
-def process_handler(simulation_params, cond, simulation_func):
+def process_handler(simulation_params, cond):
     curr_proc = multiprocessing.current_process()
     print('TEST - current process:', curr_proc.name, curr_proc._identity)
     # When ancestor is ready - then start simulating
@@ -176,7 +177,7 @@ def process_handler(simulation_params, cond, simulation_func):
             cond.wait()
             print("TEST: " ,curr_proc.name, 'checking again if ancestor exists')
     print("TEST: ", curr_proc, ", ancestor_path=",ancestor_path, "is ready")
-    simulation_func(simulation_params)
+    generate_for_node(simulation_params)
     with cond:
         print("TEST: ", curr_proc, " has finished simulation for ", simulation_params.name)
         cond.notify_all()
