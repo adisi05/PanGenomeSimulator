@@ -6,10 +6,7 @@ from itertools import repeat
 from neat import gen_reads
 import ete3
 import time
-import vcf
-from vcf import utils
 import os
-import Bio.bgzf as bgzf
 import random
 
 from neat.source.bam_file_writer import BamFileWriter
@@ -17,7 +14,6 @@ from neat.source.fasta_file_writer import FastaFileWriter
 from neat.source.fastq_file_writer import FastqFileWriter
 from neat.source.vcf_file_writer import VcfFileWriter
 from neat.source.vcf_func import parse_vcf
-from queue import Queue
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
@@ -122,13 +118,13 @@ def main(raw_args=None):
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
 
-    queue = load_task_queue(t, args, all_input_variants, input_variants_used)
+    task_list = load_task_list(t, args, all_input_variants, input_variants_used)
     del all_input_variants
 
     if args.max_threads > 1:
-        generate_concurrently(args.max_threads, queue)
+        generate_concurrently(args.max_threads, task_list)
     else:
-        generate_sequentially(queue)
+        generate_sequentially(task_list)
 
     print('================================')
 
@@ -152,21 +148,21 @@ def main(raw_args=None):
     # end = time.time()
     # print("Done. Merging took {} seconds.".format(int(end - start)))
 
-
-def generate_sequentially(queue):
+def generate_sequentially(task_list):
     print("TEST this is a single-process simulation")
-    while not queue.empty():
-        args = queue.get()
+    for args in task_list:
         generate_for_node(args)
 
-
-def generate_concurrently(ncpu, queue):
+def generate_concurrently(ncpu, task_list):
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     cond = manager.Condition()
-    pool.imap(process_handler, zip(queue, repeat(cond)))
+    pool.imap(process_handler, zip(task_list, repeat(cond)))
+    pool.close()
+    pool.join()
 
-def process_handler(simulation_params, cond):
+def process_handler(params_with_cond):
+    simulation_params, cond = params_with_cond
     curr_proc = multiprocessing.current_process()
     print('TEST - current process:', curr_proc.name, curr_proc._identity)
     # When ancestor is ready - then start simulating
@@ -282,16 +278,16 @@ def tree_total_dist(t):
     print("Total branches distance =", total_dist)
     return total_dist
 
-def load_task_queue(t, args, all_input_variants, input_variants_used):
-    queue = Queue()
+def load_task_list(t, args, all_input_variants, input_variants_used):
+    task_list = []
     for node in t.traverse("levelorder"): # AKA breadth first search
         if node is t:
             continue # This is the root - don't simulate for it
         else:
             node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
             print("TEST, inside create_task_queue, node_params.name=",node_params.name)
-            queue.put(node_params)
-    return queue
+            task_list.append(node_params)
+    return task_list
 
 if __name__ == "__main__":
     tt = time.time()
