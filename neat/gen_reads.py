@@ -456,7 +456,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
             span = (n[0], n[0] + len(n[1]))
             r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
             # Checks if there are any invalid nucleotides in the vcf items
-            any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist])
+            any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist]) #TODO 16-04-2022
             # Ensure reference sequence matches the nucleotide in the vcf
             if r_seq != n[1]:
                 n_skipped[0] += 1

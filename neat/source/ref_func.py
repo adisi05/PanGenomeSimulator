@@ -7,8 +7,8 @@ import random
 from Bio.Seq import Seq, MutableSeq
 from Bio import SeqIO
 
-OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
-ALLOWED_NUCL = ['A', 'C', 'G', 'T']
+OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True} #TODO 16-04-2022
+ALLOWED_NUCL = ['A', 'C', 'G', 'T'] #TODO 16-04-2022
 
 
 def index_ref(reference_path: str) -> list:

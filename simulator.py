@@ -7,13 +7,15 @@ from neat import gen_reads
 import ete3
 import time
 import os
-import random
+import pandas as pd
 
 from neat.source.bam_file_writer import BamFileWriter
 from neat.source.fasta_file_writer import FastaFileWriter
 from neat.source.fastq_file_writer import FastqFileWriter
 from neat.source.vcf_file_writer import VcfFileWriter
 from neat.source.vcf_func import parse_vcf
+
+# from memory_profiler import profile
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
@@ -76,6 +78,7 @@ def parse_args(raw_args=None):
 
     return parser.parse_args(raw_args)
 
+# @profile
 def main(raw_args=None):
     args = parse_args(raw_args)
     print("Using the next args:", args)
@@ -85,7 +88,7 @@ def main(raw_args=None):
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
         all_input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
     else:
-        all_input_variants = {}
+        all_input_variants = pd.DataFrame(columns=['dummy'])
 
     if not args.newick:
         print("No phylogenetic tree supplied")
@@ -109,16 +112,17 @@ def main(raw_args=None):
     args.root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     args.root_fasta = args.r
-    input_variants_used = {}
-    if all_input_variants:
+    # input_variants_used = {}
+    if not all_input_variants.empty:
         start = time.time()
-        input_variants_used = dict.fromkeys(all_input_variants, 0)
-        for chrom in all_input_variants.keys():
-            random.shuffle(all_input_variants[chrom])
+        # input_variants_used = dict.fromkeys(all_input_variants, 0)
+        # for chrom in all_input_variants.keys():
+        #     random.shuffle(all_input_variants[chrom])
+        all_input_variants = all_input_variants.sample(frac=1).reset_index(drop=True)
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
 
-    task_list = load_task_list(t, args, all_input_variants, input_variants_used)
+    task_list = load_task_list(t, args, all_input_variants)
     del all_input_variants
 
     if args.max_threads > 1:
@@ -201,8 +205,8 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = FastaFileWriter.get_output_filenames(new_args.o, node.up.name)[0]
         new_args.parent_name = node.up.name
-    new_args.input_variants = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
-    return new_args
+    new_args.input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
+    return new_args, input_variants_used
 
 def get_output_filenames(prefix, name):
     res = []
@@ -247,20 +251,21 @@ def load_input_variants(input_vcf, ploids):
     input_variants = None
     if input_vcf:
         (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
-        for k in sorted(input_variants.keys()):
-            input_variants[k].sort()
     end = time.time()
     print("Loading input variants took {} seconds.".format(int(end - start)))
     return input_variants
 
 def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
-    branch_input_variants ={}
-    for k in sorted(input_variants.keys()):
-        branch_input_variants_amount = round(branch_dist * len(input_variants[k]))
-        branch_input_variants[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + branch_input_variants_amount,len(input_variants[k]))]
-        branch_input_variants[k].sort()
-        input_variants_used[k] = input_variants_used[k] + branch_input_variants_amount
-    return branch_input_variants
+    # branch_input_variants ={}
+    # for k in sorted(input_variants.keys()):
+    #     branch_input_variants_amount = round(branch_dist * len(input_variants[k]))
+    #     branch_input_variants[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + branch_input_variants_amount,len(input_variants[k]))]
+    #     branch_input_variants[k].sort()
+    #     input_variants_used[k] = input_variants_used[k] + branch_input_variants_amount
+    # return branch_input_variants
+    branch_input_variants_amount = round(branch_dist * len(input_variants))
+    variants_used_including_this = min(input_variants_used+branch_input_variants_amount,len(input_variants))
+    return input_variants.loc[input_variants_used:variants_used_including_this, :], variants_used_including_this
 
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0
@@ -278,13 +283,14 @@ def tree_total_dist(t):
     print("Total branches distance =", total_dist)
     return total_dist
 
-def load_task_list(t, args, all_input_variants, input_variants_used):
+def load_task_list(t, args, all_input_variants):
     task_list = []
+    input_variants_used = 0
     for node in t.traverse("levelorder"): # AKA breadth first search
         if node is t:
             continue # This is the root - don't simulate for it
         else:
-            node_params = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
+            node_params, input_variants_used = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
             print("TEST, inside create_task_queue, node_params.name=",node_params.name)
             task_list.append(node_params)
     return task_list

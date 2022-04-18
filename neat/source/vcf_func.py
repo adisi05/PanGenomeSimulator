@@ -3,6 +3,8 @@ import time
 import os
 import re
 import random
+import pandas as pd
+
 
 def parse_line(vcf_line, col_dict, col_samp):
     # these were in the original. Not sure the point other than debugging.
@@ -172,19 +174,24 @@ def parse_vcf(vcf_path, tumor_normal=False, ploidy=2):
                         print('\n\nERROR: Input VCF must have a "NORMAL" and "TUMOR" column.\n')
     f.close()
 
-    vars_out = {}
+    tuples_list = []
     for r in all_vars.keys():
-        vars_out[r] = [list(all_vars[r][k]) for k in sorted(all_vars[r].keys())]
-        # prune unnecessary sequence from ref/alt alleles
-        for i in range(len(vars_out[r])):
-            while len(vars_out[r][i][1]) > 1 and all([n[-1] == vars_out[r][i][1][-1] for n in vars_out[r][i][2]]) \
-                    and all([len(n) > 1 for n in vars_out[r][i][2]]):
-                vars_out[r][i][1] = vars_out[r][i][1][:-1]
-                vars_out[r][i][2] = [n[:-1] for n in vars_out[r][i][2]]
-            vars_out[r][i] = tuple(vars_out[r][i])
+        tuples_list = tuples_list + [(r,)+t for t in all_vars[r].values()]
+    df = pd.DataFrame.from_records(tuples_list, columns=['chrom', 'pos', 'allele', 'alternatives', 'frequency', 'genotype'])
+    df[['chrom', 'allele']] = df[['chrom', 'allele']].astype(str)
+    df['pos'] = df['pos'].astype(int)
+    # df.set_index(['chrom', 'pos'])
 
-    print('found', sum([len(n) for n in all_vars.values()]), 'valid variants in input vcf.')
+    # prune unnecessary sequence from ref/alt alleles
+    for i, row in df.iterrows():
+        while len(row['allele'])>1 and all([n[-1] == row['allele'][-1] for n in row['alternatives']]) \
+                and all([len(n) > 1 for n in row['alternatives']]):
+            df.at[i, 'allele'] = row['allele'][:-1]
+            df.at[i,'alternatives'] = [n[:-1] for n in row['alternatives']]
+
+    print('found', len(df), 'valid variants in input vcf.')
     print(' *', n_skipped, 'variants skipped: (qual filtered / ref genotypes / invalid syntax)')
     print(' *', n_skipped_because_hash, 'variants skipped due to multiple variants found per position')
     print('--------------------------------')
-    return samp_names, vars_out
+    # return samp_names, vars_out
+    return samp_names, df
