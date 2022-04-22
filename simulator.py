@@ -265,7 +265,7 @@ def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
     # return branch_input_variants
     branch_input_variants_amount = round(branch_dist * len(input_variants))
     variants_used_including_this = min(input_variants_used+branch_input_variants_amount,len(input_variants))
-    return input_variants.loc[input_variants_used:variants_used_including_this, :], variants_used_including_this
+    return input_variants.loc[input_variants_used:variants_used_including_this, :].reset_index(drop=True), variants_used_including_this
 
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0

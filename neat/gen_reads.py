@@ -23,9 +23,7 @@ import bisect
 import pickle
 import numpy as np
 import pathlib
-import os
-
-from Bio.SeqUtils import seq1
+import pandas as pd
 
 from neat.source.fastq_file_writer import FastqFileWriter
 from source.bam_file_writer import BamFileWriter
@@ -451,14 +449,15 @@ def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
                     - any alt allele contains anything other than allowed characters"""
     valid_variants_from_vcf = []
     n_skipped = [0, 0, 0]
-    if input_variants and ref_index[chrom][0] in input_variants:
-        for n in input_variants[ref_index[chrom][0]]:
-            span = (n[0], n[0] + len(n[1]))
+    if (not input_variants.empty) and (ref_index[chrom][0] in input_variants.chrom.unique()):
+        for index, variant in input_variants[input_variants.chrom==ref_index[chrom][0]].iterrows():
+            span = (variant.pos, variant.pos + len(variant.allele))#TODO check pos
             r_seq = str(ref_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
             # Checks if there are any invalid nucleotides in the vcf items
-            any_bad_nucl = any((nn not in ALLOWED_NUCL) for nn in [item for sublist in n[2] for item in sublist]) #TODO 16-04-2022
+            all_alternatives_nuleotides = [nuc for alt in variant.alternatives for nuc in alt]
+            any_bad_nucl = any([(nuc not in ALLOWED_NUCL) for nuc in all_alternatives_nuleotides])
             # Ensure reference sequence matches the nucleotide in the vcf
-            if r_seq != n[1]:
+            if r_seq != variant.allele:
                 n_skipped[0] += 1
                 continue
             # Ensure that we aren't trying to insert into an N region
@@ -470,7 +469,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
                 n_skipped[2] += 1
                 continue
             # If it passes the above tests, append to valid variants list
-            valid_variants_from_vcf.append(n)
+            valid_variants_from_vcf.append(variant)
 
         print('found', len(valid_variants_from_vcf), 'valid variants for ' +
               ref_index[chrom][0] + ' in input VCF...')
@@ -481,7 +480,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, ref_sequence):
             print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
     end = time.time()
     print("Done. Pruning took {} seconds.".format(int(end - start)))
-    return valid_variants_from_vcf
+    return pd.DataFrame(valid_variants_from_vcf, columns=input_variants.columns).reset_index(drop=True)
 
 def load_sampling_window_params(sequencing_params):
     # determine sampling windows based on read length, large N regions, and structural mutations.
@@ -574,11 +573,11 @@ def get_vars_in_window(end, overlap, start, v_index_from_prev, valid_variants_fr
     updated = False
     buffer_added = 0
     for j in range(v_index_from_prev, len(valid_variants_from_vcf)):
-        variants_position = valid_variants_from_vcf[j][0]
+        variants_position = valid_variants_from_vcf.loc[j,'pos'].item()
         # update: changed <= to <, so variant cannot be inserted in first position
         if start < variants_position < end:
             # vcf --> array coords
-            vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf[j][1:])))
+            vars_in_window.append(tuple([variants_position - 1] + list(valid_variants_from_vcf.loc[j,'allele':])))
         if variants_position >= end - overlap - 1 and updated is False:
             updated = True
             v_index_from_prev = j
