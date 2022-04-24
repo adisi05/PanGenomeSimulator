@@ -205,7 +205,14 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = FastaFileWriter.get_output_filenames(new_args.o, node.up.name)[0]
         new_args.parent_name = node.up.name
-    new_args.input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
+    branch_input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
+    if args.max_threads > 1:
+        new_args.input_variants = None
+        new_args.input_variants_path = args.o + "_" + node.name + "_input_variants.csv"
+        branch_input_variants.to_csv(new_args.input_variants_path, index=False)
+    else:
+        new_args.input_variants = branch_input_variants
+        new_args.input_variants_path = None
     return new_args, input_variants_used
 
 def get_output_filenames(prefix, name):
@@ -256,13 +263,6 @@ def load_input_variants(input_vcf, ploids):
     return input_variants
 
 def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
-    # branch_input_variants ={}
-    # for k in sorted(input_variants.keys()):
-    #     branch_input_variants_amount = round(branch_dist * len(input_variants[k]))
-    #     branch_input_variants[k] = input_variants[k][input_variants_used[k]:min(input_variants_used[k] + branch_input_variants_amount,len(input_variants[k]))]
-    #     branch_input_variants[k].sort()
-    #     input_variants_used[k] = input_variants_used[k] + branch_input_variants_amount
-    # return branch_input_variants
     branch_input_variants_amount = round(branch_dist * len(input_variants))
     variants_used_including_this = min(input_variants_used+branch_input_variants_amount,len(input_variants))
     return input_variants.loc[input_variants_used:variants_used_including_this, :].reset_index(drop=True), variants_used_including_this

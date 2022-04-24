@@ -24,6 +24,7 @@ import sys
 import time
 
 import numpy as np
+import os
 import pandas as pd
 
 from neat.source.fastq_file_writer import FastqFileWriter
@@ -97,6 +98,7 @@ def extract_params(args):
         "reference": args.r,
         # "input_vcf": args.v,
         "input_variants": args.input_variants,
+        "input_variants_path": args.input_variants_path,
         "input_bed": args.tr,
         "discard_bed": args.dr
     }
@@ -421,7 +423,8 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
         read_ref(input_params["reference"], index_params["ref_index"][chrom], sequencing_params["n_handling"])
     progress_params = intialize_progress_bar_params(index_params["n_regions"])
 
-    valid_variants_from_vcf = prune_invalid_variants(chrom, input_params["input_variants"], index_params["ref_index"],
+    variants_from_vcf = get_input_variants_from_vcf(input_params)
+    valid_variants_from_vcf = prune_invalid_variants(chrom, variants_from_vcf, index_params["ref_index"],
                                                      index_params["ref_sequence"])
     all_variants_out = {}
     sequences = None
@@ -453,6 +456,16 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
 
     print("Simulating chromosome {} took {} seconds.".format(index_params["ref_index"][chrom][0],
                                                              int(time.time() - t_start)))
+
+
+def get_input_variants_from_vcf(input_params):
+    if input_params["input_variants"] is None:
+        variants_from_vcf = pd.read_csv(input_params["input_variants_path"])
+        variants_from_vcf[['chrom', 'allele']] = variants_from_vcf[['chrom', 'allele']].astype(str)
+        variants_from_vcf['pos'] = variants_from_vcf['pos'].astype(int)
+        os.remove(input_params["input_variants_path"])
+        input_params["input_variants"] = variants_from_vcf
+    return input_params["input_variants"]
 
 
 def intialize_progress_bar_params(n_regions):
