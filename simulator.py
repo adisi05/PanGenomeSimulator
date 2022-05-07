@@ -15,11 +15,10 @@ from neat.source.fastq_file_writer import FastqFileWriter
 from neat.source.vcf_file_writer import VcfFileWriter
 from neat.source.vcf_func import parse_vcf
 
-# from memory_profiler import profile
 
 def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
     parser.add_argument('-R', type=int, required=True, metavar='read length', help="The desired read length")
     parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
@@ -74,27 +73,26 @@ def parse_args(raw_args=None):
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
     parser.add_argument('-newick', type=str, required=False, metavar='newick tree', help="Path to reference newick")
     parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
-    parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1, help='maximum threads number')
+    parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1,
+                        help='maximum threads number')
 
     return parser.parse_args(raw_args)
 
-# @profile
+
 def main(raw_args=None):
     args = parse_args(raw_args)
     print("Using the next args:", args)
+    load_default_args(args)
 
     # parse input variants, if present
     if args.v:
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        all_input_variants = load_input_variants(args.v, args.p) # input_vcf = args.v , ploids = args.p
+        all_input_variants = load_input_variants(args.v, args.p)  # input_vcf = args.v , ploids = args.p
     else:
         all_input_variants = pd.DataFrame(columns=['dummy'])
 
     if not args.newick:
         print("No phylogenetic tree supplied")
-        args.name = "simulation"
-        args.dist = 1
-        args.internal = False
         args.input_variants = all_input_variants
         print("Generating sequence started")
         start = time.time()
@@ -104,7 +102,7 @@ def main(raw_args=None):
         return
 
     t = ete3.Tree(args.newick, format=1)
-    print("Using the next phylogenetic tree:\n",t.get_ascii(show_internal=True))
+    print("Using the next phylogenetic tree:\n", t.get_ascii(show_internal=True))
     clear_previous_tree_output(args.o, t)
     args.total_dist = tree_total_dist(t)
 
@@ -112,12 +110,8 @@ def main(raw_args=None):
     args.root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     args.root_fasta = args.r
-    # input_variants_used = {}
     if not all_input_variants.empty:
         start = time.time()
-        # input_variants_used = dict.fromkeys(all_input_variants, 0)
-        # for chrom in all_input_variants.keys():
-        #     random.shuffle(all_input_variants[chrom])
         all_input_variants = all_input_variants.sample(frac=1).reset_index(drop=True)
         end = time.time()
         print("Suffling input variants was done in {} seconds.".format(int(end - start)))
@@ -132,30 +126,21 @@ def main(raw_args=None):
 
     print('================================')
 
-    # TODO take care of this - to do also in parallel?
-    # print('Merging VCF files across the generations...')
-    # start = time.time()
-    # for node in t.traverse("preorder"):
-    #     if node is t:
-    #         continue # This is the root or its direct descendants
-    #     if node.up is t:
-    #         newname = args.o + "_" + node.name + "_golden_final.vcf.gz"
-    #         oldname = args.o + "_" + node.name + "_golden.vcf.gz"
-    #         if os.path.exists(newname):
-    #             os.remove(newname)
-    #         os.rename(oldname, newname)
-    #     else:
-    #         parent_file = args.o + "_" + node.up.name + "_golden_final.vcf.gz"
-    #         child_file = args.o + "_" + node.name + "_golden.vcf.gz"
-    #         out_file = args.o + "_" + node.name + "_golden_final.vcf.gz"
-    #         add_parent_variants(parent_file, child_file, out_file)
-    # end = time.time()
-    # print("Done. Merging took {} seconds.".format(int(end - start)))
+
+def load_default_args(args):
+    args.name = "simulation"
+    args.dist = 1
+    args.internal = False
+    args.input_variants = None
+    args.input_variants_path = None
+    args.parent_name = None
+
 
 def generate_sequentially(task_list):
     print("TEST this is a single-process simulation")
     for args in task_list:
         generate_for_node(args)
+
 
 def generate_concurrently(ncpu, task_list):
     manager = multiprocessing.Manager()
@@ -165,18 +150,19 @@ def generate_concurrently(ncpu, task_list):
     pool.close()
     pool.join()
 
+
 def process_handler(params_with_cond):
     simulation_params, cond = params_with_cond
     curr_proc = multiprocessing.current_process()
     print('TEST - current process:', curr_proc.name, curr_proc._identity)
     # When ancestor is ready - then start simulating
-    ancestor_path=simulation_params.r
+    ancestor_path = simulation_params.r
     while not os.path.exists(ancestor_path):
         print("TEST: ", curr_proc.name, 'checking if ancestor exists')
         with cond:
             cond.wait()
-            print("TEST: " ,curr_proc.name, 'checking again if ancestor exists')
-    print("TEST: ", curr_proc, ", ancestor_path=",ancestor_path, "is ready")
+            print("TEST: ", curr_proc.name, 'checking again if ancestor exists')
+    print("TEST: ", curr_proc, ", ancestor_path=", ancestor_path, "is ready")
     generate_for_node(simulation_params)
     with cond:
         print("TEST: ", curr_proc, " has finished simulation for ", simulation_params.name)
@@ -184,13 +170,15 @@ def process_handler(params_with_cond):
 
     return "Done"
 
+
 def generate_for_node(args):
-    print("TEST inside generate_for_node, args.r=",args.r)
+    print("TEST inside generate_for_node, args.r=", args.r)
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
     gen_reads.simulate(args)
     end = time.time()
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
+
 
 def get_node_args_for_simulation(node, args, all_input_variants, input_variants_used):
     new_args = copy.copy(args)
@@ -205,7 +193,8 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = FastaFileWriter.get_output_filenames(new_args.o, node.up.name)[0]
         new_args.parent_name = node.up.name
-    branch_input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants, input_variants_used)
+    branch_input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants,
+                                                                           input_variants_used)
     if args.max_threads > 1:
         new_args.input_variants = None
         new_args.input_variants_path = args.o + "_" + node.name + "_input_variants.csv"
@@ -215,6 +204,7 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.input_variants_path = None
     return new_args, input_variants_used
 
+
 def get_output_filenames(prefix, name):
     res = []
     res.extend(FastaFileWriter.get_output_filenames(prefix, name))
@@ -223,24 +213,7 @@ def get_output_filenames(prefix, name):
     res.extend(BamFileWriter.get_output_filenames(prefix, name))
     return res
 
-# def get_fasta_filename(prefix, name):
-#     return prefix + "_" + name + ".fasta"
 
-# def get_reads_filenames(prefix, name):
-#     return [prefix + "_" + name + "_read.fq",
-#             prefix + "_" + name + "_read.aln",
-#             prefix + "_" + name + "_read1.fq",
-#             prefix + "_" + name + "_read2.fq",
-#             prefix + "_" + name + "_read1.aln",
-#             prefix + "_" + name + "_read2.aln"]
-
-# def get_vcf_filenames(prefix, name):
-#     return [prefix + "_" + name + "_golden.vcf.gz",
-#             prefix + "_" + name + "_golden_final.vcf.gz"]
-#
-# def get_bam_filename(prefix, name):
-#     return prefix + "_" + name + "_golden.bam"
-#
 def clear_previous_tree_output(prefix, t):
     for node in t.traverse("preorder"):
         if node is t:
@@ -250,6 +223,7 @@ def clear_previous_tree_output(prefix, t):
             for filename in output_filenames:
                 if os.path.exists(filename):
                     os.remove(filename)
+
 
 def load_input_variants(input_vcf, ploids):
     print("Loading input variants...")
@@ -262,10 +236,13 @@ def load_input_variants(input_vcf, ploids):
     print("Loading input variants took {} seconds.".format(int(end - start)))
     return input_variants
 
+
 def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
     branch_input_variants_amount = round(branch_dist * len(input_variants))
-    variants_used_including_this = min(input_variants_used+branch_input_variants_amount,len(input_variants))
-    return input_variants.loc[input_variants_used:variants_used_including_this, :].reset_index(drop=True), variants_used_including_this
+    variants_used_including_this = min(input_variants_used + branch_input_variants_amount, len(input_variants))
+    return input_variants.loc[input_variants_used:variants_used_including_this, :].reset_index(
+        drop=True), variants_used_including_this
+
 
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0
@@ -276,6 +253,7 @@ def set_ref_as_accession(accession, t):
         ref_node.delete()
     return root_to_ref_dist
 
+
 def tree_total_dist(t):
     total_dist = 0
     for node in t.traverse("preorder"):
@@ -283,17 +261,20 @@ def tree_total_dist(t):
     print("Total branches distance =", total_dist)
     return total_dist
 
+
 def load_task_list(t, args, all_input_variants):
     task_list = []
     input_variants_used = 0
-    for node in t.traverse("levelorder"): # AKA breadth first search
+    for node in t.traverse("levelorder"):  # AKA breadth first search
         if node is t:
-            continue # This is the root - don't simulate for it
+            continue  # This is the root - don't simulate for it
         else:
-            node_params, input_variants_used = get_node_args_for_simulation(node, args, all_input_variants, input_variants_used)
-            print("TEST, inside create_task_queue, node_params.name=",node_params.name)
+            node_params, input_variants_used = get_node_args_for_simulation(node, args, all_input_variants,
+                                                                            input_variants_used)
+            print("TEST, inside create_task_queue, node_params.name=", node_params.name)
             task_list.append(node_params)
     return task_list
+
 
 if __name__ == "__main__":
     tt = time.time()
