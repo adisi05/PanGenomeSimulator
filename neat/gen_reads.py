@@ -26,6 +26,7 @@ import time
 import numpy as np
 import os
 import pandas as pd
+from pybedtools import BedTool
 
 from neat.source.fastq_file_writer import FastqFileWriter
 from source.SequenceContainer import SequenceContainer, ReadContainer, parse_input_mutation_model
@@ -367,11 +368,14 @@ def load_mutation_model(mutation_params):
 
 # parse input mutation rate rescaling regions, if present
 def load_mutation_regions(mutation_params):
-    # TODO convert to pandas dataframe
+    #TODO convert to pandas dataframe
     mutation_params["mut_rate_regions"] = {}
     mutation_params["mut_rate_values"] = {}
     if mutation_params["mut_bed"] is not None:
         try:
+            test_adi = BedTool(mutation_params["mut_bed"])
+            test_adi_df = test_adi.to_dataframe()
+            print("TEST chrome=1", test_adi)
             with open(mutation_params["mut_bed"], 'r') as f:
                 for line in f:
                     [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
