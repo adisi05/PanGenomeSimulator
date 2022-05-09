@@ -183,7 +183,7 @@ class SequenceContainer:
         self.trinuc_bias = [None for _ in range(self.ploidy)]
         for p in range(self.ploidy):
             for i in range(self.win_buffer + 1, self.seq_len - 1):
-                # TODO (instead of 7?) should choose model here according to the annotation
+                # TODO (instead of 7?) should choose model here according to the annotation. Update: not sure
                 trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
             self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
                                                        range(self.win_buffer + 1, self.seq_len - 1))
@@ -250,7 +250,7 @@ class SequenceContainer:
         self.trinuc_bias = [None for _ in range(self.ploidy)]
         for p in range(self.ploidy):
             for i in range(self.win_buffer + 1, self.seq_len - 1):
-                # TODO (instead of 7?) should choose model here according to the annotation
+                # TODO (instead of 7?) should choose model here according to the annotation. Update: not sure
                 trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
             self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
                                                        range(self.win_buffer + 1, self.seq_len - 1))
@@ -502,7 +502,7 @@ class SequenceContainer:
                 # try to find suitable places to insert indels
                 event_pos = -1
                 for attempt in range(MAX_ATTEMPTS):
-                    event_pos = random.randint(self.win_buffer, self.seq_len - 1)
+                    event_pos = random.randint(self.win_buffer, self.seq_len - 1) #TODO_should consider annotations
                     for p in which_ploid:
                         if self.black_list[p][event_pos]:
                             event_pos = -1
@@ -567,10 +567,10 @@ class SequenceContainer:
                     # based on the mutation model for the specified ploid, choose a SNP location based on trinuc bias
                     # (if there are multiple ploids, choose one at random)
                     if IGNORE_TRINUC:
-                        event_pos = random.randint(self.win_buffer + 1, self.seq_len - 2)
+                        event_pos = random.randint(self.win_buffer + 1, self.seq_len - 2) #TODO_should consider annotations
                     else:
                         ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
-                        event_pos = self.trinuc_bias[ploid_to_use].sample()
+                        event_pos = self.trinuc_bias[ploid_to_use].sample() #TODO_should consider annotations???? or no need?
                     for p in which_ploid:
                         if self.black_list[p][event_pos]:
                             event_pos = -1
@@ -595,7 +595,7 @@ class SequenceContainer:
             all_snps[p] = [n for n in all_snps[p] if self.black_list[p][n[0]] != 1]
 
         # MODIFY REFERENCE STRING: SNPS
-        for i in range(len(all_snps)):
+        for i in range(len(all_snps)): #TODO here should update annotation? I dont think so...
             temp = MutableSeq(self.sequences[i])
             for j in range(len(all_snps[i])):
                 v_pos = all_snps[i][j][0]
@@ -615,7 +615,7 @@ class SequenceContainer:
         all_indels_ins = [sorted([list(m) for m in n]) for n in all_indels]
 
         # MODIFY REFERENCE STRING: INDELS
-        for i in range(len(all_indels_ins)):
+        for i in range(len(all_indels_ins)): #TODO here should update annotation
             rolling_adj = 0
             temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
 
