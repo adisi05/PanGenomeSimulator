@@ -368,30 +368,37 @@ def load_mutation_model(mutation_params):
 
 # parse input mutation rate rescaling regions, if present
 def load_mutation_regions(mutation_params):
-    #TODO convert to pandas dataframe
-    mutation_params["mut_rate_regions"] = {}
-    mutation_params["mut_rate_values"] = {}
+    # mutation_params["mut_rate_regions"] = {}
+    # mutation_params["mut_rate_values"] = {}
     if mutation_params["mut_bed"] is not None:
         try:
             test_adi = BedTool(mutation_params["mut_bed"])
-            test_adi_df = test_adi.to_dataframe()
-            print("TEST chrome=1", test_adi)
-            with open(mutation_params["mut_bed"], 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
-                    mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
-                    (pos1, pos2) = (int(pos1), int(pos2))
-                    if len(mut_str) and (pos2 - pos1) > 1:
-                        # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
-                        mutation_params["mut_rate"] = max([0.0, min([float(mut_str[0][9:]), 0.3])])
-                        if my_chr not in mutation_params["mut_rate_regions"]:
-                            mutation_params["mut_rate_regions"][my_chr] = [-1]
-                            mutation_params["mut_rate_values"][my_chr] = [0.0]
-                        mutation_params["mut_rate_regions"][my_chr].extend([pos1, pos2])
-                        # TODO figure out what the next line is supposed to do and fix
-                        mutation_params["mut_rate_values"].extend([mutation_params["mut_rate"] * (pos2 - pos1)] * 2)
+            test_adi_df = test_adi.to_dataframe(comment="#")
+            print("TEST test_adi\n", test_adi)
+            print("TEST test_adi_df\n", test_adi_df)
+            #TODO group features by chromosome
+            #TODO should I filter by score and strand?
+            #TODO what is frame?
+            #TODO check if it's going to be different in BED or GFF or GTF
+            annotations_df = test_adi_df.loc[:,['seqname','feature','start','end']]
+            print("TEST annotations_df\n", annotations_df)
+            mutation_params["genome_annotations"] = annotations_df
+            # with open(mutation_params["mut_bed"], 'r') as f:
+            #     for line in f:
+            #         [my_chr, pos1, pos2, meta_data] = line.strip().split('\t')[:4]
+            #         mut_str = re.findall(r"mut_rate=.*?(?=;)", meta_data + ';')
+            #         (pos1, pos2) = (int(pos1), int(pos2))
+            #         if len(mut_str) and (pos2 - pos1) > 1:
+            #             # mut_rate = #_mutations / length_of_region, let's bound it by a reasonable amount
+            #             mutation_params["mut_rate"] = max([0.0, min([float(mut_str[0][9:]), 0.3])])
+            #             if my_chr not in mutation_params["mut_rate_regions"]:
+            #                 mutation_params["mut_rate_regions"][my_chr] = [-1]
+            #                 mutation_params["mut_rate_values"][my_chr] = [0.0]
+            #             mutation_params["mut_rate_regions"][my_chr].extend([pos1, pos2])
+            #             # TODO figure out what the next line is supposed to do and fix
+            #             mutation_params["mut_rate_values"].extend([mutation_params["mut_rate"] * (pos2 - pos1)] * 2)
         except IOError:
-            print("\nProblem reading mutational BED file.\n")
+            print("\nProblem reading annotation (BED/GFF) file.\n")
             sys.exit(1)
 
 
@@ -433,7 +440,7 @@ def simulate_chrom(general_params, input_params, output_params, mutation_params,
     all_variants_out = {}
     sequences = None
 
-    # TODO add large random structural variants
+    #TODO add large random structural variants
 
     load_sampling_window_params(sequencing_params)
     print('--------------------------------')
@@ -549,6 +556,7 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
                              chrom, read_name_count, unmapped_records, progress_params,
                              valid_variants_from_vcf, all_variants_out, sequences, i):
     (initial_position, final_position) = index_params["n_regions"]['non_N'][i]
+    #TODO understand what is target_size???
     number_target_windows = max([1, (final_position - initial_position) // sequencing_params["target_size"]])
     base_pair_distance = int((final_position - initial_position) / float(number_target_windows))
     # if for some reason our region is too small to process, skip it! (sorry)
@@ -556,6 +564,7 @@ def apply_variants_to_region(general_params, input_params, output_params, mutati
         "overlap_min_window_size"]:
         return sequences
     start = initial_position
+    current_annotation = None #TODO conclude what is the next annotation change
     end = min([start + base_pair_distance, final_position])
     vars_from_prev_overlap = []
     v_index_from_prev = 0

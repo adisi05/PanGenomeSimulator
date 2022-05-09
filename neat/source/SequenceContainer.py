@@ -183,6 +183,7 @@ class SequenceContainer:
         self.trinuc_bias = [None for _ in range(self.ploidy)]
         for p in range(self.ploidy):
             for i in range(self.win_buffer + 1, self.seq_len - 1):
+                # TODO (instead of 7?) should choose model here according to the annotation
                 trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
             self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
                                                        range(self.win_buffer + 1, self.seq_len - 1))
@@ -249,6 +250,7 @@ class SequenceContainer:
         self.trinuc_bias = [None for _ in range(self.ploidy)]
         for p in range(self.ploidy):
             for i in range(self.win_buffer + 1, self.seq_len - 1):
+                # TODO (instead of 7?) should choose model here according to the annotation
                 trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
             self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
                                                        range(self.win_buffer + 1, self.seq_len - 1))
@@ -392,9 +394,9 @@ class SequenceContainer:
             return np.mean(avg_out)
 
     def init_poisson(self):
-        ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in  #TODO maybe seq_len?
+        ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in
                       range(len(self.models))]
-        snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in #TODO maybe seq_len?
+        snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in
                       range(len(self.models))]
         k_range = range(int(self.seq_len * MAX_MUTFRAC))
         # return (indel_poisson, snp_poisson)
@@ -483,7 +485,7 @@ class SequenceContainer:
                         self.black_list[p][k] = 1
                     self.indel_list[p].append(my_var)
 
-    def random_mutations(self):
+    def random_mutations(self): #TODO continue here
 
         # add random indels
         all_indels = [[] for _ in self.sequences]
