@@ -125,6 +125,8 @@ def main(raw_args=None):
         generate_sequentially(task_list)
 
     print('================================')
+    # TODO remove all mut_bed files
+    # TODO remove all csv/whatever files now, and not before!
 
 
 def load_default_args(args):

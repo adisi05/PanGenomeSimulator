@@ -15,7 +15,7 @@ import pandas as pd
 #				VARIOUS HELPER FUNCTIONS				#
 #########################################################
 
-
+#TODO should consider annotations?
 def cluster_list(list_to_cluster: list, delta: float) -> list:
     """
     Clusters a sorted list

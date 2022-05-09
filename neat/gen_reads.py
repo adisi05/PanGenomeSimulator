@@ -85,6 +85,7 @@ def simulate(args):
     if output_params["save_vcf"]:
         vcf_file_writer.close_file(add_parent_variants=True)
 
+    # TODO write mut_bed
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
@@ -372,6 +373,7 @@ def load_mutation_regions(mutation_params):
     # mutation_params["mut_rate_values"] = {}
     if mutation_params["mut_bed"] is not None:
         try:
+            #TODO try to take parent's mut_bed
             test_adi = BedTool(mutation_params["mut_bed"])
             test_adi_df = test_adi.to_dataframe(comment="#")
             print("TEST test_adi\n", test_adi)
