@@ -68,6 +68,7 @@ class VcfFileWriter:
         if add_parent_variants:
             self.merge_parent_variants()
 
+    #TODO maybe use bcftools instead?
     def merge_parent_variants(self):
         if not self._parent_prefix:
             return
