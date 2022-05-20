@@ -65,7 +65,7 @@ class FastaFileWriter:
 
     def close_file(self):
         for hapl_idx in range(self.ploidy):
-            final_name = self.files[hapl_idx].removesuffix('_temp')
+            final_name = self.files[hapl_idx][:-len('_temp')]
             os.rename(self.files[hapl_idx], final_name)
             self.files[hapl_idx] = final_name
 

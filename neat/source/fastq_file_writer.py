@@ -18,7 +18,7 @@ class FastqFileWriter:
         print(fasta_files)
         print(sequencing_params)
         paired = "-p" if sequencing_params['paired_end'] else ""
-        fastq_files = [filename.removesuffix('.fasta') + "_read" for filename in fasta_files]
+        fastq_files = [filename[:-len('.fasta')] + "_read" for filename in fasta_files]
         read_length = sequencing_params['read_len']
         coverage = sequencing_params['coverage']
         insert_size = sequencing_params['fragment_size']
