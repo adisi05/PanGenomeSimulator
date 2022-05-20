@@ -102,6 +102,11 @@ def main(raw_args=None):
         return
 
     t = ete3.Tree(args.newick, format=1)
+    internal_count = 0
+    for node in t.traverse("preorder"):
+        if not node.name:
+            internal_count += 1
+            node.name = f"internal_{internal_count}"
     print("Using the next phylogenetic tree:\n", t.get_ascii(show_internal=True))
     clear_previous_tree_output(args.o, t)
     args.total_dist = tree_total_dist(t)
