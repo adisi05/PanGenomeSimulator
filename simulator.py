@@ -47,8 +47,8 @@ def parse_args(raw_args=None):
                         help="Bed file containing positional mut rates")
     parser.add_argument('-N', type=int, required=False, metavar='min qual score', default=-1,
                         help="below this quality score, replace base-calls with N's")
-    parser.add_argument('-v', type=str, required=False, metavar='vcf.file', default=None,
-                        help="Input VCF file of variants to include")
+    # parser.add_argument('-v', type=str, required=False, metavar='vcf.file', default=None,
+    #                     help="Input VCF file of variants to include")
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
                         help='Paired-end fragment length mean and std')
     parser.add_argument('--pe-model', type=str, required=False, metavar='<str>', default=None,
@@ -73,6 +73,8 @@ def parse_args(raw_args=None):
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
     parser.add_argument('-newick', type=str, required=False, metavar='newick tree', help="Path to reference newick")
     parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
+    parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1,
+                        help='maximum threads number')
     parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1,
                         help='maximum threads number')
 
