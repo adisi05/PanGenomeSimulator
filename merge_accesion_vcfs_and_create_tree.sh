@@ -1,9 +1,18 @@
+#!/bin/bash
+
 merge_input=""
+dir_name=""
 for vcf_file in "$@"
 do
+	if [ -z "$dir_name" ];
+	then
+		dir_name=$(dirname ${vcf_file})
+	fi
+	
     # echo "Started processing $vcf_file"
     temp_file=$(basename ${vcf_file})
-    temp_file=${temp_file/#/temp_}
+	temp_file=${temp_file/#//temp_}
+	temp_file="$dir_name$temp_file"
     cp ${vcf_file} ${temp_file}
     # echo "Created $temp_file"
     if [[ $temp_file == *.gz ]];
@@ -28,13 +37,13 @@ do
 done
 
 echo "Starting merging..."
-merge_output="all_accessions.vcf"
+merge_output="$dir_name/all_accessions.vcf"
 bcftools merge --merge none ${merge_input} > ${merge_output}
 echo "Merged all vcf files into $merge_output"
-rm temp_*
+rm ${dir_name}/temp_*
 # echo "Removed all temp files"
 
 echo "Starting tree creation..."
-tree_output="tree.newick"
+tree_output="$dir_name/tree.newick"
 vk phylo tree upgma ${merge_output} > ${tree_output}
 echo "Created tree $tree_output"
