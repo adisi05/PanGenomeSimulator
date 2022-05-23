@@ -36,5 +36,5 @@ rm temp_*
 
 echo "Starting tree creation..."
 tree_output="tree.newick"
-vk phylo tree nj ${merge_output} > ${tree_output}
+vk phylo tree upgma ${merge_output} > ${tree_output}
 echo "Created tree $tree_output"
