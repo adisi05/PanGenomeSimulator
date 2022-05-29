@@ -642,8 +642,12 @@ def get_vars_in_window(end, overlap, start, v_index_from_prev, valid_variants_fr
             v_index_from_prev = j
         if variants_position >= end:
             break
-    vars_in_window = valid_variants_from_vcf.loc[vars_in_window_indexes, 'pos':].reset_index(drop=True)
-    vars_in_window['pos'] = vars_in_window['pos'] - 1
+
+    if not valid_variants_from_vcf.empty:
+        vars_in_window = valid_variants_from_vcf.loc[vars_in_window_indexes, 'pos':].reset_index(drop=True)
+        vars_in_window['pos'] = vars_in_window['pos'] - 1
+    else:
+        vars_in_window =  valid_variants_from_vcf
     return buffer_added, vars_in_window, v_index_from_prev
 
 
