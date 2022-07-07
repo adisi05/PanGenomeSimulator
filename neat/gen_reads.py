@@ -26,6 +26,7 @@ import time
 import numpy as np
 import os
 import pandas as pd
+import pybedtools
 from pybedtools import BedTool
 
 from neat.source.fastq_file_writer import FastqFileWriter
@@ -375,9 +376,23 @@ def load_mutation_regions(mutation_params):
         try:
             #TODO try to take parent's mut_bed
             test_adi = BedTool(mutation_params["mut_bed"])
+            test_adi2 = pybedtools.example_bedtool(mutation_params["mut_bed"])
+
+            chromosomes_elements = test_adi2.filter(lambda x: x.fields[2] == 'chromosome')
+            annotation_types = ['exon', 'CDS', 'five_prime_UTR', 'mRNA', 'three_prime_UTR', 'gene', 'ncRNA_gene',
+                                'lnc_RNA', 'tRNA', 'ncRNA', 'miRNA', 'snoRNA', 'snRNA', 'rRNA']
+            for chrom in test_adi.filter(lambda x: x.fields[2] == 'chromosome'):
+                print('----------------------------------------------------------------------')
+                print(f'chromosome {chrom.name} length is {chrom.length}')
+                for current_type in annotation_types:
+                    total_current_type_length = 0
+                    for element in test_adi.filter(lambda x: x.fields[2] == current_type and x.chrom == chrom.chrom):
+                        total_current_type_length += element.length
+                    print(f'total {current_type} length in the above chromosome is {total_current_type_length}')
+
             test_adi_df = test_adi.to_dataframe(comment="#")
-            print("TEST test_adi\n", test_adi)
-            print("TEST test_adi_df\n", test_adi_df)
+            # print("TEST test_adi\n", test_adi)
+            # print("TEST test_adi_df\n", test_adi_df)
             #TODO group features by chromosome
             #TODO should I filter by score and strand?
             #TODO what is frame?
@@ -647,7 +662,7 @@ def get_vars_in_window(end, overlap, start, v_index_from_prev, valid_variants_fr
         vars_in_window = valid_variants_from_vcf.loc[vars_in_window_indexes, 'pos':].reset_index(drop=True)
         vars_in_window['pos'] = vars_in_window['pos'] - 1
     else:
-        vars_in_window =  valid_variants_from_vcf
+        vars_in_window = valid_variants_from_vcf
     return buffer_added, vars_in_window, v_index_from_prev
 
 
