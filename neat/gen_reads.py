@@ -375,23 +375,21 @@ def load_mutation_regions(mutation_params):
     if mutation_params["mut_bed"] is not None:
         try:
             #TODO try to take parent's mut_bed
-            test_adi = BedTool(mutation_params["mut_bed"])
-            test_adi2 = pybedtools.example_bedtool(mutation_params["mut_bed"])
+            annotations = BedTool(mutation_params["mut_bed"])
 
-            chromosomes_elements = test_adi2.filter(lambda x: x.fields[2] == 'chromosome')
             annotation_types = ['exon', 'CDS', 'five_prime_UTR', 'mRNA', 'three_prime_UTR', 'gene', 'ncRNA_gene',
                                 'lnc_RNA', 'tRNA', 'ncRNA', 'miRNA', 'snoRNA', 'snRNA', 'rRNA']
-            for chrom in test_adi.filter(lambda x: x.fields[2] == 'chromosome'):
+            for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
                 print('----------------------------------------------------------------------')
                 print(f'chromosome {chrom.name} length is {chrom.length}')
                 for current_type in annotation_types:
                     total_current_type_length = 0
-                    for element in test_adi.filter(lambda x: x.fields[2] == current_type and x.chrom == chrom.chrom):
+                    for element in annotations.filter(lambda x: x.fields[2] == current_type and x.chrom == chrom.chrom):
                         total_current_type_length += element.length
-                    print(f'total {current_type} length in the above chromosome is {total_current_type_length}')
+                    print(f'total {current_type} length in chromosome {chrom.name} is {total_current_type_length}')
 
-            test_adi_df = test_adi.to_dataframe(comment="#")
-            # print("TEST test_adi\n", test_adi)
+            test_adi_df = annotations.to_dataframe(comment="#")
+            # print("TEST annotations\n", annotations)
             # print("TEST test_adi_df\n", test_adi_df)
             #TODO group features by chromosome
             #TODO should I filter by score and strand?
