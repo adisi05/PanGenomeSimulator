@@ -106,6 +106,8 @@ def seperate_exons_genes_intergenics(annotations_file):
             annotations = pybedtools.example_bedtool(annotations_file)
             for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
                 exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
+                exon_elements = exon_elements.sort()
+                exon_elements = exon_elements.merge()
                 exon_elements = exon_elements.saveas(f'exon_elements_chrom_{chrom.chrom}.bed')
                 exon_elements_df = exon_elements.to_dataframe()
                 exon_elements_df['feature'] = 'exon'
@@ -115,8 +117,11 @@ def seperate_exons_genes_intergenics(annotations_file):
 
                 # exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
                 gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
+                gene_elements = gene_elements.sort()
                 gene_elements = gene_elements.saveas(f'gene_elements_chrom_{chrom.chrom}.bed')
                 intron_elements = gene_elements.subtract(exon_elements)
+                intron_elements = intron_elements.sort()
+                intron_elements = intron_elements.merge()
                 intron_elements_df = intron_elements.to_dataframe()
                 intron_elements_df['feature'] = 'intron'
                 intron_elements_df = intron_elements_df.loc[:,['feature','start','end']]
@@ -126,8 +131,11 @@ def seperate_exons_genes_intergenics(annotations_file):
 
                 # gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
                 all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
+                all_elements = all_elements.sort()
                 all_elements = all_elements.saveas(f'all_elements_chrom_{chrom.chrom}.bed')
                 intergenic_elements = all_elements.subtract(gene_elements)
+                intergenic_elements = intergenic_elements.sort()
+                intergenic_elements = intergenic_elements.merge()
                 intergenic_elements_df = intergenic_elements.to_dataframe()
                 intergenic_elements_df['feature'] = 'intergenic'
                 intergenic_elements_df = intergenic_elements_df.loc[:,['feature','start','end']]
