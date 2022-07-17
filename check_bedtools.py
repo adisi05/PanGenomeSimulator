@@ -133,7 +133,7 @@ def seperate_exons_genes_intergenics(annotations_file):
                 all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
                 all_elements = all_elements.sort()
                 all_elements = all_elements.saveas(f'all_elements_chrom_{chrom.chrom}.bed')
-                intergenic_elements = all_elements.subtract(gene_elements)
+                intergenic_elements = all_elements.subtract(gene_elements).subtract(exon_elements)
                 intergenic_elements = intergenic_elements.sort()
                 intergenic_elements = intergenic_elements.merge()
                 intergenic_elements_df = intergenic_elements.to_dataframe()
