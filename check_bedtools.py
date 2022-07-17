@@ -142,9 +142,18 @@ def seperate_exons_genes_intergenics(annotations_file):
                 intergenic_elements_df = intergenic_elements_df.drop_duplicates()
                 intergenic_elements_df.to_csv(f'intergenic_elements_chrom_{chrom.chrom}.csv')
 
-                exons_genes_intergenics = pd.concat([exon_elements_df, intron_elements_df, intergenic_elements_df])
+                exons_genes_intergenics = pd.concat([exon_elements_df, intron_elements_df, intergenic_elements_df], ignore_index=True)
                 exons_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
+                exons_genes_intergenics = exons_genes_intergenics.reset_index(drop=True)
                 exons_genes_intergenics.to_csv(f'exons_genes_intergenics_chrom_{chrom.chrom}.csv')
+                for i, row in exons_genes_intergenics.iterrows():
+                    if i == 0:
+                        continue
+                    prev = exons_genes_intergenics.iloc[i-1,:]
+                    curr = row
+                    if prev['end'] != curr['start']:
+                        print(f'chromosome {chrom.chrom}: index {i}')
+
 
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
