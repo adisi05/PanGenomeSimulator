@@ -110,6 +110,7 @@ def seperate_exons_genes_intergenics(annotations_file):
                 exon_elements_df = exon_elements.to_dataframe()
                 exon_elements_df['feature'] = 'exon'
                 exon_elements_df = exon_elements_df.loc[:,['feature','start','end']]
+                exon_elements_df = exon_elements_df.drop_duplicates()
                 exon_elements_df.to_csv(f'exon_elements_chrom_{chrom.chrom}.csv')
 
                 # exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
@@ -119,6 +120,7 @@ def seperate_exons_genes_intergenics(annotations_file):
                 intron_elements_df = intron_elements.to_dataframe()
                 intron_elements_df['feature'] = 'intron'
                 intron_elements_df = intron_elements_df.loc[:,['feature','start','end']]
+                intron_elements_df = intron_elements_df.drop_duplicates()
                 intron_elements_df.to_csv(f'intron_elements_chrom_{chrom.chrom}.csv')
 
 
@@ -129,6 +131,7 @@ def seperate_exons_genes_intergenics(annotations_file):
                 intergenic_elements_df = intergenic_elements.to_dataframe()
                 intergenic_elements_df['feature'] = 'intergenic'
                 intergenic_elements_df = intergenic_elements_df.loc[:,['feature','start','end']]
+                intergenic_elements_df = intergenic_elements_df.drop_duplicates()
                 intergenic_elements_df.to_csv(f'intergenic_elements_chrom_{chrom.chrom}.csv')
 
                 exons_genes_intergenics = pd.concat([exon_elements_df, intron_elements_df, intergenic_elements_df])
