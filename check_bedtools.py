@@ -2,6 +2,7 @@ import sys
 
 import pybedtools
 from pybedtools import BedTool
+import pandas as pd
 
 def load_mutation_regions(annotations_file, squash_annotations=False):
     if annotations_file is not None:
@@ -99,7 +100,48 @@ def cds_exon_intersection(annotations_file):
             sys.exit(1)
 
 
+def seperate_exons_genes_intergenics(annotations_file):
+    if annotations_file is not None:
+        try:
+            annotations = pybedtools.example_bedtool(annotations_file)
+            for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
+                exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
+                exon_elements = exon_elements.saveas(f'exon_elements_chrom_{chrom.chrom}.bed')
+                exon_elements_df = exon_elements.to_dataframe()
+                exon_elements_df['feature'] = 'exon'
+                exon_elements_df = exon_elements_df.loc[:,['feature','start','end']]
+                exon_elements_df.to_csv(f'exon_elements_chrom_{chrom.chrom}.csv')
+
+                # exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
+                gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
+                gene_elements = gene_elements.saveas(f'gene_elements_chrom_{chrom.chrom}.bed')
+                intron_elements = gene_elements.subtract(exon_elements)
+                intron_elements_df = intron_elements.to_dataframe()
+                intron_elements_df['feature'] = 'intron'
+                intron_elements_df = intron_elements_df.loc[:,['feature','start','end']]
+                intron_elements_df.to_csv(f'intron_elements_chrom_{chrom.chrom}.csv')
+
+
+                # gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
+                all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
+                all_elements = all_elements.saveas(f'all_elements_chrom_{chrom.chrom}.bed')
+                intergenic_elements = all_elements.subtract(gene_elements)
+                intergenic_elements_df = intergenic_elements.to_dataframe()
+                intergenic_elements_df['feature'] = 'intergenic'
+                intergenic_elements_df = intergenic_elements_df.loc[:,['feature','start','end']]
+                intergenic_elements_df.to_csv(f'intergenic_elements_chrom_{chrom.chrom}.csv')
+
+                exons_genes_intergenics = pd.concat([exon_elements_df, intron_elements_df, intergenic_elements_df])
+                exons_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
+                exons_genes_intergenics.to_csv(f'exons_genes_intergenics_chrom_{chrom.chrom}.csv')
+
+        except IOError:
+            print("\nProblem reading annotation (BED/GFF) file.\n")
+            sys.exit(1)
+
+
 if __name__ == "__main__":
     # args: /groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3
-    load_mutation_regions(sys.argv[1], squash_annotations=True)
+    # load_mutation_regions(sys.argv[1], squash_annotations=True)
     # cds_exon_intersection(sys.argv[1])
+    seperate_exons_genes_intergenics(sys.argv[1])
