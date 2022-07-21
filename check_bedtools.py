@@ -100,7 +100,7 @@ def cds_exon_intersection(annotations_file):
             sys.exit(1)
 
 
-def seperate_exons_genes_intergenics(annotations_file):
+def seperate_exons_genes_intergenics_first_draft(annotations_file):
     if annotations_file is not None:
         try:
             annotations = pybedtools.example_bedtool(annotations_file)
@@ -108,17 +108,14 @@ def seperate_exons_genes_intergenics(annotations_file):
                 exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
                 exon_elements = exon_elements.sort()
                 exon_elements = exon_elements.merge()
-                exon_elements = exon_elements.saveas(f'exon_elements_chrom_{chrom.chrom}.bed')
                 exon_elements_df = exon_elements.to_dataframe()
                 exon_elements_df['feature'] = 'exon'
                 exon_elements_df = exon_elements_df.loc[:,['feature','start','end']]
                 exon_elements_df = exon_elements_df.drop_duplicates()
                 exon_elements_df.to_csv(f'exon_elements_chrom_{chrom.chrom}.csv')
 
-                # exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
                 gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
                 gene_elements = gene_elements.sort()
-                gene_elements = gene_elements.saveas(f'gene_elements_chrom_{chrom.chrom}.bed')
                 intron_elements = gene_elements.subtract(exon_elements)
                 intron_elements = intron_elements.sort()
                 intron_elements = intron_elements.merge()
@@ -129,10 +126,8 @@ def seperate_exons_genes_intergenics(annotations_file):
                 intron_elements_df.to_csv(f'intron_elements_chrom_{chrom.chrom}.csv')
 
 
-                # gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
                 all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
                 all_elements = all_elements.sort()
-                all_elements = all_elements.saveas(f'all_elements_chrom_{chrom.chrom}.bed')
                 intergenic_elements = all_elements.subtract(gene_elements).subtract(exon_elements)
                 intergenic_elements = intergenic_elements.sort()
                 intergenic_elements = intergenic_elements.merge()
@@ -159,6 +154,75 @@ def seperate_exons_genes_intergenics(annotations_file):
             print("\nProblem reading annotation (BED/GFF) file.\n")
             sys.exit(1)
 
+
+def seperate_exons_genes_intergenics(annotations_file):
+    if annotations_file is not None:
+        try:
+            annotations = pybedtools.example_bedtool(annotations_file)
+            for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
+                exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
+                exon_elements = exon_elements.sort()
+                exon_elements = exon_elements.merge()
+                exon_elements_df = exon_elements.to_dataframe()
+                exon_elements_df['feature'] = 'exon'
+                exon_elements_df = exon_elements_df.loc[:,['feature','start','end']]
+                exon_elements_df = exon_elements_df.drop_duplicates()
+                # exon_elements_df.to_csv(f'exon_elements_chrom_{chrom.chrom}.csv')
+
+                gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
+                gene_elements = gene_elements.sort()
+                intron_elements = gene_elements.subtract(exon_elements)
+                intron_elements = intron_elements.sort()
+                intron_elements = intron_elements.merge()
+                intron_elements_df = intron_elements.to_dataframe()
+                intron_elements_df['feature'] = 'intron'
+                intron_elements_df = intron_elements_df.loc[:,['feature','start','end']]
+                intron_elements_df = intron_elements_df.drop_duplicates()
+                # intron_elements_df.to_csv(f'intron_elements_chrom_{chrom.chrom}.csv')
+
+
+                all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
+                all_elements = all_elements.sort()
+                intergenic_elements = all_elements.subtract(gene_elements).subtract(exon_elements)
+                intergenic_elements = intergenic_elements.sort()
+                intergenic_elements = intergenic_elements.merge()
+                intergenic_elements_df = intergenic_elements.to_dataframe()
+                intergenic_elements_df['feature'] = 'intergenic'
+                intergenic_elements_df = intergenic_elements_df.loc[:,['feature','start','end']]
+                intergenic_elements_df = intergenic_elements_df.drop_duplicates()
+                # intergenic_elements_df.to_csv(f'intergenic_elements_chrom_{chrom.chrom}.csv')
+
+                exons_genes_intergenics = pd.concat([exon_elements_df, intron_elements_df, intergenic_elements_df], ignore_index=True)
+                exons_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
+                exons_genes_intergenics = exons_genes_intergenics.reset_index(drop=True)
+                exons_genes_intergenics.to_csv(f'exons_genes_intergenics_chrom_{chrom.chrom}.csv')
+
+                types_overall_length = {'exon': 0, 'intron' : 0, 'intergenic': 0}
+                for i, row in exons_genes_intergenics.iterrows():
+                    length = row['end']-row['start']
+                    types_overall_length[row['feature']] += length
+                    if i == 0:
+                        continue
+                    prev = exons_genes_intergenics.iloc[i-1,:]
+                    curr = row
+                    if prev['end'] != curr['start']:
+                        print(f'Problem to determine annotation on chromosome {chrom.chrom}: index {i}.'
+                              f'Ignoring annotation file.')
+
+                # lengths
+                print(f'chromosome {chrom.name} length is {chrom.length}')
+                print(f'exons overall length is {types_overall_length["exon"]}, \
+                        which are {types_overall_length["exon"]/chrom.length:2f}')
+                print(f'introns overall length is {types_overall_length["intron"]}, \
+                        which are {types_overall_length["intron"]/chrom.length:2f}')
+                print(f'intergenics overall length is {types_overall_length["intergenic"]}, \
+                        which are {types_overall_length["intergenic"]/chrom.length:2f}')
+
+
+
+        except IOError:
+            print("\nProblem reading annotation (BED/GFF) file.\n")
+            sys.exit(1)
 
 if __name__ == "__main__":
     # args: /groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3
