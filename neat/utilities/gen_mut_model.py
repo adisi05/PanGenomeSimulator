@@ -42,7 +42,8 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
 #####################################
 
 
-def main():
+def main(working_dir):
+    os.chdir(working_dir)
     # Some constants we'll need later
     REF_WHITELIST = [str(n) for n in range(1, 30)] + ['x', 'y', 'X', 'Y', 'mt', 'Mt', 'MT']
     REF_WHITELIST += ['chr' + n for n in REF_WHITELIST]
@@ -111,6 +112,7 @@ def main():
         # Adding a couple of columns we'll need for later calculations
         my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
         my_bed['track_len'] = my_bed.end - my_bed.start + 1
+        my_bed['chrom'] = my_bed['chrom'].astype(str)
 
     # Process reference file
     print('Processing reference...')
@@ -213,7 +215,7 @@ def main():
     # Now we check that the bed and vcf have matching regions
     # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
     if is_bed:
-        bed_chroms = list(set(my_bed['chrom']))
+        bed_chroms = list(set(my_bed['chrom'])) #[str(val) for val in set(my_bed['chrom'])]
         matching_bed_keys = list(set(bed_chroms) & set(variant_chroms))
         try:
             matching_bed = my_bed[my_bed['chrom'].isin(matching_bed_keys)]
@@ -274,6 +276,7 @@ def main():
             snp_df = bed_to_process.join(snp_df)
 
         if not snp_df.empty:
+            snp_df['chr_start'] = snp_df['chr_start'].astype("Int64")
             # only consider positions where ref allele in vcf matches the nucleotide in our reference
             for index, row in snp_df.iterrows():
                 trinuc_to_analyze = str(ref_sequence[row.chr_start - 1: row.chr_start + 2])
@@ -503,4 +506,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    working_dir = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
+    main(working_dir)

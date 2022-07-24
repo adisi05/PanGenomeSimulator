@@ -1,7 +1,11 @@
+import os
+import sys
+
 import pybedtools
 import pandas as pd
 
-def seperate_exons_genes_intergenics(annotations_file):
+def seperate_exons_genes_intergenics(annotations_file, working_dir):
+    os.chdir(working_dir)
     if annotations_file is not None:
         try:
             annotations = pybedtools.example_bedtool(annotations_file)
@@ -9,6 +13,7 @@ def seperate_exons_genes_intergenics(annotations_file):
                 exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
                 exon_elements = exon_elements.sort()
                 exon_elements = exon_elements.merge()
+                exon_elements = exon_elements.saveas(f'exon_elements_chrom_{chrom.chrom}.bed')#TODO remove
                 exon_elements_df = exon_elements.to_dataframe()
                 exon_elements_df['feature'] = 'exon'
                 exon_elements_df = exon_elements_df.loc[:,['feature','start','end']]
@@ -38,6 +43,10 @@ def seperate_exons_genes_intergenics(annotations_file):
                 exons_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
                 exons_genes_intergenics = exons_genes_intergenics.reset_index(drop=True)
                 exons_genes_intergenics.to_csv(f'exons_genes_intergenics_chrom_{chrom.chrom}.csv')
-
+                # TODO save also as BED file
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
+
+if __name__ == "__main__":
+    dir = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
+    seperate_exons_genes_intergenics(sys.argv[1], dir)
