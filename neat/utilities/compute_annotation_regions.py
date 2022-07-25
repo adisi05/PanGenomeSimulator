@@ -1,19 +1,25 @@
 import os
 import sys
+from os.path import exists
 
 import pybedtools
 import pandas as pd
 
 def seperate_exons_genes_intergenics(annotations_file, working_dir):
     os.chdir(working_dir)
+    #TODO just for debug. Remove later
+    if exists('all_chroms_annotaions.csv'):
+        all_chroms_annotaions = pd.read_csv('all_chroms_annotaions.csv')
+        return all_chroms_annotaions
+
     if annotations_file is not None:
         try:
             annotations = pybedtools.example_bedtool(annotations_file)
+            chroms_annotaions = []
             for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
                 exon_elements = annotations.filter(lambda x: x.fields[2] == 'exon' and x.chrom == chrom.chrom)
                 exon_elements = exon_elements.sort()
                 exon_elements = exon_elements.merge()
-                exon_elements = exon_elements.saveas(f'exon_elements_chrom_{chrom.chrom}.bed')#TODO remove
                 exon_elements_df = exon_elements.to_dataframe()
                 exon_elements_df['feature'] = 'exon'
                 exon_elements_df = exon_elements_df.loc[:,['feature','start','end']]
@@ -42,8 +48,16 @@ def seperate_exons_genes_intergenics(annotations_file, working_dir):
                 exons_genes_intergenics = pd.concat([exon_elements_df, intron_elements_df, intergenic_elements_df], ignore_index=True)
                 exons_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
                 exons_genes_intergenics = exons_genes_intergenics.reset_index(drop=True)
-                exons_genes_intergenics.to_csv(f'exons_genes_intergenics_chrom_{chrom.chrom}.csv')
-                # TODO save also as BED file
+                exons_genes_intergenics.insert(0,'chrom', str(chrom.chrom))
+                exons_genes_intergenics[['chrom', 'feature']] = exons_genes_intergenics[['chrom', 'feature']].astype(str)
+
+                # exons_genes_intergenics[['chrom', 'feature']] = exons_genes_intergenics[['chrom', 'feature']].astype(str)
+
+                chroms_annotaions.append(exons_genes_intergenics)
+            #TODO remove index column
+            all_chroms_annotaions = pd.concat(chroms_annotaions)
+            all_chroms_annotaions.to_csv('all_chroms_annotaions.csv')
+            return all_chroms_annotaions
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
 

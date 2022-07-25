@@ -16,6 +16,11 @@ import pandas as pd
 #########################################################
 
 #TODO should consider annotations?
+from dataclasses import dataclass
+
+from neat.utilities.compute_annotation_regions import seperate_exons_genes_intergenics
+
+
 def cluster_list(list_to_cluster: list, delta: float) -> list:
     """
     Clusters a sorted list
@@ -40,6 +45,25 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
 #####################################
 #				main()				#
 #####################################
+
+@dataclass
+class Stats:
+    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
+    TRINUC_REF_COUNT = {}
+    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
+    TRINUC_TRANSITION_COUNT = {}
+    # total count of SNPs
+    SNP_COUNT = 0
+    # overall SNP transition probabilities
+    SNP_TRANSITION_COUNT = {}
+    # total count of indels, indexed by length
+    INDEL_COUNT = {}
+    # tabulate how much non-N reference sequence we've eaten through
+    TOTAL_REFLEN = 0
+    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
+    COMMON_VARIANTS = []
+    # identify regions that have significantly higher local mutation rates than the average
+    HIGH_MUT_REGIONS = []
 
 
 def main(working_dir):
@@ -78,41 +102,33 @@ def main(working_dir):
 
     is_human = args.human_sample
 
-    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
-    TRINUC_REF_COUNT = {}
-    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
-    TRINUC_TRANSITION_COUNT = {}
-    # total count of SNPs
-    SNP_COUNT = 0
-    # overall SNP transition probabilities
-    SNP_TRANSITION_COUNT = {}
-    # total count of indels, indexed by length
-    INDEL_COUNT = {}
-    # tabulate how much non-N reference sequence we've eaten through
-    TOTAL_REFLEN = 0
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
-    COMMON_VARIANTS = []
-    # tabulate how many unique donors we've encountered (this is useful for identifying common variants)
-    TOTAL_DONORS = {}
-    # identify regions that have significantly higher local mutation rates than the average
-    HIGH_MUT_REGIONS = []
+    regions_stats = {}
 
     # Process bed file,
     is_bed = False
-    my_bed = None
+    annotations_df = None
     if args.b is not None:
         print('Processing bed file...')
         try:
-            my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
+            annotations_df = seperate_exons_genes_intergenics(args.b, working_dir)
+            annotations_df[['chrom', 'feature']] = annotations_df[['chrom', 'feature']].astype(str)
+            # my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
             is_bed = True
+            regions_stats = {
+                'exon' : Stats(),
+                'intron' : Stats(),
+                'intergenic' : Stats()
+            }
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
+    else:
+        regions_stats = {'all': Stats()}
 
-        my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
+        # my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
         # Adding a couple of columns we'll need for later calculations
-        my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
-        my_bed['track_len'] = my_bed.end - my_bed.start + 1
-        my_bed['chrom'] = my_bed['chrom'].astype(str)
+        # my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
+        annotations_df['track_len'] = annotations_df.end - annotations_df.start + 1
+        # my_bed['chrom'] = my_bed['chrom'].astype(str)
 
     # Process reference file
     print('Processing reference...')
@@ -175,7 +191,7 @@ def main(working_dir):
 
 
     # Rename header in dataframe for processing
-    matching_variants = matching_variants.rename(columns={0: "CHROM", 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
+    matching_variants = matching_variants.rename(columns={0: 'CHROM', 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
                                                           5: 'QUAL', 6: 'FILTER', 7: 'INFO'})
 
     # Change the indexing by -1 to match source format indexing (0-based)
@@ -215,14 +231,14 @@ def main(working_dir):
     # Now we check that the bed and vcf have matching regions
     # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
     if is_bed:
-        bed_chroms = list(set(my_bed['chrom'])) #[str(val) for val in set(my_bed['chrom'])]
-        matching_bed_keys = list(set(bed_chroms) & set(variant_chroms))
+        annotations_chroms = list(set(annotations_df['chrom'])) #[str(val) for val in set(my_bed['chrom'])]
+        relevant_chroms = list(set(annotations_chroms) & set(variant_chroms))
         try:
-            matching_bed = my_bed[my_bed['chrom'].isin(matching_bed_keys)]
+            matching_annotations = annotations_df[annotations_df['chrom'].isin(relevant_chroms)]
         except ValueError:
             print('Problem matching bed chromosomes to variant file.')
 
-        if matching_bed.empty:
+        if matching_annotations.empty:
             print("There is no overlap between bed and variant file. "
                   "This could be a chromosome naming problem")
             exit(1)
@@ -234,22 +250,22 @@ def main(working_dir):
         print("since you're using a bed input, we have to count trinucs in bed region even if "
               "you already have a trinuc count file for the reference...")
         for ref_name in matching_chromosomes:
-            sub_bed = matching_bed[matching_bed['chrom'] == ref_name]
-            sub_regions = sub_bed['coords'].to_list()
-            for sr in sub_regions:
-                sub_seq = ref_dict[ref_name][sr[0]: sr[1]].seq
+            chrom_annotations = matching_annotations[matching_annotations['chrom'] == ref_name]
+
+            for i, annotation in chrom_annotations.iterrows():
+                sub_seq = ref_dict[ref_name][annotation['start']: annotation['end']].seq
                 for trinuc in VALID_TRINUC:
-                    if trinuc not in TRINUC_REF_COUNT:
-                        TRINUC_REF_COUNT[trinuc] = 0
-                    TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+                    if trinuc not in regions_stats[annotation['feature']].TRINUC_REF_COUNT:
+                        regions_stats[annotation['feature']].TRINUC_REF_COUNT[trinuc] = 0
+                    regions_stats[annotation['feature']].TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
 
     elif not os.path.isfile(ref + '.trinucCounts'):
         for ref_name in matching_chromosomes:
             sub_seq = ref_dict[ref_name].seq
             for trinuc in VALID_TRINUC:
-                if trinuc not in TRINUC_REF_COUNT:
-                    TRINUC_REF_COUNT[trinuc] = 0
-                TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+                if trinuc not in regions_stats['all'].TRINUC_REF_COUNT:
+                    regions_stats['all'].TRINUC_REF_COUNT[trinuc] = 0
+                regions_stats['all'].TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
     else:
         print('Found trinucCounts file, using that.')
 
@@ -263,20 +279,22 @@ def main(working_dir):
         VDAT_COMMON = []
 
         # Create a view that narrows variants list to current ref
-        variants_to_process = matching_variants[matching_variants["CHROM"] == ref_name].copy()
+        variants_to_process = matching_variants[matching_variants['CHROM'] == ref_name].copy()
         ref_sequence = str(ref_dict[ref_name].seq)
 
         # we want only snps
         # so, no '-' characters allowed, and chrStart must be same as chrEnd
         snp_df = variants_to_process[~variants_to_process.index.isin(indices_to_indels)]
         snp_df = snp_df.loc[snp_df['chr_start'] == snp_df['chr_end']]
-        if is_bed:
-            bed_to_process = matching_bed[matching_bed['chrom'] == ref_name].copy()
-            # TODO fix this line (need the intersection of these two, I think)
-            snp_df = bed_to_process.join(snp_df)
+        # print(snp_df[pd.isnull(snp_df['chr_start'])])
+        # if is_bed:
+        #     annotations_to_process = matching_annotations[matching_annotations['chrom'] == ref_name].copy()
+            # # TODO fix this line (need the intersection of these two, I think)
+            # snp_df = annotations_to_process.join(snp_df) #TODO change here
+        # print(snp_df[pd.isnull(snp_df['chr_start'])])
 
         if not snp_df.empty:
-            snp_df['chr_start'] = snp_df['chr_start'].astype("Int64")
+            # snp_df['chr_start'] = snp_df['chr_start'].astype("Int64")
             # only consider positions where ref allele in vcf matches the nucleotide in our reference
             for index, row in snp_df.iterrows():
                 trinuc_to_analyze = str(ref_sequence[row.chr_start - 1: row.chr_start + 2])
@@ -438,7 +456,7 @@ def main(working_dir):
     INDEL_FREQ = {k: (INDEL_COUNT[k] / float(total_var)) / AVG_INDEL_FREQ for k in INDEL_COUNT.keys()}
 
     if is_bed:
-        track_sum = float(my_bed['track_len'].sum())
+        track_sum = float(annotations_df['track_len'].sum())
         AVG_MUT_RATE = total_var / track_sum
     else:
         AVG_MUT_RATE = total_var / float(TOTAL_REFLEN)
