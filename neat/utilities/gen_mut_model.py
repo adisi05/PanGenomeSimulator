@@ -65,6 +65,23 @@ class Stats:
     # identify regions that have significantly higher local mutation rates than the average
     HIGH_MUT_REGIONS = []
 
+@dataclass
+class AnnotatedSeqence:
+    _chrom_seqeunces = {}
+    _code_to_annotation = {0:'exon', 1:'intron', 2:'intergenic'}
+    _annotation_to_code = {'exon':0, 'intron':1, 'intergenic':2}
+
+    def __init__(self, chrom_len, annotations_df: pd.DataFrame):
+        for i, annotation in annotations_df.iterrows():
+            if not annotation['chrom'] in self.chrom_seqeunces:
+                self._chrom_seqeunces[annotation['chrom']] = []
+            annotation_length = annotation['end'] - annotation['start']
+            current_sequence = [self._annotation_to_code[annotation['feature']]] * annotation_length
+            self._chrom_seqeunces[annotation['chrom']] = self._chrom_seqeunces[annotation['chrom']] + current_sequence
+
+    def get_annotation(self, chrom, index):
+        return self._code_to_annotation[self.chrom_seqeunces[chrom][index]]
+
 
 def main(working_dir):
     os.chdir(working_dir)
@@ -247,6 +264,7 @@ def main(working_dir):
     print('Counting trinucleotides in reference...')
 
     if is_bed:
+        # use get_annotation instead
         print("since you're using a bed input, we have to count trinucs in bed region even if "
               "you already have a trinuc count file for the reference...")
         for ref_name in matching_chromosomes:
