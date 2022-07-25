@@ -71,7 +71,11 @@ class AnnotatedSeqence:
     _code_to_annotation = {0:'exon', 1:'intron', 2:'intergenic'}
     _annotation_to_code = {'exon':0, 'intron':1, 'intergenic':2}
 
-    def __init__(self, chrom_len, annotations_df: pd.DataFrame):
+    def __init__(self, annotations_df: pd.DataFrame):
+        if annotations_df is None or annotations_df.empty:
+            self._chrom_seqeunces = None
+            return
+
         for i, annotation in annotations_df.iterrows():
             if not annotation['chrom'] in self.chrom_seqeunces:
                 self._chrom_seqeunces[annotation['chrom']] = []
@@ -80,6 +84,8 @@ class AnnotatedSeqence:
             self._chrom_seqeunces[annotation['chrom']] = self._chrom_seqeunces[annotation['chrom']] + current_sequence
 
     def get_annotation(self, chrom, index):
+        if not self._chrom_seqeunces:
+            return 'all'
         return self._code_to_annotation[self.chrom_seqeunces[chrom][index]]
 
 
@@ -136,10 +142,13 @@ def main(working_dir):
                 'intron' : Stats(),
                 'intergenic' : Stats()
             }
+            annotated_sequence = AnnotatedSeqence(annotations_df)
+            #TODO validate chromosome length are same as in reference
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
     else:
         regions_stats = {'all': Stats()}
+        annotated_sequence = AnnotatedSeqence(None)
 
         # my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
         # Adding a couple of columns we'll need for later calculations
@@ -264,7 +273,7 @@ def main(working_dir):
     print('Counting trinucleotides in reference...')
 
     if is_bed:
-        # use get_annotation instead
+        #TODO use get_annotation instead
         print("since you're using a bed input, we have to count trinucs in bed region even if "
               "you already have a trinuc count file for the reference...")
         for ref_name in matching_chromosomes:
@@ -324,14 +333,15 @@ def main(working_dir):
                     if trinuc_alt not in VALID_TRINUC:
                         continue
                     key = (trinuc_ref, trinuc_alt)
-                    if key not in TRINUC_TRANSITION_COUNT:
-                        TRINUC_TRANSITION_COUNT[key] = 0
-                    TRINUC_TRANSITION_COUNT[key] += 1
-                    SNP_COUNT += 1
+                    region = annotated_sequence.get_annotation(ref_name, index)
+                    if key not in regions_stats[region].TRINUC_TRANSITION_COUNT:
+                        regions_stats[region].TRINUC_TRANSITION_COUNT[key] = 0
+                    regions_stats[region].TRINUC_TRANSITION_COUNT[key] += 1
+                    regions_stats[region].SNP_COUNT += 1
                     key2 = (str(row.REF), str(row.ALT))
-                    if key2 not in SNP_TRANSITION_COUNT:
-                        SNP_TRANSITION_COUNT[key2] = 0
-                    SNP_TRANSITION_COUNT[key2] += 1
+                    if key2 not in regions_stats[region].SNP_TRANSITION_COUNT:
+                        regions_stats[region].SNP_TRANSITION_COUNT[key2] = 0
+                    regions_stats[region].SNP_TRANSITION_COUNT[key2] += 1
 
                     my_pop_freq = VCF_DEFAULT_POP_FREQ
                     if ';CAF=' in snp_df.loc[index, 'INFO']:
