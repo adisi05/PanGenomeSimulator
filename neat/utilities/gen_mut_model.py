@@ -162,33 +162,6 @@ def main(working_dir):
 
     regions_stats = RegionStats(annotations_df)
 
-    # is_bed = False
-    # annotations_df = None
-    # if args.b:
-    #     print('Processing bed file...')
-    #     try:
-    #         annotations_df = seperate_exons_genes_intergenics(args.b, working_dir)
-    #         annotations_df[['chrom', 'feature']] = annotations_df[['chrom', 'feature']].astype(str)
-    #         regions_stats = {
-    #             'exon' : Stats(),
-    #             'intron' : Stats(),
-    #             'intergenic' : Stats()
-    #         }
-    #         annotated_sequence = AnnotatedSeqence(annotations_df)
-    #         #TODO validate chromosome length are same as in reference
-    #         is_bed = True
-    #     except ValueError:
-    #         print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
-    # else:
-    #     regions_stats = {'all': Stats()}
-    #     annotated_sequence = AnnotatedSeqence(None)
-    #
-    #     # my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
-    #     # Adding a couple of columns we'll need for later calculations
-    #     # my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
-    #     annotations_df['track_len'] = annotations_df.end - annotations_df.start + 1
-    #     # my_bed['chrom'] = my_bed['chrom'].astype(str)
-
     # Process reference file
     print('Processing reference...')
     try:
@@ -320,8 +293,6 @@ def main(working_dir):
     for ref_name in matching_chromosomes:
         update_total_reflen(ref_dict, ref_name, regions_stats, annotations_df)
 
-        VDAT_COMMON_PER_REGION = {region:[] for region in Regions}
-
         # Create a view that narrows variants list to current ref
         variants_to_process = matching_variants[matching_variants['CHROM'] == ref_name].copy()
         ref_sequence = str(ref_dict[ref_name].seq)
@@ -336,59 +307,13 @@ def main(working_dir):
             # # TODO fix this line (need the intersection of these two, I think)
             # snp_df = annotations_to_process.join(snp_df) #TODO change here
         # print(snp_df[pd.isnull(snp_df['chr_start'])])
-
-        if not snp_df.empty:
-            # snp_df['chr_start'] = snp_df['chr_start'].astype("Int64")
-            # only consider positions where ref allele in vcf matches the nucleotide in our reference
-            for index, row in snp_df.iterrows():
-                trinuc_to_analyze = str(ref_sequence[row.chr_start - 1: row.chr_start + 2])
-                if trinuc_to_analyze not in VALID_TRINUC:
-                    continue
-                if row.REF == trinuc_to_analyze[1]:
-                    trinuc_ref = trinuc_to_analyze
-                    trinuc_alt = trinuc_to_analyze[0] + snp_df.loc[index, 'ALT'] + trinuc_to_analyze[2]
-                    if trinuc_alt not in VALID_TRINUC:
-                        continue
-                    region = regions_stats.get_annotation(ref_name, index)
-                    update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region)
-                    update_snp_count(regions_stats, region)
-                    update_snp_transition_count(str(row.REF), str(row.ALT), regions_stats, region)
-
-                    my_pop_freq = VCF_DEFAULT_POP_FREQ
-                    if ';CAF=' in snp_df.loc[index, 'INFO']:
-                        caf_str = re.findall(r";CAF=.*?(?=;)", row.INFO)[0]
-                        if ',' in caf_str:
-                            my_pop_freq = float(caf_str[5:].split(',')[1])
-                    update_vdat_common(row, my_pop_freq, regions_stats, region)
-                else:
-                    print('\nError: ref allele in variant call does not match reference.\n')
-                    exit(1)
+        process_snps(snp_df, ref_name, ref_sequence, regions_stats)
 
         # now let's look for indels...
         indel_df = variants_to_process[variants_to_process.index.isin(indices_to_indels)]
-        if not indel_df.empty:
-            for index, row in indel_df.iterrows():
-                if "-" in row.REF:
-                    len_ref = 0
-                else:
-                    len_ref = len(row.REF)
-                if "-" in row.ALT:
-                    len_alt = 0
-                else:
-                    len_alt = len(row.ALT)
-                if len_ref != len_alt:
-                    indel_len = len_alt - len_ref
-                    region = regions_stats.get_annotation(ref_name, index)
-                    update_indel_count(indel_len, regions_stats, region)
+        process_indels(indel_df, ref_name, regions_stats)
 
-                    my_pop_freq = VCF_DEFAULT_POP_FREQ
-                    if ';CAF=' in row.INFO:
-                        caf_str = re.findall(r";CAF=.*?(?=;)", row.INFO)[0]
-                        if ',' in caf_str:
-                            my_pop_freq = float(caf_str[5:].split(',')[1])
-                    update_vdat_common(row, my_pop_freq, regions_stats, region)
-
-        process_common_variants(ref_dict, ref_name, regions_stats, VDAT_COMMON_PER_REGION)
+        process_common_variants(ref_dict, ref_name, regions_stats)
 
     # if we didn't count ref trinucs because we found file, read in ref counts from file now
     if os.path.isfile(ref + '.trinucCounts'):
@@ -418,6 +343,58 @@ def main(working_dir):
     save_stats_to_file(out_pickle, skip_common, regions_stats)
 
 
+def process_snps(snp_df, ref_name, ref_sequence, regions_stats):
+    if not snp_df.empty:
+        # only consider positions where ref allele in vcf matches the nucleotide in our reference
+        for index, row in snp_df.iterrows():
+            trinuc_to_analyze = str(ref_sequence[row.chr_start - 1: row.chr_start + 2])
+            if trinuc_to_analyze not in VALID_TRINUC:
+                continue
+            if row.REF == trinuc_to_analyze[1]:
+                trinuc_ref = trinuc_to_analyze
+                trinuc_alt = trinuc_to_analyze[0] + snp_df.loc[index, 'ALT'] + trinuc_to_analyze[2]
+                if trinuc_alt not in VALID_TRINUC:
+                    continue
+                region = regions_stats.get_annotation(ref_name, index)
+                update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region)
+                update_snp_count(regions_stats, region)
+                update_snp_transition_count(str(row.REF), str(row.ALT), regions_stats, region)
+
+                my_pop_freq = VCF_DEFAULT_POP_FREQ
+                if ';CAF=' in snp_df.loc[index, 'INFO']:
+                    caf_str = re.findall(r";CAF=.*?(?=;)", row.INFO)[0]
+                    if ',' in caf_str:
+                        my_pop_freq = float(caf_str[5:].split(',')[1])
+                update_vdat_common(ref_name, row, my_pop_freq, regions_stats, region)
+            else:
+                print('\nError: ref allele in variant call does not match reference.\n')
+                exit(1)
+
+
+def process_indels(indel_df, ref_name, regions_stats):
+    if not indel_df.empty:
+        for index, row in indel_df.iterrows():
+            if "-" in row.REF:
+                len_ref = 0
+            else:
+                len_ref = len(row.REF)
+            if "-" in row.ALT:
+                len_alt = 0
+            else:
+                len_alt = len(row.ALT)
+            if len_ref != len_alt:
+                indel_len = len_alt - len_ref
+                region = regions_stats.get_annotation(ref_name, index)
+                update_indel_count(indel_len, regions_stats, region)
+
+                my_pop_freq = VCF_DEFAULT_POP_FREQ
+                if ';CAF=' in row.INFO:
+                    caf_str = re.findall(r";CAF=.*?(?=;)", row.INFO)[0]
+                    if ',' in caf_str:
+                        my_pop_freq = float(caf_str[5:].split(',')[1])
+                update_vdat_common(ref_name, row, my_pop_freq, regions_stats, region)
+
+
 def save_stats_to_file(out_pickle, skip_common, regions_stats):
     OUT_DICT = {}
     for region_name, region_stats in regions_stats.get_all_stats().items():
@@ -436,39 +413,37 @@ def save_stats_to_file(out_pickle, skip_common, regions_stats):
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
 
 
-def update_vdat_common(row, my_pop_freq, VDAT_COMMON_PER_REGION, region = Regions.ALL):
+def update_vdat_common(ref_name, row, my_pop_freq, regions_stats, region = Regions.ALL):
     regions_to_update = {Regions.ALL, region}
     for current_region in regions_to_update:
-        VDAT_COMMON_PER_REGION[current_region].append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+        regions_stats.get_stat_by_region(current_region, BasicStats.VDAT_COMMON)[ref_name].append(
+            (row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
 
 
-def process_common_variants(ref_dict, ref_name, regions_stats, VDAT_COMMON_PER_REGION):
+def process_common_variants(ref_dict, ref_name, regions_stats):
     # if we didn't find anything, skip ahead along to the next reference sequence
     for region_name, region_stats in regions_stats.get_all_stats().items():
-        VDAT_COMMON = VDAT_COMMON_PER_REGION[region_name]
-        if not len(VDAT_COMMON):
+        vdat_common = region_stats[BasicStats.VDAT_COMMON].get(ref_name, default=[])
+        if not len(vdat_common):
             print('Found no variants for this reference.')
             continue
         # identify common mutations
         percentile_var = 95
-        min_value = np.percentile([n[4] for n in VDAT_COMMON], percentile_var)
-        for k in sorted(VDAT_COMMON):
+        min_value = np.percentile([n[4] for n in vdat_common], percentile_var)
+        for k in sorted(vdat_common):
             if k[4] >= min_value:
                 region_stats[BasicStats.COMMON_VARIANTS].append((ref_name, k[0], k[1], k[3], k[4]))
-        VDAT_COMMON = {(n[0], n[1], n[2], n[3]): n[4] for n in VDAT_COMMON}
+        vdat_common = {(n[0], n[1], n[2], n[3]): n[4] for n in vdat_common}
         # identify areas that have contained significantly higher random mutation rates
         dist_thresh = 2000
         percentile_clust = 97
         scaler = 1000
         # identify regions with disproportionately more variants in them
-        VARIANT_POS = sorted([n[0] for n in VDAT_COMMON.keys()])
+        VARIANT_POS = sorted([n[0] for n in vdat_common.keys()])
         clustered_pos = cluster_list(VARIANT_POS, dist_thresh)
         by_len = [(len(clustered_pos[i]), min(clustered_pos[i]), max(clustered_pos[i]), i) for i in
                   range(len(clustered_pos))]
-        # Not sure what this was intended to do or why it is commented out. Leaving it here for now.
-        # by_len  = sorted(by_len,reverse=True)
-        # minLen = int(np.percentile([n[0] for n in by_len],percentile_clust))
-        # by_len  = [n for n in by_len if n[0] >= minLen]
+
         candidate_regions = []
         for n in by_len:
             bi = int((n[1] - dist_thresh) / float(scaler)) * scaler
