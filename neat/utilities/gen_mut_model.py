@@ -9,17 +9,19 @@ import argparse
 import numpy as np
 from Bio import SeqIO
 import pandas as pd
+from enum import Enum
+from neat.utilities.compute_annotation_regions import seperate_exons_genes_intergenics
 
+# Some constants we'll need later
+VALID_NUCL = ['A', 'C', 'G', 'T']
+VALID_TRINUC = [VALID_NUCL[i] + VALID_NUCL[j] + VALID_NUCL[k] for i in range(len(VALID_NUCL)) for j in
+                range(len(VALID_NUCL)) for k in range(len(VALID_NUCL))]
+# if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
+VCF_DEFAULT_POP_FREQ = 0.00001
 
 #########################################################
 #				VARIOUS HELPER FUNCTIONS				#
 #########################################################
-
-#TODO should consider annotations?
-from dataclasses import dataclass
-
-from neat.utilities.compute_annotation_regions import seperate_exons_genes_intergenics
-
 
 def cluster_list(list_to_cluster: list, delta: float) -> list:
     """
@@ -43,33 +45,37 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
 
 
 #####################################
-#				main()				#
+#			Data Structures			#
 #####################################
 
-@dataclass
-class Stats:
-    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
-    TRINUC_REF_COUNT = {}
-    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
-    TRINUC_TRANSITION_COUNT = {}
-    # total count of SNPs
-    SNP_COUNT = 0
-    # overall SNP transition probabilities
-    SNP_TRANSITION_COUNT = {}
-    # total count of indels, indexed by length
-    INDEL_COUNT = {}
-    # tabulate how much non-N reference sequence we've eaten through
-    TOTAL_REFLEN = 0
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
-    COMMON_VARIANTS = []
-    # identify regions that have significantly higher local mutation rates than the average
-    HIGH_MUT_REGIONS = []
+class Regions(Enum):
+    EXON = 'exon'
+    INTRON = 'intron'
+    INTERGENIC = 'intergenic'
+    ALL = 'all'
 
-@dataclass
+class Stats(Enum):
+    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
+    TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
+    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
+    TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
+    # total count of SNPs
+    SNP_COUNT = 'SNP_COUNT'
+    # overall SNP transition probabilities
+    SNP_TRANSITION_COUNT = 'SNP_TRANSITION_COUNT'
+    # total count of indels, indexed by length
+    INDEL_COUNT = 'INDEL_COUNT'
+    # tabulate how much non-N reference sequence we've eaten through
+    TOTAL_REFLEN = 'TOTAL_REFLEN'
+    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
+    COMMON_VARIANTS = 'COMMON_VARIANTS'
+    # identify regions that have significantly higher local mutation rates than the average
+    HIGH_MUT_REGIONS = 'HIGH_MUT_REGIONS'
+
 class AnnotatedSeqence:
     _chrom_seqeunces = {}
-    _code_to_annotation = {0:'exon', 1:'intron', 2:'intergenic'}
-    _annotation_to_code = {'exon':0, 'intron':1, 'intergenic':2}
+    _code_to_annotation = {0:Regions.EXON, 1:Regions.INTRON, 2:Regions.INTERGENIC}
+    _annotation_to_code = {Regions.EXON:0, Regions.INTRON:1, Regions.INTERGENIC:2}
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
@@ -85,76 +91,95 @@ class AnnotatedSeqence:
 
     def get_annotation(self, chrom, index):
         if not self._chrom_seqeunces:
-            return 'all'
+            return Regions.ALL
         return self._code_to_annotation[self.chrom_seqeunces[chrom][index]]
 
+class RegionStats:
+    def __init__(self, annotations_df = None):
+        self._regions_stats = {Regions.ALL: Stats()}
+        _annotated_sequence = AnnotatedSeqence(None)
+        if annotations_df:
+            self._regions_stats[Regions.EXON] = self.create_stats_dict()
+            self._regions_stats[Regions.INTRON] = self.create_stats_dict()
+            self._regions_stats[Regions.INTERGENIC] = self.create_stats_dict()
+            _annotated_sequence = AnnotatedSeqence(annotations_df)
+
+    def get_region(self, chrom, index):
+        return self._annotated_sequence.get_annotation(chrom, index)
+
+    def get_stat_by_region(self, region_name, stat_name):
+        return self._regions_stats[region_name][stat_name]
+
+    def get_stat_by_location(self, chrom, index, stat_name):
+        region_name = self.get_region(chrom, index)
+        return self.get_stat_by_region(region_name, stat_name)
+
+    def get_all_stats(self):
+        return self._regions_stats
+
+    @staticmethod
+    def create_stats_dict():
+        return {
+            Stats.TRINUC_REF_COUNT: {},
+            Stats.TRINUC_TRANSITION_COUNT: {},
+            Stats.SNP_COUNT: 0,
+            Stats.SNP_TRANSITION_COUNT: {},
+            Stats.INDEL_COUNT: {},
+            Stats.TOTAL_REFLEN: 0,
+            Stats.COMMON_VARIANTS: [],
+            Stats.HIGH_MUT_REGIONS: []
+        }
+
+#####################################
+#				main()				#
+#####################################
 
 def main(working_dir):
     os.chdir(working_dir)
-    # Some constants we'll need later
-    REF_WHITELIST = [str(n) for n in range(1, 30)] + ['x', 'y', 'X', 'Y', 'mt', 'Mt', 'MT']
-    REF_WHITELIST += ['chr' + n for n in REF_WHITELIST]
-    VALID_NUCL = ['A', 'C', 'G', 'T']
-    VALID_TRINUC = [VALID_NUCL[i] + VALID_NUCL[j] + VALID_NUCL[k] for i in range(len(VALID_NUCL)) for j in
-                    range(len(VALID_NUCL)) for k in range(len(VALID_NUCL))]
-    # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
-    VCF_DEFAULT_POP_FREQ = 0.00001
 
-    parser = argparse.ArgumentParser(description='gen_mut_model.source',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
-    parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
-                        help="Reference file for organism in fasta format")
-    parser.add_argument('-m', type=str, required=True, metavar='/path/to/mutations.vcf',
-                        help="Mutation file for organism in VCF format")
-    parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/and/prefix',
-                        help="Name of output file (final model will append \'.p\')")
-    parser.add_argument('-b', type=str, required=False, metavar='Bed file of regions to include '
-                                                                '(use bedtools complement if you have a '
-                                                                'bed of exclusion areas)', default=None,
-                        help="only_use_these_regions.bed")
-    parser.add_argument('--save-trinuc', required=False, action='store_true', default=False,
-                        help='save trinucleotide counts for reference')
-    parser.add_argument('--human-sample', required=False, action='store_true', default=False,
-                        help='To skip unnumbered scaffolds in human references')
-    parser.add_argument('--skip-common', required=False, action='store_true', default=False,
-                        help='Do not save common snps + high mut regions')
-    args = parser.parse_args()
-
+    args = parse_arguments()
     (ref, vcf, out_pickle, save_trinuc, skip_common) = (
         args.r, args.m, args.o, args.save_trinuc, args.skip_common)
 
-    is_human = args.human_sample
-
-    regions_stats = {}
-
-    # Process bed file,
-    is_bed = False
+    # Process bed file
     annotations_df = None
-    if args.b is not None:
+    if args.b:
         print('Processing bed file...')
         try:
             annotations_df = seperate_exons_genes_intergenics(args.b, working_dir)
             annotations_df[['chrom', 'feature']] = annotations_df[['chrom', 'feature']].astype(str)
-            # my_bed = pd.read_csv(args.b, sep='\t', header=None, index_col=None)
-            is_bed = True
-            regions_stats = {
-                'exon' : Stats(),
-                'intron' : Stats(),
-                'intergenic' : Stats()
-            }
-            annotated_sequence = AnnotatedSeqence(annotations_df)
-            #TODO validate chromosome length are same as in reference
+            # TODO validate chromosome length are same as in reference
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
-    else:
-        regions_stats = {'all': Stats()}
-        annotated_sequence = AnnotatedSeqence(None)
 
-        # my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
-        # Adding a couple of columns we'll need for later calculations
-        # my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
-        annotations_df['track_len'] = annotations_df.end - annotations_df.start + 1
-        # my_bed['chrom'] = my_bed['chrom'].astype(str)
+    regions_stats = RegionStats(annotations_df)
+
+    # is_bed = False
+    # annotations_df = None
+    # if args.b:
+    #     print('Processing bed file...')
+    #     try:
+    #         annotations_df = seperate_exons_genes_intergenics(args.b, working_dir)
+    #         annotations_df[['chrom', 'feature']] = annotations_df[['chrom', 'feature']].astype(str)
+    #         regions_stats = {
+    #             'exon' : Stats(),
+    #             'intron' : Stats(),
+    #             'intergenic' : Stats()
+    #         }
+    #         annotated_sequence = AnnotatedSeqence(annotations_df)
+    #         #TODO validate chromosome length are same as in reference
+    #         is_bed = True
+    #     except ValueError:
+    #         print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
+    # else:
+    #     regions_stats = {'all': Stats()}
+    #     annotated_sequence = AnnotatedSeqence(None)
+    #
+    #     # my_bed = my_bed.rename(columns={0: 'chrom', 1: 'start', 2: 'end'})
+    #     # Adding a couple of columns we'll need for later calculations
+    #     # my_bed['coords'] = list(zip(my_bed.start, my_bed.end))
+    #     annotations_df['track_len'] = annotations_df.end - annotations_df.start + 1
+    #     # my_bed['chrom'] = my_bed['chrom'].astype(str)
 
     # Process reference file
     print('Processing reference...')
@@ -163,17 +188,10 @@ def main(working_dir):
     except ValueError:
         print("Problems parsing reference file. Ensure reference is in proper fasta format")
 
-    # simplify naming and filter out actual human genomes from scaffolding
     ref_dict = {}
     for key in reference.keys():
         key_split = key.split("|")
-        if is_human:
-            if key_split[0] in REF_WHITELIST:
-                ref_dict[key_split[0]] = reference[key]
-            else:
-                continue
-        else:
-            ref_dict[key_split[0]] = reference[key]
+        ref_dict[key_split[0]] = reference[key]
 
     ref_list = list(map(str, ref_dict.keys()))
 
@@ -254,45 +272,41 @@ def main(working_dir):
     new_info = ';' + matching_variants['INFO'].copy() + ';'
     matching_variants['INFO'] = new_info
 
-    # Now we check that the bed and vcf have matching regions
-    # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
-    if is_bed:
-        annotations_chroms = list(set(annotations_df['chrom'])) #[str(val) for val in set(my_bed['chrom'])]
-        relevant_chroms = list(set(annotations_chroms) & set(variant_chroms))
-        try:
-            matching_annotations = annotations_df[annotations_df['chrom'].isin(relevant_chroms)]
-        except ValueError:
-            print('Problem matching bed chromosomes to variant file.')
+    # # Now we check that the bed and vcf have matching regions
+    # # This also checks that the vcf and bed have the same naming conventions and cuts out scaffolding.
+    # if is_bed:#TODO remove?
+    #     annotations_chroms = list(set(annotations_df['chrom'])) #[str(val) for val in set(my_bed['chrom'])]
+    #     relevant_chroms = list(set(annotations_chroms) & set(variant_chroms))
+    #     try:
+    #         matching_annotations = annotations_df[annotations_df['chrom'].isin(relevant_chroms)]
+    #     except ValueError:
+    #         print('Problem matching bed chromosomes to variant file.')
+    #
+    #     if matching_annotations.empty:
+    #         print("There is no overlap between bed and variant file. "
+    #               "This could be a chromosome naming problem")
+    #         exit(1)
+    #
+    # # Count Trinucleotides in reference, based on bed or not
+    # print('Counting trinucleotides in reference...')
 
-        if matching_annotations.empty:
-            print("There is no overlap between bed and variant file. "
-                  "This could be a chromosome naming problem")
-            exit(1)
-
-    # Count Trinucleotides in reference, based on bed or not
-    print('Counting trinucleotides in reference...')
-
-    if is_bed:
+    if annotations_df:
         #TODO use get_annotation instead
         print("since you're using a bed input, we have to count trinucs in bed region even if "
               "you already have a trinuc count file for the reference...")
         for ref_name in matching_chromosomes:
-            chrom_annotations = matching_annotations[matching_annotations['chrom'] == ref_name]
+            chrom_annotations = annotations_df[annotations_df['chrom'] == ref_name]
 
             for i, annotation in chrom_annotations.iterrows():
                 sub_seq = ref_dict[ref_name][annotation['start']: annotation['end']].seq
-                for trinuc in VALID_TRINUC:
-                    if trinuc not in regions_stats[annotation['feature']].TRINUC_REF_COUNT:
-                        regions_stats[annotation['feature']].TRINUC_REF_COUNT[trinuc] = 0
-                    regions_stats[annotation['feature']].TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+                region = regions_stats.get_region(chrom_annotations, annotation['start'])
+                update_trinuc_ref_count(region, regions_stats, sub_seq)
 
     elif not os.path.isfile(ref + '.trinucCounts'):
         for ref_name in matching_chromosomes:
             sub_seq = ref_dict[ref_name].seq
-            for trinuc in VALID_TRINUC:
-                if trinuc not in regions_stats['all'].TRINUC_REF_COUNT:
-                    regions_stats['all'].TRINUC_REF_COUNT[trinuc] = 0
-                regions_stats['all'].TRINUC_REF_COUNT[trinuc] += sub_seq.count_overlap(trinuc)
+            region = Regions.ALL
+            update_trinuc_ref_count(region, regions_stats, sub_seq)
     else:
         print('Found trinucCounts file, using that.')
 
@@ -358,6 +372,7 @@ def main(working_dir):
         indel_df = variants_to_process[variants_to_process.index.isin(indices_to_indels)]
         if not indel_df.empty:
             for index, row in indel_df.iterrows():
+                region = annotated_sequence.get_annotation(ref_name, index)
                 if "-" in row.REF:
                     len_ref = 0
                 else:
@@ -368,9 +383,9 @@ def main(working_dir):
                     len_alt = len(row.ALT)
                 if len_ref != len_alt:
                     indel_len = len_alt - len_ref
-                    if indel_len not in INDEL_COUNT:
-                        INDEL_COUNT[indel_len] = 0
-                    INDEL_COUNT[indel_len] += 1
+                    if indel_len not in regions_stats[region].INDEL_COUNT:
+                        regions_stats[region].INDEL_COUNT[indel_len] = 0
+                    regions_stats[region].INDEL_COUNT[indel_len] += 1
 
                     my_pop_freq = VCF_DEFAULT_POP_FREQ
                     if ';CAF=' in row.INFO:
@@ -549,6 +564,35 @@ def main(working_dir):
                     'COMMON_VARIANTS': COMMON_VARIANTS,
                     'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+
+
+def update_trinuc_ref_count(region, regions_stats, sub_seq):
+    for trinuc in VALID_TRINUC:
+        if trinuc not in regions_stats.get_stat_by_region(region, Stats.TRINUC_REF_COUNT):
+            regions_stats.get_stat_by_region(region, Stats.TRINUC_REF_COUNT)[trinuc] = 0
+        regions_stats.get_stat_by_region(region, Stats.TRINUC_REF_COUNT)[trinuc] += sub_seq.count_overlap(
+            trinuc)
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='gen_mut_model.source',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
+    parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
+                        help="Reference file for organism in fasta format")
+    parser.add_argument('-m', type=str, required=True, metavar='/path/to/mutations.vcf',
+                        help="Mutation file for organism in VCF format")
+    parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/and/prefix',
+                        help="Name of output file (final model will append \'.p\')")
+    parser.add_argument('-b', type=str, required=False, metavar='Bed file of regions to include '
+                                                                '(use bedtools complement if you have a '
+                                                                'bed of exclusion areas)', default=None,
+                        help="only_use_these_regions.bed")
+    parser.add_argument('--save-trinuc', required=False, action='store_true', default=False,
+                        help='save trinucleotide counts for reference')
+    parser.add_argument('--skip-common', required=False, action='store_true', default=False,
+                        help='Do not save common snps + high mut regions')
+    args = parser.parse_args()
+    return args
 
 
 if __name__ == "__main__":

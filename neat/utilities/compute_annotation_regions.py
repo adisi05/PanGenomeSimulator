@@ -5,8 +5,10 @@ from os.path import exists
 import pybedtools
 import pandas as pd
 
+#TODO??? -> annotations_df['track_len'] = annotations_df.end - annotations_df.start + 1
 def seperate_exons_genes_intergenics(annotations_file, working_dir):
-    os.chdir(working_dir)
+    if working_dir:
+        os.chdir(working_dir)
     #TODO just for debug. Remove later
     if exists('all_chroms_annotaions.csv'):
         all_chroms_annotaions = pd.read_csv('all_chroms_annotaions.csv')
