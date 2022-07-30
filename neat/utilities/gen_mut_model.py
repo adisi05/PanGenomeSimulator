@@ -122,10 +122,10 @@ class RegionStats:
         return {
             Stats.TRINUC_REF_COUNT: {},
             Stats.TRINUC_TRANSITION_COUNT: {},
-            Stats.SNP_COUNT: 0,
+            Stats.SNP_COUNT: [0],
             Stats.SNP_TRANSITION_COUNT: {},
             Stats.INDEL_COUNT: {},
-            Stats.TOTAL_REFLEN: 0,
+            Stats.TOTAL_REFLEN: [0],
             Stats.COMMON_VARIANTS: [],
             Stats.HIGH_MUT_REGIONS: []
         }
@@ -291,30 +291,26 @@ def main(working_dir):
     # print('Counting trinucleotides in reference...')
 
     if annotations_df:
-        #TODO use get_annotation instead
         print("since you're using a bed input, we have to count trinucs in bed region even if "
               "you already have a trinuc count file for the reference...")
         for ref_name in matching_chromosomes:
             chrom_annotations = annotations_df[annotations_df['chrom'] == ref_name]
-
             for i, annotation in chrom_annotations.iterrows():
                 sub_seq = ref_dict[ref_name][annotation['start']: annotation['end']].seq
                 region = regions_stats.get_region(chrom_annotations, annotation['start'])
-                update_trinuc_ref_count(region, regions_stats, sub_seq)
+                update_trinuc_ref_count(sub_seq, regions_stats, region)
 
     elif not os.path.isfile(ref + '.trinucCounts'):
         for ref_name in matching_chromosomes:
             sub_seq = ref_dict[ref_name].seq
-            region = Regions.ALL
-            update_trinuc_ref_count(region, regions_stats, sub_seq)
+            update_trinuc_ref_count(sub_seq, regions_stats)
     else:
         print('Found trinucCounts file, using that.')
 
     # Load and process variants in each reference sequence individually, for memory reasons...
     print('Creating mutational model...')
     for ref_name in matching_chromosomes:
-        # Count the number of non-N nucleotides for the reference
-        TOTAL_REFLEN += len(ref_dict[ref_name].seq) - ref_dict[ref_name].seq.count('N')
+        update_total_reflen(ref_dict, ref_name, regions_stats, annotations_df)
 
         # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
         VDAT_COMMON = []
@@ -346,16 +342,10 @@ def main(working_dir):
                     trinuc_alt = trinuc_to_analyze[0] + snp_df.loc[index, 'ALT'] + trinuc_to_analyze[2]
                     if trinuc_alt not in VALID_TRINUC:
                         continue
-                    key = (trinuc_ref, trinuc_alt)
-                    region = annotated_sequence.get_annotation(ref_name, index)
-                    if key not in regions_stats[region].TRINUC_TRANSITION_COUNT:
-                        regions_stats[region].TRINUC_TRANSITION_COUNT[key] = 0
-                    regions_stats[region].TRINUC_TRANSITION_COUNT[key] += 1
-                    regions_stats[region].SNP_COUNT += 1
-                    key2 = (str(row.REF), str(row.ALT))
-                    if key2 not in regions_stats[region].SNP_TRANSITION_COUNT:
-                        regions_stats[region].SNP_TRANSITION_COUNT[key2] = 0
-                    regions_stats[region].SNP_TRANSITION_COUNT[key2] += 1
+                    region = regions_stats.get_annotation(ref_name, index)
+                    update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region)
+                    update_snp_count(regions_stats, region)
+                    update_snp_transition_count(str(row.REF), str(row.ALT), regions_stats, region)
 
                     my_pop_freq = VCF_DEFAULT_POP_FREQ
                     if ';CAF=' in snp_df.loc[index, 'INFO']:
@@ -372,7 +362,6 @@ def main(working_dir):
         indel_df = variants_to_process[variants_to_process.index.isin(indices_to_indels)]
         if not indel_df.empty:
             for index, row in indel_df.iterrows():
-                region = annotated_sequence.get_annotation(ref_name, index)
                 if "-" in row.REF:
                     len_ref = 0
                 else:
@@ -383,9 +372,8 @@ def main(working_dir):
                     len_alt = len(row.ALT)
                 if len_ref != len_alt:
                     indel_len = len_alt - len_ref
-                    if indel_len not in regions_stats[region].INDEL_COUNT:
-                        regions_stats[region].INDEL_COUNT[indel_len] = 0
-                    regions_stats[region].INDEL_COUNT[indel_len] += 1
+                    region = regions_stats.get_annotation(ref_name, index)
+                    update_indel_count(indel_len, regions_stats, region)
 
                     my_pop_freq = VCF_DEFAULT_POP_FREQ
                     if ';CAF=' in row.INFO:
@@ -566,12 +554,63 @@ def main(working_dir):
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
 
 
-def update_trinuc_ref_count(region, regions_stats, sub_seq):
+def update_indel_count(indel_len, regions_stats, region = Regions.ALL):
+    regions_to_update = {Regions.ALL, region}
+    for current_region in regions_to_update:
+        if indel_len not in regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT):
+            regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] = 0
+        regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] += 1
+
+
+def update_total_reflen(ref_dict, ref_name, regions_stats, annotations_df):
+    # Count the number of non-N nucleotides for the reference
+    total_reflen_all_chrom = len(ref_dict[ref_name].seq) - ref_dict[ref_name].seq.count('N')
+    update_total_reflen_for_region(total_reflen_all_chrom, regions_stats)
+    chrom_annotations = annotations_df[annotations_df['chrom'] == ref_name]
+    if annotations_df:
+        for i, annotation in chrom_annotations.iterrows():
+            sub_seq = ref_dict[ref_name][annotation['start']: annotation['end']].seq
+            reflen_annotation = len(sub_seq) - sub_seq.count('N')
+            update_total_reflen_for_region(reflen_annotation, regions_stats, annotations_df['feature'])
+
+
+def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region = Regions.ALL):
+    total_reflen_region = regions_stats.get_stat_by_region(region, Stats.TOTAL_REFLEN)
+    total_reflen_region[0] += total_reflen_region_chrom
+
+
+def update_snp_transition_count(row_ref, row_alt, regions_stats, region = Regions.ALL):
+    key2 = (row_ref, row_alt)
+    regions_to_update = {Regions.ALL, region}
+    for current_region in regions_to_update:
+        if key2 not in regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT):
+            regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] = 0
+        regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] += 1
+
+
+def update_snp_count(regions_stats, region = Regions.ALL):
+    regions_to_update = {Regions.ALL, region}
+    for current_region in regions_to_update:
+        regions_stats.get_stat_by_region(current_region, Stats.SNP_COUNT)[0] += 1
+
+
+def update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region = Regions.ALL):
+    regions_to_update = {Regions.ALL, region}
+    key = (trinuc_ref, trinuc_alt)
+    for current_region in regions_to_update:
+        if key not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT):
+            regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT)[key] = 0
+        regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT)[key] += 1
+
+
+def update_trinuc_ref_count(sub_seq, regions_stats, region = Regions.ALL):
+    regions_to_update = {Regions.ALL, region}
     for trinuc in VALID_TRINUC:
-        if trinuc not in regions_stats.get_stat_by_region(region, Stats.TRINUC_REF_COUNT):
-            regions_stats.get_stat_by_region(region, Stats.TRINUC_REF_COUNT)[trinuc] = 0
-        regions_stats.get_stat_by_region(region, Stats.TRINUC_REF_COUNT)[trinuc] += sub_seq.count_overlap(
-            trinuc)
+        for current_region in regions_to_update:
+            if trinuc not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT):
+                regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT)[trinuc] = 0
+            regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT)[trinuc] += sub_seq.count_overlap(
+                trinuc)
 
 
 def parse_arguments():
