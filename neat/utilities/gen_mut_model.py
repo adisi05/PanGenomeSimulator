@@ -71,6 +71,8 @@ class BasicStats(Enum):
     COMMON_VARIANTS = 'COMMON_VARIANTS'
     # identify regions that have significantly higher local mutation rates than the average
     HIGH_MUT_REGIONS = 'HIGH_MUT_REGIONS'
+    # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
+    VDAT_COMMON = 'VDAT_COMMON'
 
 class AdditionalStats(Enum):
     SNP_FREQ = 'SNP_FREQ'
@@ -80,8 +82,8 @@ class AdditionalStats(Enum):
 
 class AnnotatedSeqence:
     _chrom_seqeunces = {}
-    _code_to_annotation = {0:Regions.EXON, 1:Regions.INTRON, 2:Regions.INTERGENIC}
-    _annotation_to_code = {Regions.EXON:0, Regions.INTRON:1, Regions.INTERGENIC:2}
+    _code_to_annotation = {0:Regions.EXON.value, 1:Regions.INTRON.value, 2:Regions.INTERGENIC.value}
+    _annotation_to_code = {Regions.EXON.value:0, Regions.INTRON.value:1, Regions.INTERGENIC.value:2}
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
@@ -102,7 +104,7 @@ class AnnotatedSeqence:
 
 class RegionStats:
     def __init__(self, annotations_df = None):
-        self._regions_stats = {Regions.ALL: Stats()}
+        self._regions_stats = {Regions.ALL: self.create_stats_dict()}
         _annotated_sequence = AnnotatedSeqence(None)
         if annotations_df:
             self._regions_stats[Regions.EXON] = self.create_stats_dict()
@@ -298,7 +300,7 @@ def main(working_dir):
 
     if annotations_df:
         print("since you're using a bed input, we have to count trinucs in bed region even if "
-              "you already have a trinuc count file for the reference...")
+              "you alradisivanacascasclknlnlknaleady have a trinuc count file for the reference...")
         for ref_name in matching_chromosomes:
             chrom_annotations = annotations_df[annotations_df['chrom'] == ref_name]
             for i, annotation in chrom_annotations.iterrows():
@@ -318,8 +320,7 @@ def main(working_dir):
     for ref_name in matching_chromosomes:
         update_total_reflen(ref_dict, ref_name, regions_stats, annotations_df)
 
-        # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
-        VDAT_COMMON = []
+        VDAT_COMMON_PER_REGION = {region:[] for region in Regions}
 
         # Create a view that narrows variants list to current ref
         variants_to_process = matching_variants[matching_variants['CHROM'] == ref_name].copy()
@@ -358,8 +359,7 @@ def main(working_dir):
                         caf_str = re.findall(r";CAF=.*?(?=;)", row.INFO)[0]
                         if ',' in caf_str:
                             my_pop_freq = float(caf_str[5:].split(',')[1])
-                    VDAT_COMMON.append(
-                        (row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+                    update_vdat_common(row, my_pop_freq, regions_stats, region)
                 else:
                     print('\nError: ref allele in variant call does not match reference.\n')
                     exit(1)
@@ -386,21 +386,76 @@ def main(working_dir):
                         caf_str = re.findall(r";CAF=.*?(?=;)", row.INFO)[0]
                         if ',' in caf_str:
                             my_pop_freq = float(caf_str[5:].split(',')[1])
-                    VDAT_COMMON.append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+                    update_vdat_common(row, my_pop_freq, regions_stats, region)
 
-        # if we didn't find anything, skip ahead along to the next reference sequence
+        process_common_variants(ref_dict, ref_name, regions_stats, VDAT_COMMON_PER_REGION)
+
+    # if we didn't count ref trinucs because we found file, read in ref counts from file now
+    if os.path.isfile(ref + '.trinucCounts'):
+        print('reading pre-computed trinuc counts...')
+        f = open(ref + '.trinucCounts', 'r')
+        for line in f:
+            splt = line.strip().split('\t')
+            regions_stats.get_stat_by_region(Regions(splt[0]),
+                                             BasicStats.TRINUC_REF_COUNT)[splt[1]] = int(splt[2])
+        f.close()
+    # otherwise, save trinuc counts to file, if desired
+    elif save_trinuc:
+        if annotations_df:
+            print('unable to save trinuc counts to file because using input bed region...')
+        else:
+            print('saving trinuc counts to file...')
+            f = open(ref + '.trinucCounts', 'w')
+            for region_name, region_stats in regions_stats.get_all_stats().items():
+                for trinuc in sorted(region_stats[BasicStats.TRINUC_REF_COUNT].keys()):
+                    f.write(region_name.value + '\t' + trinuc + '\t' +
+                            str(region_stats[BasicStats.TRINUC_REF_COUNT][trinuc]) + '\n')
+            f.close()
+
+
+    compute_probabilities(regions_stats)
+
+    save_stats_to_file(out_pickle, skip_common, regions_stats)
+
+
+def save_stats_to_file(out_pickle, skip_common, regions_stats):
+    OUT_DICT = {}
+    for region_name, region_stats in regions_stats.get_all_stats().items():
+        prefix = f'{region_name.value}.' if region_name != Regions.ALL else ''
+        OUT_DICT = {
+            f'{prefix}{AdditionalStats.AVG_MUT_RATE}': region_stats[AdditionalStats.AVG_MUT_RATE],
+            f'{prefix}{AdditionalStats.SNP_FREQ}': region_stats[AdditionalStats.SNP_FREQ],
+            f'{prefix}{AdditionalStats.SNP_TRANS_FREQ}': region_stats[AdditionalStats.SNP_TRANS_FREQ],
+            f'{prefix}{AdditionalStats.INDEL_FREQ}': region_stats[AdditionalStats.INDEL_FREQ],
+            f'{prefix}{AdditionalStats.TRINUC_MUT_PROB}': region_stats[AdditionalStats.TRINUC_MUT_PROB],
+            f'{prefix}{AdditionalStats.TRINUC_TRANS_PROBS}': region_stats[AdditionalStats.TRINUC_TRANS_PROBS]
+        }
+        if not skip_common:
+            OUT_DICT[f'{prefix}{AdditionalStats.COMMON_VARIANTS}'] = region_stats[AdditionalStats.COMMON_VARIANTS]
+            OUT_DICT[f'{prefix}{AdditionalStats.HIGH_MUT_REGIONS}'] = region_stats[AdditionalStats.HIGH_MUT_REGIONS]
+    pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+
+
+def update_vdat_common(row, my_pop_freq, VDAT_COMMON_PER_REGION, region = Regions.ALL):
+    regions_to_update = {Regions.ALL, region}
+    for current_region in regions_to_update:
+        VDAT_COMMON_PER_REGION[current_region].append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+
+
+def process_common_variants(ref_dict, ref_name, regions_stats, VDAT_COMMON_PER_REGION):
+    # if we didn't find anything, skip ahead along to the next reference sequence
+    for region_name, region_stats in regions_stats.get_all_stats().items():
+        VDAT_COMMON = VDAT_COMMON_PER_REGION[region_name]
         if not len(VDAT_COMMON):
             print('Found no variants for this reference.')
             continue
-
         # identify common mutations
         percentile_var = 95
         min_value = np.percentile([n[4] for n in VDAT_COMMON], percentile_var)
         for k in sorted(VDAT_COMMON):
             if k[4] >= min_value:
-                COMMON_VARIANTS.append((ref_name, k[0], k[1], k[3], k[4]))
+                region_stats[BasicStats.COMMON_VARIANTS].append((ref_name, k[0], k[1], k[3], k[4]))
         VDAT_COMMON = {(n[0], n[1], n[2], n[3]): n[4] for n in VDAT_COMMON}
-
         # identify areas that have contained significantly higher random mutation rates
         dist_thresh = 2000
         percentile_clust = 97
@@ -409,7 +464,7 @@ def main(working_dir):
         VARIANT_POS = sorted([n[0] for n in VDAT_COMMON.keys()])
         clustered_pos = cluster_list(VARIANT_POS, dist_thresh)
         by_len = [(len(clustered_pos[i]), min(clustered_pos[i]), max(clustered_pos[i]), i) for i in
-                 range(len(clustered_pos))]
+                  range(len(clustered_pos))]
         # Not sure what this was intended to do or why it is commented out. Leaving it here for now.
         # by_len  = sorted(by_len,reverse=True)
         # minLen = int(np.percentile([n[0] for n in by_len],percentile_clust))
@@ -422,60 +477,22 @@ def main(working_dir):
         minimum_value = np.percentile([n[0] for n in candidate_regions], percentile_clust)
         for n in candidate_regions:
             if n[0] >= minimum_value:
-                HIGH_MUT_REGIONS.append((ref_name, n[1], n[2], n[0]))
+                region_stats[BasicStats.HIGH_MUT_REGIONS].append((ref_name, n[1], n[2], n[0]))
         # collapse overlapping regions
-        for i in range(len(HIGH_MUT_REGIONS) - 1, 0, -1):
-            if HIGH_MUT_REGIONS[i - 1][2] >= HIGH_MUT_REGIONS[i][1] and HIGH_MUT_REGIONS[i - 1][0] == \
-                    HIGH_MUT_REGIONS[i][0]:
+        for i in range(len(region_stats[BasicStats.HIGH_MUT_REGIONS]) - 1, 0, -1):
+            if region_stats[BasicStats.HIGH_MUT_REGIONS][i - 1][2] >= \
+                    region_stats[BasicStats.HIGH_MUT_REGIONS][i][1] and \
+                    region_stats[BasicStats.HIGH_MUT_REGIONS][i - 1][0] == \
+                    region_stats[BasicStats.HIGH_MUT_REGIONS][i][0]:
                 # Might need to research a more accurate way to get the mutation rate for this region
-                avg_mut_rate = 0.5 * HIGH_MUT_REGIONS[i - 1][3] + 0.5 * HIGH_MUT_REGIONS[i][
-                    3]
-                HIGH_MUT_REGIONS[i - 1] = (
-                    HIGH_MUT_REGIONS[i - 1][0], HIGH_MUT_REGIONS[i - 1][1], HIGH_MUT_REGIONS[i][2], avg_mut_rate)
-                del HIGH_MUT_REGIONS[i]
-
-    # if we didn't count ref trinucs because we found file, read in ref counts from file now
-    if os.path.isfile(ref + '.trinucCounts'):
-        print('reading pre-computed trinuc counts...')
-        f = open(ref + '.trinucCounts', 'r')
-        for line in f:
-            splt = line.strip().split('\t')
-            TRINUC_REF_COUNT[splt[0]] = int(splt[1])
-        f.close()
-    # otherwise, save trinuc counts to file, if desired
-    elif save_trinuc:
-        if annotations_df:
-            print('unable to save trinuc counts to file because using input bed region...')
-        else:
-            print('saving trinuc counts to file...')
-            f = open(ref + '.trinucCounts', 'w')
-            for trinuc in sorted(TRINUC_REF_COUNT.keys()):
-                f.write(trinuc + '\t' + str(TRINUC_REF_COUNT[trinuc]) + '\n')
-            f.close()
-
-
-    compute_probabilities(regions_stats)
-
-    #
-    # save variables to file
-    #
-    if skip_common:
-        OUT_DICT = {'AVG_MUT_RATE': AVG_MUT_RATE,
-                    'SNP_FREQ': SNP_FREQ,
-                    'SNP_TRANS_FREQ': SNP_TRANS_FREQ,
-                    'INDEL_FREQ': INDEL_FREQ,
-                    'TRINUC_MUT_PROB': TRINUC_MUT_PROB,
-                    'TRINUC_TRANS_PROBS': TRINUC_TRANS_PROBS}
-    else:
-        OUT_DICT = {'AVG_MUT_RATE': AVG_MUT_RATE,
-                    'SNP_FREQ': SNP_FREQ,
-                    'SNP_TRANS_FREQ': SNP_TRANS_FREQ,
-                    'INDEL_FREQ': INDEL_FREQ,
-                    'TRINUC_MUT_PROB': TRINUC_MUT_PROB,
-                    'TRINUC_TRANS_PROBS': TRINUC_TRANS_PROBS,
-                    'COMMON_VARIANTS': COMMON_VARIANTS,
-                    'HIGH_MUT_REGIONS': HIGH_MUT_REGIONS}
-    pickle.dump(OUT_DICT, open(out_pickle, "wb"))
+                avg_mut_rate = 0.5 * region_stats[BasicStats.HIGH_MUT_REGIONS][i - 1][3] + \
+                               0.5 * region_stats[BasicStats.HIGH_MUT_REGIONS][i][3]
+                region_stats[BasicStats.HIGH_MUT_REGIONS][i - 1] = (
+                    region_stats[BasicStats.HIGH_MUT_REGIONS][i - 1][0],
+                    region_stats[BasicStats.HIGH_MUT_REGIONS][i - 1][1],
+                    region_stats[BasicStats.HIGH_MUT_REGIONS][i][2],
+                    avg_mut_rate)
+                del region_stats[BasicStats.HIGH_MUT_REGIONS][i]
 
 
 def compute_probabilities(regions_stats):
@@ -546,7 +563,7 @@ def compute_probabilities(regions_stats):
         #
         #	print some stuff
         #
-        print(f'Probabilities for region {region_name}:')
+        print(f'Probabilities for region {region_name.value}:')
 
         for k in sorted(region_stats[AdditionalStats.TRINUC_MUT_PROB].keys()):
             print('p(' + k + ' mutates) =', region_stats[AdditionalStats.TRINUC_MUT_PROB][k])
