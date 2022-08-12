@@ -765,7 +765,7 @@ def update_sequences(coverage_dat, end, output_params, mutation_params, sequenci
             # pdb.set_trace()
             sys.exit(1)
     else:
-        sequences.update(start, index_params["ref_sequence"][start:end], output_params["ploids"],
+        sequences.update_sequence(start, index_params["ref_sequence"][start:end], output_params["ploids"],
                          sequencing_params["overlap"],
                          sequencing_params["read_len"], [mutation_params["mut_model"]] * output_params["ploids"],
                          mutation_params["mut_rate"], mutation_params["dist"])
