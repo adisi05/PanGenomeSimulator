@@ -13,8 +13,6 @@ from Bio.Seq import Seq, MutableSeq
 from neat_cigar import CigarString
 from probability import DiscreteDistribution, poisson_list
 
-# TODO This whole file is in desperate need of refactoring
-
 """
 Constants needed for analysis
 """
@@ -97,9 +95,9 @@ class SequenceContainer:
     """
 
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None,
-                 no_reads=False): #TODO change here? mut_rate
+                 no_reads=False):
 
-        self.update(x_offset, sequence, ploidy, window_overlap, read_len, mut_models, mut_rate, dist)
+        self.update_sequence(x_offset, sequence, ploidy, window_overlap, read_len, mut_models, mut_rate, dist)
 
         # initialize coverage attributes
         self.no_reads = no_reads
@@ -107,30 +105,29 @@ class SequenceContainer:
         self.coverage_distribution = None
         self.fraglen_ind_map = None
 
-    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len):
-        self.x = x_offset
-        self.ploidy = ploidy
-        self.read_len = read_len
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
-        self.seq_len = len(sequence)
-        self.indel_list = [[] for _ in range(self.ploidy)]
-        self.snp_list = [[] for _ in range(self.ploidy)]
-        self.all_cigar = [[] for _ in range(self.ploidy)]
-        self.fm_pos = [[] for _ in range(self.ploidy)]
-        self.fm_span = [[] for _ in range(self.ploidy)]
 
-        # Blacklist explanation:
-        # black_list[ploid][pos] = 0		safe to insert variant here
-        # black_list[ploid][pos] = 1		indel inserted here
-        # black_list[ploid][pos] = 2		snp inserted here
-        # black_list[ploid][pos] = 3		invalid position for various processing reasons
-        self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
+    def update_sequence(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None):
+        # initialize mutation models or reinitialize if changed
+        if ploidy != self.ploidy or mut_rate != self.mut_rescale or mut_models is not None:
+            self.ploidy = ploidy
+            self.update_mut_models(mut_models, mut_rate, dist)
 
-        # disallow mutations to occur on window overlap points
-        self.win_buffer = window_overlap
-        for p in range(self.ploidy):
-            self.black_list[p][-self.win_buffer] = 3
-            self.black_list[p][-self.win_buffer - 1] = 3
+        # initialize poisson attributes or redo them if sequence length is different than previous window
+        if len(sequence) != self.seq_len:
+            self.seq_len = len(sequence)
+            self.indel_poisson_per_region, self.snp_poisson_per_region = self.init_poisson()
+
+        # basic vars
+        self.update_basic_vars(x_offset, sequence, window_overlap, read_len)
+
+        # sample the number of variants that will be inserted into each ploid
+        self.indels_to_add_per_region =  {region: [n.sample() for n in self.indel_poisson_per_region[region]] for region in Regions}
+        self.snps_to_add_per_region = {region: [n.sample() for n in self.snp_poisson_per_region[region]] for region in Regions}
+
+        # initialize trinuc snp bias
+        if not IGNORE_TRINUC:
+            self.update_trinuc_bias()
+
 
     def update_mut_models(self, mut_models, mut_rate, dist):
         if not mut_models:
@@ -185,6 +182,30 @@ class SequenceContainer:
                 self.models_per_region[region][-1].append([m for m in n[9]])
 
 
+    def update_basic_vars(self, x_offset, sequence, window_overlap, read_len):
+        self.x = x_offset
+        self.read_len = read_len
+        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
+        self.indel_list = [[] for _ in range(self.ploidy)]
+        self.snp_list = [[] for _ in range(self.ploidy)]
+        self.all_cigar = [[] for _ in range(self.ploidy)]
+        self.fm_pos = [[] for _ in range(self.ploidy)]
+        self.fm_span = [[] for _ in range(self.ploidy)]
+
+        # Blacklist explanation:
+        # black_list[ploid][pos] = 0		safe to insert variant here
+        # black_list[ploid][pos] = 1		indel inserted here
+        # black_list[ploid][pos] = 2		snp inserted here
+        # black_list[ploid][pos] = 3		invalid position for various processing reasons
+        self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
+
+        # disallow mutations to occur on window overlap points
+        self.win_buffer = window_overlap
+        for p in range(self.ploidy):
+            self.black_list[p][-self.win_buffer] = 3
+            self.black_list[p][-self.win_buffer - 1] = 3
+
+
     def update_trinuc_bias(self):
         # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
@@ -196,8 +217,7 @@ class SequenceContainer:
         for p in range(self.ploidy):
             for region in Regions:
                 for i in range(self.win_buffer + 1, self.seq_len - 1):
-                    # TODO (instead of 7?) should choose model here according to the annotation. Update: not sure
-                    trinuc_snp_bias[p][i] = self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]#TODO change here?
+                    trinuc_snp_bias[p][i] = self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
                 self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
                                                            range(self.win_buffer + 1, self.seq_len - 1))
 
@@ -359,28 +379,6 @@ class SequenceContainer:
                      for n in range(len(self.models_per_region[region]))]
                 for region in Regions}
 
-    def update(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None):
-        # initialize mutation models or reinitialize if changed
-        if ploidy != self.ploidy or mut_rate != self.mut_rescale or mut_models is not None:
-            self.ploidy = ploidy
-            self.mut_rescale = mut_rate
-            self.update_mut_models(mut_models, mut_rate, dist)
-
-        # initialize poisson attributes or redo them if sequence length is different than previous window
-        if len(sequence) != self.seq_len:
-            self.seq_len = len(sequence)
-            self.indel_poisson_per_region, self.snp_poisson_per_region = self.init_poisson()
-
-        # basic vars
-        self.update_basic_vars(x_offset, sequence, ploidy, window_overlap, read_len)
-
-        # sample the number of variants that will be inserted into each ploid
-        self.indels_to_add_per_region =  {region: [n.sample() for n in self.indel_poisson_per_region[region]] for region in Regions}
-        self.snps_to_add_per_region = {region: [n.sample() for n in self.snp_poisson_per_region[region]] for region in Regions}
-
-        # initialize trinuc snp bias
-        if not IGNORE_TRINUC:
-            self.update_trinuc_bias()
 
 
     def insert_given_mutations(self, input_list):
@@ -424,6 +422,7 @@ class SequenceContainer:
         wps = input_variable[4][0]
         # if no genotype given, assume heterozygous and choose a single ploid based on their mut rates
         if wps is None:
+            region = self.get_region()
             which_ploids.append(self.ploid_mut_prior_per_region[region].sample())
             which_alts = [0]
         else:
@@ -449,7 +448,6 @@ class SequenceContainer:
         return which_alts, which_ploids
 
     def insert_random_mutations(self):
-        #TODO region?
 
         all_indels = self.pick_random_indels()
 
@@ -483,13 +481,13 @@ class SequenceContainer:
             output_variants[-1] += tuple(['WP=' + '/'.join(ploid_string)])
         return output_variants
 
-    def insert_snps(self, all_snps):
+    def insert_snps(self, all_snps):# TODO here should update annotation
         # combine random snps with inserted snps, remove any snps that overlap indels
         for p in range(len(all_snps)):
             all_snps[p].extend(self.snp_list[p])
             all_snps[p] = [n for n in all_snps[p] if self.black_list[p][n[0]] != 1]
         # MODIFY REFERENCE STRING: SNPS
-        for i in range(len(all_snps)):  # TODO here should update annotation? I dont think so...
+        for i in range(len(all_snps)):
             temp = MutableSeq(self.sequences[i])
             for j in range(len(all_snps[i])):
                 v_pos = all_snps[i][j][0]
@@ -503,13 +501,13 @@ class SequenceContainer:
                     temp[v_pos] = all_snps[i][j][2]
             self.sequences[i] = Seq(temp)
 
-    def insert_indels(self, all_indels):
+    def insert_indels(self, all_indels): # TODO here should update annotation?
         # organize the indels we want to insert
         for i in range(len(all_indels)):
             all_indels[i].extend(self.indel_list[i])
         all_indels_ins = [sorted([list(m) for m in n]) for n in all_indels]
         # MODIFY REFERENCE STRING: INDELS
-        for i in range(len(all_indels_ins)):  # TODO here should update annotation
+        for i in range(len(all_indels_ins)):
             rolling_adj = 0
             temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
 
@@ -562,7 +560,7 @@ class SequenceContainer:
             for i in range(self.ploidy):
                 random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
                 for j in range(random_snps_minus_inserted):
-                    which_ploids = self.determine_random_mutation_ploids(i)
+                    which_ploids = self.determine_random_mutation_ploids(region, i)
 
                     event_pos = self.find_position_snp(region, which_ploids)
                     if event_pos == -1:
@@ -571,8 +569,7 @@ class SequenceContainer:
                     ref_nucl = self.sequences[i][event_pos]
                     context = str(self.sequences[i][event_pos - 1]) + str(self.sequences[i][event_pos + 1])
                     # sample from tri-nucleotide substitution matrices to get SNP alt allele
-                    new_nucl = self.models_per_region[region][i][6][TRI_IND[context]][
-                        NUC_IND[ref_nucl]].sample()  # TODO change here?
+                    new_nucl = self.models_per_region[region][i][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
                     my_snp = (event_pos, ref_nucl, new_nucl)
 
                     for p in which_ploids:
@@ -583,20 +580,20 @@ class SequenceContainer:
     # TODO consider regions
     def find_position_snp(self, region, which_ploid):
         # try to find suitable places to insert snps
-        event_pos = -1
+        event_pos = ???
+        if IGNORE_TRINUC:
+            event_pos = random.randint(self.win_buffer + 1,
+                                       self.seq_len - 2)
+        else:
+            ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
+            event_pos = self.trinuc_bias_per_region[region][
+                ploid_to_use].sample()
+        for p in which_ploid:
+            if self.black_list[p][event_pos]:
+                event_pos = -1
         for attempt in range(MAX_ATTEMPTS):
             # based on the mutation model for the specified ploid, choose a SNP location based on trinuc bias
             # (if there are multiple ploids, choose one at random)
-            if IGNORE_TRINUC:
-                event_pos = random.randint(self.win_buffer + 1,
-                                           self.seq_len - 2)  # TODO_should consider annotations
-            else:
-                ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
-                event_pos = self.trinuc_bias_per_region[region][
-                    ploid_to_use].sample()  # TODO_should consider annotations???? or no need?
-            for p in which_ploid:
-                if self.black_list[p][event_pos]:
-                    event_pos = -1
             if event_pos != -1:
                 break
         return event_pos
@@ -604,57 +601,59 @@ class SequenceContainer:
     def pick_random_indels(self):
         # add random indels
         all_indels = [[] for _ in self.sequences]
-        for i in range(self.ploidy):
-            random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
-            for j in range(random_indels_minus_inserted):
-                which_ploid = self.determine_random_mutation_ploids(i)
+        for region in Regions:
+            for i in range(self.ploidy):
+                random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
+                for j in range(random_indels_minus_inserted):
+                    which_ploid = self.determine_random_mutation_ploids(region, i)
 
-                event_pos = self.find_position_indel(which_ploid)
-                if event_pos == -1:
-                    continue
-
-                # insertion
-                if random.random() <= self.models_per_region[region][i][3]:  # TODO change here?
-                    in_len = self.models_per_region[region][i][4].sample()  # TODO change here?
-                    # sequence content of random insertions is uniformly random (change this later, maybe)
-                    in_seq = ''.join([random.choice(NUCL) for _ in range(in_len)])
-                    ref_nucl = self.sequences[i][event_pos]
-                    my_indel = (event_pos, ref_nucl, ref_nucl + in_seq)
-                # deletion
-                else:
-                    in_len = self.models_per_region[region][i][5].sample()  # TODO change here?
-                    # skip if deletion too close to boundary
-                    if event_pos + in_len + 1 >= len(self.sequences[i]):
+                    event_pos = self.find_position_indel(which_ploid)
+                    if event_pos == -1:
                         continue
-                    if in_len == 1:
-                        in_seq = self.sequences[i][event_pos + 1]
+
+                    # insertion
+                    if random.random() <= self.models_per_region[region][i][3]:
+                        in_len = self.models_per_region[region][i][4].sample()
+                        # sequence content of random insertions is uniformly random (change this later, maybe)
+                        in_seq = ''.join([random.choice(NUCL) for _ in range(in_len)])
+                        ref_nucl = self.sequences[i][event_pos]
+                        my_indel = (event_pos, ref_nucl, ref_nucl + in_seq)
+                    # deletion
                     else:
-                        in_seq = str(self.sequences[i][event_pos + 1:event_pos + in_len + 1])
-                    ref_nucl = self.sequences[i][event_pos]
-                    my_indel = (event_pos, ref_nucl + in_seq, ref_nucl)
+                        in_len = self.models_per_region[region][i][5].sample()
+                        # skip if deletion too close to boundary
+                        if event_pos + in_len + 1 >= len(self.sequences[i]):
+                            continue
+                        if in_len == 1:
+                            in_seq = self.sequences[i][event_pos + 1]
+                        else:
+                            in_seq = str(self.sequences[i][event_pos + 1:event_pos + in_len + 1])
+                        ref_nucl = self.sequences[i][event_pos]
+                        my_indel = (event_pos, ref_nucl + in_seq, ref_nucl)
 
-                # if event too close to boundary, skip. if event conflicts with other indel, skip.
-                skip_event = False
-                if event_pos + len(my_indel[1]) >= self.seq_len - self.win_buffer - 1:
-                    skip_event = True
-                if skip_event:
-                    continue
-                for p in which_ploid:
-                    for k in range(event_pos, event_pos + in_len + 1):
-                        if self.black_list[p][k]:
-                            skip_event = True
-                if skip_event:
-                    continue
+                    # if event too close to boundary, skip. if event conflicts with other indel, skip.
+                    skip_event = False
+                    if event_pos + len(my_indel[1]) >= self.seq_len - self.win_buffer - 1:
+                        skip_event = True
+                    if skip_event:
+                        continue
+                    for p in which_ploid:
+                        for k in range(event_pos, event_pos + in_len + 1):
+                            if self.black_list[p][k]:
+                                skip_event = True
+                    if skip_event:
+                        continue
 
-                for p in which_ploid:
-                    for k in range(event_pos, event_pos + in_len + 1):
-                        self.black_list[p][k] = 1
-                    all_indels[p].append(my_indel)
+                    for p in which_ploid:
+                        for k in range(event_pos, event_pos + in_len + 1):
+                            self.black_list[p][k] = 1
+                        all_indels[p].append(my_indel)
+
         return all_indels
 
-    def determine_random_mutation_ploids(self, i):
+    def determine_random_mutation_ploids(self, region, i):
         # insert homozygous indel
-        if random.random() <= self.models_per_region[region][i][1]:  # TODO change here?
+        if random.random() <= self.models_per_region[region][i][1]:
             which_ploid = range(self.ploidy)
         # insert heterozygous indel
         else:
@@ -664,9 +663,9 @@ class SequenceContainer:
     # TODO consider regions
     def find_position_indel(self, which_ploid):
         # try to find suitable places to insert indels
-        event_pos = -1
+        event_pos = -1 ???
         for attempt in range(MAX_ATTEMPTS):
-            event_pos = random.randint(self.win_buffer, self.seq_len - 1)  # TODO_should consider annotations
+            event_pos = random.randint(self.win_buffer, self.seq_len - 1)
             for p in which_ploid:
                 if self.black_list[p][event_pos]:
                     event_pos = -1
