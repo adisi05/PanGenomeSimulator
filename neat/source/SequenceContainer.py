@@ -4,8 +4,10 @@ import pathlib
 import bisect
 import pickle
 import sys
+from enum import Enum
 
 import numpy as np
+import pandas as pd
 from Bio.Seq import Seq, MutableSeq
 
 from neat_cigar import CigarString
@@ -95,10 +97,17 @@ class SequenceContainer:
     """
 
     def __init__(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None,
-                 no_reads=False):
+                 no_reads=False): #TODO change here? mut_rate
 
-        # initialize basic variables
+        self.update(x_offset, sequence, ploidy, window_overlap, read_len, mut_models, mut_rate, dist)
+
+        # initialize coverage attributes
         self.no_reads = no_reads
+        self.window_size = None
+        self.coverage_distribution = None
+        self.fraglen_ind_map = None
+
+    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len):
         self.x = x_offset
         self.ploidy = ploidy
         self.read_len = read_len
@@ -123,9 +132,10 @@ class SequenceContainer:
             self.black_list[p][-self.win_buffer] = 3
             self.black_list[p][-self.win_buffer - 1] = 3
 
-        # initialize mutation models
+    def update_mut_models(self, mut_models, mut_rate, dist):
         if not mut_models:
-            default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
+            single_ploid_model = {region: copy.deepcopy(DEFAULT_MODEL_1) for region in Regions}
+            default_model = [single_ploid_model for _ in range(self.ploidy)]
             self.model_data = default_model[:self.ploidy]
         else:
             if len(mut_models) != self.ploidy:
@@ -134,126 +144,62 @@ class SequenceContainer:
             self.model_data = copy.deepcopy(mut_models)
 
         # do we need to rescale mutation frequencies?
-        mut_rate_sum = sum([n[0] for n in self.model_data])
+        mut_rate_sum_per_region = {region: sum([n[region][0] for n in self.model_data]) for region in Regions}
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
-            self.mut_scalar = 1.0
+            self.mut_scalar_per_region = {region: 1.0 for region in Regions}
         else:
-            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
-        if not dist is None:
-            self.mut_scalar = self.mut_scalar * dist
+            self.mut_scalar_per_region = {region: float(self.mut_rescale) //
+                         (mut_rate_sum_per_region[region] / float(len(self.model_data))) for region in Regions}
+        if dist:
+            self.mut_scalar_per_region = {region: self.mut_scalar_per_region[region] * dist for region in Regions}
 
         # how are mutations spread to each ploid, based on their specified mut rates?
-        self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
-        self.ploid_mut_prior = DiscreteDistribution(self.ploid_mut_frac, range(self.ploidy))
+        self.ploid_mut_frac_per_region = \
+            {region: [float(n[0]) / mut_rate_sum_per_region[region] for n in self.model_data] for region in Regions}
+        self.ploid_mut_prior_per_region = \
+            {region: DiscreteDistribution(self.ploid_mut_frac_per_region[region], range(self.ploidy))
+             for region in Regions}
 
         # init mutation models
         #
-        # self.models[ploid][0] = average mutation rate
-        # self.models[ploid][1] = p(mut is homozygous | mutation occurs)
-        # self.models[ploid][2] = p(mut is indel | mut occurs)
-        # self.models[ploid][3] = p(insertion | indel occurs)
-        # self.models[ploid][4] = distribution of insertion lengths
-        # self.models[ploid][5] = distribution of deletion lengths
-        # self.models[ploid][6] = distribution of trinucleotide SNP transitions
-        # self.models[ploid][7] = p(trinuc mutates)
-        self.models = []
-        for n in self.model_data:
-            self.models.append([self.mut_scalar * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),
-                                DiscreteDistribution(n[7], n[6]), []])
-            for m in n[8]:
-                # noinspection PyTypeChecker
-                self.models[-1][6].append([DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
-                                           DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-            self.models[-1].append([m for m in n[9]])
+        # self.models_per_region[region][ploid][0] = average mutation rate
+        # self.models_per_region[region][ploid][1] = p(mut is homozygous | mutation occurs)
+        # self.models_per_region[region][ploid][2] = p(mut is indel | mut occurs)
+        # self.models_per_region[region][ploid][3] = p(insertion | indel occurs)
+        # self.models_per_region[region][ploid][4] = distribution of insertion lengths
+        # self.models_per_region[region][ploid][5] = distribution of deletion lengths
+        # self.models_per_region[region][ploid][6] = distribution of trinucleotide SNP transitions
+        # self.models_per_region[region][ploid][7] = p(trinuc mutates)
+        self.models_per_region = {region: [] for region in Regions}
+        for region in Regions:
+            for n in self.model_data:
+                self.models_per_region[region].append(
+                    [self.mut_scalar_per_region[region] * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),
+                     DiscreteDistribution(n[7], n[6]), []])
+                for m in n[8]:
+                    # noinspection PyTypeChecker
+                    self.models_per_region[region][-1][6].append(
+                        [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
+                         DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
+                self.models_per_region[region][-1].append([m for m in n[9]])
 
-        # initialize poisson attributes
-        self.indel_poisson, self.snp_poisson = self.init_poisson()
 
-        # sample the number of variants that will be inserted into each ploid
-        self.indels_to_add = [n.sample() for n in self.indel_poisson]
-        self.snps_to_add = [n.sample() for n in self.snp_poisson]
-
-        # initialize trinuc snp bias
+    def update_trinuc_bias(self):
+        # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
         #
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
         trinuc_snp_bias = [[0. for _ in range(self.seq_len)] for _ in range(self.ploidy)]
-        self.trinuc_bias = [None for _ in range(self.ploidy)]
+        self.trinuc_bias_per_region = {region: [None for _ in range(self.ploidy)] for region in Regions}
         for p in range(self.ploidy):
-            for i in range(self.win_buffer + 1, self.seq_len - 1):
-                # TODO (instead of 7?) should choose model here according to the annotation. Update: not sure
-                trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
-            self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
-                                                       range(self.win_buffer + 1, self.seq_len - 1))
-
-        # initialize coverage attributes
-        self.window_size = None
-        self.coverage_distribution = None
-        self.fraglen_ind_map = None
-
-    def update_basic_vars(self, x_offset, sequence, ploidy, window_overlap, read_len):
-        self.x = x_offset
-        self.ploidy = ploidy
-        self.read_len = read_len
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
-        self.seq_len = len(sequence)
-        self.indel_list = [[] for _ in range(self.ploidy)]
-        self.snp_list = [[] for _ in range(self.ploidy)]
-        self.all_cigar = [[] for _ in range(self.ploidy)]
-        self.fm_pos = [[] for _ in range(self.ploidy)]
-        self.fm_span = [[] for _ in range(self.ploidy)]
-        self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
-
-        # disallow mutations to occur on window overlap points
-        self.win_buffer = window_overlap
-        for p in range(self.ploidy):
-            self.black_list[p][-self.win_buffer] = 3
-            self.black_list[p][-self.win_buffer - 1] = 3
-
-    def update_mut_models(self, mut_models, mut_rate, dist):
-        if not mut_models:
-            default_model = [copy.deepcopy(DEFAULT_MODEL_1) for _ in range(self.ploidy)]
-            self.model_data = default_model[:self.ploidy]
-        else:
-            if len(mut_models) != self.ploidy:
-                print('\nError: Number of mutation models received is not equal to specified ploidy\n')
-                sys.exit(1)
-            self.model_data = copy.deepcopy(mut_models)
-
-        # do we need to rescale mutation frequencies?
-        mut_rate_sum = sum([n[0] for n in self.model_data])
-        self.mut_rescale = mut_rate
-        if self.mut_rescale is None:
-            self.mut_scalar = 1.0
-        else:
-            self.mut_scalar = float(self.mut_rescale) // (mut_rate_sum / float(len(self.model_data)))
-        if not dist is None:
-            self.mut_scalar = self.mut_scalar * dist
-
-        # how are mutations spread to each ploid, based on their specified mut rates?
-        self.ploid_mut_frac = [float(n[0]) / mut_rate_sum for n in self.model_data]
-        self.ploid_mut_prior = DiscreteDistribution(self.ploid_mut_frac, range(self.ploidy))
-        self.models = []
-        for n in self.model_data:
-            self.models.append([self.mut_scalar * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),
-                                DiscreteDistribution(n[7], n[6]), []])
-            for m in n[8]:
-                # noinspection PyTypeChecker
-                self.models[-1][6].append([DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
-                                           DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-            self.models[-1].append([m for m in n[9]])
-
-    def update_trinuc_bias(self):
-        trinuc_snp_bias = [[0. for _ in range(self.seq_len)] for _ in range(self.ploidy)]
-        self.trinuc_bias = [None for _ in range(self.ploidy)]
-        for p in range(self.ploidy):
-            for i in range(self.win_buffer + 1, self.seq_len - 1):
-                # TODO (instead of 7?) should choose model here according to the annotation. Update: not sure
-                trinuc_snp_bias[p][i] = self.models[p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
-            self.trinuc_bias[p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
-                                                       range(self.win_buffer + 1, self.seq_len - 1))
+            for region in Regions:
+                for i in range(self.win_buffer + 1, self.seq_len - 1):
+                    # TODO (instead of 7?) should choose model here according to the annotation. Update: not sure
+                    trinuc_snp_bias[p][i] = self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]#TODO change here?
+                self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
+                                                           range(self.win_buffer + 1, self.seq_len - 1))
 
     def init_coverage(self, coverage_data, frag_dist=None):
         """
@@ -394,68 +340,56 @@ class SequenceContainer:
             return np.mean(avg_out)
 
     def init_poisson(self):
-        ind_l_list = [self.seq_len * self.models[i][0] * self.models[i][2] * self.ploid_mut_frac[i] for i in
-                      range(len(self.models))]
-        snp_l_list = [self.seq_len * self.models[i][0] * (1. - self.models[i][2]) * self.ploid_mut_frac[i] for i in
-                      range(len(self.models))]
+        ind_l_list_per_region = {}
+        snp_l_list_per_region = {}
+        for region in Regions:
+            ind_l_list_per_region[region] = [self.seq_len * self.models_per_region[region][i][0] * self.models_per_region[region][i][2] * self.ploid_mut_frac_per_region[region][i] for i in
+                          range(len(self.models_per_region[region]))]
+            snp_l_list_per_region[region] = [self.seq_len * self.models_per_region[region][i][0] * (1. - self.models_per_region[region][i][2]) * self.ploid_mut_frac_per_region[region][i] for i in
+                          range(len(self.models_per_region[region]))]
         k_range = range(int(self.seq_len * MAX_MUTFRAC))
         # return (indel_poisson, snp_poisson)
         # TODO These next two lines are really slow. Maybe there's a better way
-        return [poisson_list(k_range, ind_l_list[n]) for n in range(len(self.models))], \
-               [poisson_list(k_range, snp_l_list[n]) for n in range(len(self.models))]
+        return {region:
+                    [poisson_list(k_range, ind_l_list_per_region[region][n])
+                     for n in range(len(self.models_per_region[region]))]
+                for region in Regions}, \
+               {region:
+                    [poisson_list(k_range, snp_l_list_per_region[region][n])
+                     for n in range(len(self.models_per_region[region]))]
+                for region in Regions}
 
     def update(self, x_offset, sequence, ploidy, window_overlap, read_len, mut_models=None, mut_rate=None, dist=None):
-        # if mutation model is changed, we have to reinitialize it...
+        # initialize mutation models or reinitialize if changed
         if ploidy != self.ploidy or mut_rate != self.mut_rescale or mut_models is not None:
             self.ploidy = ploidy
             self.mut_rescale = mut_rate
             self.update_mut_models(mut_models, mut_rate, dist)
-        # if sequence length is different than previous window, we have to redo snp/indel poissons
+
+        # initialize poisson attributes or redo them if sequence length is different than previous window
         if len(sequence) != self.seq_len:
             self.seq_len = len(sequence)
-            self.indel_poisson, self.snp_poisson = self.init_poisson()
+            self.indel_poisson_per_region, self.snp_poisson_per_region = self.init_poisson()
+
         # basic vars
         self.update_basic_vars(x_offset, sequence, ploidy, window_overlap, read_len)
-        self.indels_to_add = [n.sample() for n in self.indel_poisson]
-        self.snps_to_add = [n.sample() for n in self.snp_poisson]
+
+        # sample the number of variants that will be inserted into each ploid
+        self.indels_to_add_per_region =  {region: [n.sample() for n in self.indel_poisson_per_region[region]] for region in Regions}
+        self.snps_to_add_per_region = {region: [n.sample() for n in self.snp_poisson_per_region[region]] for region in Regions}
+
         # initialize trinuc snp bias
         if not IGNORE_TRINUC:
             self.update_trinuc_bias()
 
-    def insert_mutations(self, input_list):
+
+    def insert_given_mutations(self, input_list):
         for input_variable in input_list:
-            which_ploid = []
-            wps = input_variable[4][0]
+            which_alts, which_ploids = self.determine_given_mutation_ploids(input_variable)
 
-            # if no genotype given, assume heterozygous and choose a single ploid based on their mut rates
-            if wps is None:
-                which_ploid.append(self.ploid_mut_prior.sample())
-                which_alt = [0]
-            else:
-                if '/' in wps or '|' in wps:
-                    if '/' in wps:
-                        splt = wps.split('/')
-                    else:
-                        splt = wps.split('|')
-                    which_ploid = []
-                    for i in range(len(splt)):
-                        if splt[i] == '1':
-                            which_ploid.append(i)
-                    # assume we're just using first alt for inserted variants?
-                    which_alt = [0 for _ in which_ploid]
-                # otherwise assume monoploidy
-                else:
-                    which_ploid = [0]
-                    which_alt = [0]
-
-            # ignore invalid ploids
-            for i in range(len(which_ploid) - 1, -1, -1):
-                if which_ploid[i] >= self.ploidy:
-                    del which_ploid[i]
-
-            for i in range(len(which_ploid)):
-                p = which_ploid[i]
-                my_alt = input_variable[2][which_alt[i]]
+            for i in range(len(which_ploids)):
+                p = which_ploids[i]
+                my_alt = input_variable[2][which_alts[i]]
                 my_var = (input_variable[0] - self.x, input_variable[1], my_alt)
                 # This is a potential fix implemented by Zach in a previous commit. He left the next line in.
                 # in_len = max([len(input_variable[1]), len(my_alt)])
@@ -485,42 +419,210 @@ class SequenceContainer:
                         self.black_list[p][k] = 1
                     self.indel_list[p].append(my_var)
 
-    def random_mutations(self): #TODO continue here
+    def determine_given_mutation_ploids(self, input_variable):
+        which_ploids = []
+        wps = input_variable[4][0]
+        # if no genotype given, assume heterozygous and choose a single ploid based on their mut rates
+        if wps is None:
+            which_ploids.append(self.ploid_mut_prior_per_region[region].sample())
+            which_alts = [0]
+        else:
+            if '/' in wps or '|' in wps:
+                if '/' in wps:
+                    splt = wps.split('/')
+                else:
+                    splt = wps.split('|')
+                which_ploids = []
+                for i in range(len(splt)):
+                    if splt[i] == '1':
+                        which_ploids.append(i)
+                # assume we're just using first alt for inserted variants?
+                which_alts = [0 for _ in which_ploids]
+            # otherwise assume monoploidy
+            else:
+                which_ploids = [0]
+                which_alts = [0]
+        # ignore invalid ploids
+        for i in range(len(which_ploids) - 1, -1, -1):
+            if which_ploids[i] >= self.ploidy:
+                del which_ploids[i]
+        return which_alts, which_ploids
 
+    def insert_random_mutations(self):
+        #TODO region?
+
+        all_indels = self.pick_random_indels()
+
+        all_snps = self.pick_random_snps()
+
+        self.insert_snps(all_snps)
+
+        self.insert_indels(all_indels)
+
+        output_variants = self.sum_up_variants(all_indels, all_snps)
+        return output_variants
+
+    def sum_up_variants(self, all_indels, all_snps):
+        # tally up all the variants we handled...
+        count_dict = {}
+        all_variants = [sorted(all_snps[i] + all_indels[i]) for i in range(self.ploidy)]
+        for i in range(len(all_variants)):
+            for j in range(len(all_variants[i])):
+                all_variants[i][j] = tuple([all_variants[i][j][0] + self.x]) + all_variants[i][j][1:]
+                t = tuple(all_variants[i][j])
+                if t not in count_dict:
+                    count_dict[t] = []
+                count_dict[t].append(i)
+        # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
+        output_variants = []
+        for k in sorted(count_dict.keys()):
+            output_variants.append(k + tuple([len(count_dict[k]) / float(self.ploidy)]))
+            ploid_string = ['0' for _ in range(self.ploidy)]
+            for k2 in [n for n in count_dict[k]]:
+                ploid_string[k2] = '1'
+            output_variants[-1] += tuple(['WP=' + '/'.join(ploid_string)])
+        return output_variants
+
+    def insert_snps(self, all_snps):
+        # combine random snps with inserted snps, remove any snps that overlap indels
+        for p in range(len(all_snps)):
+            all_snps[p].extend(self.snp_list[p])
+            all_snps[p] = [n for n in all_snps[p] if self.black_list[p][n[0]] != 1]
+        # MODIFY REFERENCE STRING: SNPS
+        for i in range(len(all_snps)):  # TODO here should update annotation? I dont think so...
+            temp = MutableSeq(self.sequences[i])
+            for j in range(len(all_snps[i])):
+                v_pos = all_snps[i][j][0]
+
+                if all_snps[i][j][1] != temp[v_pos]:
+                    print('\nError: Something went wrong!\n', all_snps[i][j], temp[v_pos], '\n')
+                    print(all_snps[i][j])
+                    print(self.sequences[i][v_pos])
+                    sys.exit(1)
+                else:
+                    temp[v_pos] = all_snps[i][j][2]
+            self.sequences[i] = Seq(temp)
+
+    def insert_indels(self, all_indels):
+        # organize the indels we want to insert
+        for i in range(len(all_indels)):
+            all_indels[i].extend(self.indel_list[i])
+        all_indels_ins = [sorted([list(m) for m in n]) for n in all_indels]
+        # MODIFY REFERENCE STRING: INDELS
+        for i in range(len(all_indels_ins)):  # TODO here should update annotation
+            rolling_adj = 0
+            temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
+
+            for j in range(len(all_indels_ins[i])):
+                v_pos = all_indels_ins[i][j][0] + rolling_adj
+                v_pos2 = v_pos + len(all_indels_ins[i][j][1])
+                indel_length = len(all_indels_ins[i][j][2]) - len(all_indels_ins[i][j][1])
+                rolling_adj += indel_length
+
+                if all_indels_ins[i][j][1] != str(self.sequences[i][v_pos:v_pos2]):
+                    print('\nError: Something went wrong!\n', all_indels_ins[i][j], [v_pos, v_pos2],
+                          str(self.sequences[i][v_pos:v_pos2]), '\n')
+                    sys.exit(1)
+                else:
+                    # alter reference sequence
+                    self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
+                                        self.sequences[i][v_pos2:]
+                    # notate indel positions for cigar computation
+                    if indel_length > 0:
+                        temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
+                                           + temp_symbol_list[v_pos2 + 1:]
+                    elif indel_length < 0:
+                        temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
+
+            # pre-compute cigar strings
+            for j in range(len(temp_symbol_list) - self.read_len):
+                self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
+
+            # create some data structures we will need later:
+            # --- self.fm_pos[ploid][pos]: position of the left-most matching base (IN REFERENCE COORDINATES, i.e.
+            #       corresponding to the unmodified reference genome)
+            # --- self.fm_span[ploid][pos]: number of reference positions spanned by a read originating from
+            #       this coordinate
+            md_so_far = 0
+            for j in range(len(temp_symbol_list)):
+                self.fm_pos[i].append(md_so_far)
+                # fix an edge case with deletions
+                if 'D' in temp_symbol_list[j]:
+                    self.fm_pos[i][-1] += temp_symbol_list[j].count('D')
+                # compute number of ref matches for each read
+                # This line gets hit a lot and is relatively slow. Might look for an improvement
+                span_dif = len([n for n in temp_symbol_list[j: j + self.read_len] if 'M' in n])
+                self.fm_span[i].append(self.fm_pos[i][-1] + span_dif)
+                md_so_far += temp_symbol_list[j].count('M') + temp_symbol_list[j].count('D')
+
+    def pick_random_snps(self):
+        # add random snps
+        all_snps = [[] for _ in self.sequences]
+        for region in Regions:
+            for i in range(self.ploidy):
+                random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
+                for j in range(random_snps_minus_inserted):
+                    which_ploids = self.determine_random_mutation_ploids(i)
+
+                    event_pos = self.find_position_snp(region, which_ploids)
+                    if event_pos == -1:
+                        continue
+
+                    ref_nucl = self.sequences[i][event_pos]
+                    context = str(self.sequences[i][event_pos - 1]) + str(self.sequences[i][event_pos + 1])
+                    # sample from tri-nucleotide substitution matrices to get SNP alt allele
+                    new_nucl = self.models_per_region[region][i][6][TRI_IND[context]][
+                        NUC_IND[ref_nucl]].sample()  # TODO change here?
+                    my_snp = (event_pos, ref_nucl, new_nucl)
+
+                    for p in which_ploids:
+                        all_snps[p].append(my_snp)
+                        self.black_list[p][my_snp[0]] = 2
+        return all_snps
+
+    # TODO consider regions
+    def find_position_snp(self, region, which_ploid):
+        # try to find suitable places to insert snps
+        event_pos = -1
+        for attempt in range(MAX_ATTEMPTS):
+            # based on the mutation model for the specified ploid, choose a SNP location based on trinuc bias
+            # (if there are multiple ploids, choose one at random)
+            if IGNORE_TRINUC:
+                event_pos = random.randint(self.win_buffer + 1,
+                                           self.seq_len - 2)  # TODO_should consider annotations
+            else:
+                ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
+                event_pos = self.trinuc_bias_per_region[region][
+                    ploid_to_use].sample()  # TODO_should consider annotations???? or no need?
+            for p in which_ploid:
+                if self.black_list[p][event_pos]:
+                    event_pos = -1
+            if event_pos != -1:
+                break
+        return event_pos
+
+    def pick_random_indels(self):
         # add random indels
         all_indels = [[] for _ in self.sequences]
         for i in range(self.ploidy):
-            random_indels_minus_inserted = max(self.indels_to_add[i]-len(self.indel_list[i]),0)
+            random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
             for j in range(random_indels_minus_inserted):
-                # insert homozygous indel
-                if random.random() <= self.models[i][1]:
-                    which_ploid = range(self.ploidy)
-                # insert heterozygous indel
-                else:
-                    which_ploid = [self.ploid_mut_prior.sample()]
+                which_ploid = self.determine_random_mutation_ploids(i)
 
-                # try to find suitable places to insert indels
-                event_pos = -1
-                for attempt in range(MAX_ATTEMPTS):
-                    event_pos = random.randint(self.win_buffer, self.seq_len - 1) #TODO_should consider annotations
-                    for p in which_ploid:
-                        if self.black_list[p][event_pos]:
-                            event_pos = -1
-                    if event_pos != -1:
-                        break
+                event_pos = self.find_position_indel(which_ploid)
                 if event_pos == -1:
                     continue
 
                 # insertion
-                if random.random() <= self.models[i][3]:
-                    in_len = self.models[i][4].sample()
+                if random.random() <= self.models_per_region[region][i][3]:  # TODO change here?
+                    in_len = self.models_per_region[region][i][4].sample()  # TODO change here?
                     # sequence content of random insertions is uniformly random (change this later, maybe)
                     in_seq = ''.join([random.choice(NUCL) for _ in range(in_len)])
                     ref_nucl = self.sequences[i][event_pos]
                     my_indel = (event_pos, ref_nucl, ref_nucl + in_seq)
                 # deletion
                 else:
-                    in_len = self.models[i][5].sample()
+                    in_len = self.models_per_region[region][i][5].sample()  # TODO change here?
                     # skip if deletion too close to boundary
                     if event_pos + in_len + 1 >= len(self.sequences[i]):
                         continue
@@ -548,140 +650,29 @@ class SequenceContainer:
                     for k in range(event_pos, event_pos + in_len + 1):
                         self.black_list[p][k] = 1
                     all_indels[p].append(my_indel)
+        return all_indels
 
-        # add random snps
-        all_snps = [[] for _ in self.sequences]
-        for i in range(self.ploidy):
-            random_snps_minus_inserted = max(self.snps_to_add[i]-len(self.snp_list[i]),0)
-            for j in range(random_snps_minus_inserted):
-                # insert homozygous SNP
-                if random.random() <= self.models[i][1]:
-                    which_ploid = range(self.ploidy)
-                # insert heterozygous SNP
-                else:
-                    which_ploid = [self.ploid_mut_prior.sample()]
+    def determine_random_mutation_ploids(self, i):
+        # insert homozygous indel
+        if random.random() <= self.models_per_region[region][i][1]:  # TODO change here?
+            which_ploid = range(self.ploidy)
+        # insert heterozygous indel
+        else:
+            which_ploid = [self.ploid_mut_prior_per_region[region].sample()]
+        return which_ploid
 
-                # try to find suitable places to insert snps
-                event_pos = -1
-                for attempt in range(MAX_ATTEMPTS):
-                    # based on the mutation model for the specified ploid, choose a SNP location based on trinuc bias
-                    # (if there are multiple ploids, choose one at random)
-                    if IGNORE_TRINUC:
-                        event_pos = random.randint(self.win_buffer + 1, self.seq_len - 2) #TODO_should consider annotations
-                    else:
-                        ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
-                        event_pos = self.trinuc_bias[ploid_to_use].sample() #TODO_should consider annotations???? or no need?
-                    for p in which_ploid:
-                        if self.black_list[p][event_pos]:
-                            event_pos = -1
-                    if event_pos != -1:
-                        break
-                if event_pos == -1:
-                    continue
-
-                ref_nucl = self.sequences[i][event_pos]
-                context = str(self.sequences[i][event_pos - 1]) + str(self.sequences[i][event_pos + 1])
-                # sample from tri-nucleotide substitution matrices to get SNP alt allele
-                new_nucl = self.models[i][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
-                my_snp = (event_pos, ref_nucl, new_nucl)
-
-                for p in which_ploid:
-                    all_snps[p].append(my_snp)
-                    self.black_list[p][my_snp[0]] = 2
-
-        # combine random snps with inserted snps, remove any snps that overlap indels
-        for p in range(len(all_snps)):
-            all_snps[p].extend(self.snp_list[p])
-            all_snps[p] = [n for n in all_snps[p] if self.black_list[p][n[0]] != 1]
-
-        # MODIFY REFERENCE STRING: SNPS
-        for i in range(len(all_snps)): #TODO here should update annotation? I dont think so...
-            temp = MutableSeq(self.sequences[i])
-            for j in range(len(all_snps[i])):
-                v_pos = all_snps[i][j][0]
-
-                if all_snps[i][j][1] != temp[v_pos]:
-                    print('\nError: Something went wrong!\n', all_snps[i][j], temp[v_pos], '\n')
-                    print(all_snps[i][j])
-                    print(self.sequences[i][v_pos])
-                    sys.exit(1)
-                else:
-                    temp[v_pos] = all_snps[i][j][2]
-            self.sequences[i] = Seq(temp)
-
-        # organize the indels we want to insert
-        for i in range(len(all_indels)):
-            all_indels[i].extend(self.indel_list[i])
-        all_indels_ins = [sorted([list(m) for m in n]) for n in all_indels]
-
-        # MODIFY REFERENCE STRING: INDELS
-        for i in range(len(all_indels_ins)): #TODO here should update annotation
-            rolling_adj = 0
-            temp_symbol_list = CigarString.string_to_list(str(len(self.sequences[i])) + "M")
-
-            for j in range(len(all_indels_ins[i])):
-                v_pos = all_indels_ins[i][j][0] + rolling_adj
-                v_pos2 = v_pos + len(all_indels_ins[i][j][1])
-                indel_length = len(all_indels_ins[i][j][2]) - len(all_indels_ins[i][j][1])
-                rolling_adj += indel_length
-
-                if all_indels_ins[i][j][1] != str(self.sequences[i][v_pos:v_pos2]):
-                    print('\nError: Something went wrong!\n', all_indels_ins[i][j], [v_pos, v_pos2],
-                          str(self.sequences[i][v_pos:v_pos2]), '\n')
-                    sys.exit(1)
-                else:
-                    # alter reference sequence
-                    self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
-                                        self.sequences[i][v_pos2:]
-                    # notate indel positions for cigar computation
-                    if indel_length > 0:
-                        temp_symbol_list = temp_symbol_list[:v_pos + 1] + ['I'] * indel_length \
-                                              + temp_symbol_list[v_pos2 + 1:]
-                    elif indel_length < 0:
-                        temp_symbol_list[v_pos + 1] = "D" * abs(indel_length) + "M"
-
-            # pre-compute cigar strings
-            for j in range(len(temp_symbol_list) - self.read_len):
-                self.all_cigar[i].append(temp_symbol_list[j:j + self.read_len])
-
-            # create some data structures we will need later:
-            # --- self.fm_pos[ploid][pos]: position of the left-most matching base (IN REFERENCE COORDINATES, i.e.
-            #       corresponding to the unmodified reference genome)
-            # --- self.fm_span[ploid][pos]: number of reference positions spanned by a read originating from
-            #       this coordinate
-            md_so_far = 0
-            for j in range(len(temp_symbol_list)):
-                self.fm_pos[i].append(md_so_far)
-                # fix an edge case with deletions
-                if 'D' in temp_symbol_list[j]:
-                    self.fm_pos[i][-1] += temp_symbol_list[j].count('D')
-                # compute number of ref matches for each read
-                # This line gets hit a lot and is relatively slow. Might look for an improvement
-                span_dif = len([n for n in temp_symbol_list[j: j + self.read_len] if 'M' in n])
-                self.fm_span[i].append(self.fm_pos[i][-1] + span_dif)
-                md_so_far += temp_symbol_list[j].count('M') + temp_symbol_list[j].count('D')
-
-        # tally up all the variants we handled...
-        count_dict = {}
-        all_variants = [sorted(all_snps[i] + all_indels[i]) for i in range(self.ploidy)]
-        for i in range(len(all_variants)):
-            for j in range(len(all_variants[i])):
-                all_variants[i][j] = tuple([all_variants[i][j][0] + self.x]) + all_variants[i][j][1:]
-                t = tuple(all_variants[i][j])
-                if t not in count_dict:
-                    count_dict[t] = []
-                count_dict[t].append(i)
-
-        # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
-
-        output_variants = []
-        for k in sorted(count_dict.keys()):
-            output_variants.append(k + tuple([len(count_dict[k]) / float(self.ploidy)]))
-            ploid_string = ['0' for _ in range(self.ploidy)]
-            for k2 in [n for n in count_dict[k]]:
-                ploid_string[k2] = '1'
-            output_variants[-1] += tuple(['WP=' + '/'.join(ploid_string)])
-        return output_variants
+    # TODO consider regions
+    def find_position_indel(self, which_ploid):
+        # try to find suitable places to insert indels
+        event_pos = -1
+        for attempt in range(MAX_ATTEMPTS):
+            event_pos = random.randint(self.win_buffer, self.seq_len - 1)  # TODO_should consider annotations
+            for p in which_ploid:
+                if self.black_list[p][event_pos]:
+                    event_pos = -1
+            if event_pos != -1:
+                break
+        return event_pos
 
     def sample_read(self, sequencing_model, frag_len=None):
 
@@ -1072,61 +1063,157 @@ class ReadContainer:
 # parse mutation model pickle file
 def parse_input_mutation_model(model=None, which_default=1):
     if which_default == 1:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_1]
+        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_1] for region in Regions}
     elif which_default == 2:
-        out_model = [copy.deepcopy(n) for n in DEFAULT_MODEL_2]
+        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_2] for region in Regions}
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)
 
     if model is not None:
         pickle_dict = pickle.load(open(model, "rb"))
-        out_model[0] = pickle_dict['AVG_MUT_RATE']
-        out_model[2] = 1. - pickle_dict['SNP_FREQ']
+        for region in Regions:
+            out_model[region][0] = pickle_dict[f'{region.value}.AVG_MUT_RATE']
+            out_model[region][2] = 1. - pickle_dict[f'{region.value}.SNP_FREQ']
 
-        ins_list = pickle_dict['INDEL_FREQ']
-        if len(ins_list):
-            ins_count = sum([ins_list[k] for k in ins_list.keys() if k >= 1])
-            del_count = sum([ins_list[k] for k in ins_list.keys() if k <= -1])
-            ins_vals = [k for k in sorted(ins_list.keys()) if k >= 1]
-            ins_weight = [ins_list[k] / float(ins_count) for k in ins_vals]
-            del_vals = [k for k in sorted([abs(k) for k in ins_list.keys() if k <= -1])]
-            del_weight = [ins_list[-k] / float(del_count) for k in del_vals]
-        else:  # degenerate case where no indel stats are provided
-            ins_count = 1
-            del_count = 1
-            ins_vals = [1]
-            ins_weight = [1.0]
-            del_vals = [1]
-            del_weight = [1.0]
-        out_model[3] = ins_count / float(ins_count + del_count)
-        out_model[4] = ins_vals
-        out_model[5] = ins_weight
-        out_model[6] = del_vals
-        out_model[7] = del_weight
+            ins_list = pickle_dict[f'{region.value}.INDEL_FREQ']
+            if len(ins_list):
+                ins_count = sum([ins_list[k] for k in ins_list.keys() if k >= 1])
+                del_count = sum([ins_list[k] for k in ins_list.keys() if k <= -1])
+                ins_vals = [k for k in sorted(ins_list.keys()) if k >= 1]
+                ins_weight = [ins_list[k] / float(ins_count) for k in ins_vals]
+                del_vals = [k for k in sorted([abs(k) for k in ins_list.keys() if k <= -1])]
+                del_weight = [ins_list[-k] / float(del_count) for k in del_vals]
+            else:  # degenerate case where no indel stats are provided
+                ins_count = 1
+                del_count = 1
+                ins_vals = [1]
+                ins_weight = [1.0]
+                del_vals = [1]
+                del_weight = [1.0]
+            out_model[region][3] = ins_count / float(ins_count + del_count)
+            out_model[region][4] = ins_vals
+            out_model[region][5] = ins_weight
+            out_model[region][6] = del_vals
+            out_model[region][7] = del_weight
 
-        trinuc_trans_prob = pickle_dict['TRINUC_TRANS_PROBS']
-        for k in sorted(trinuc_trans_prob.keys()):
-            my_ind = TRI_IND[k[0][0] + k[0][2]]
-            (k1, k2) = (NUC_IND[k[0][1]], NUC_IND[k[1][1]])
-            out_model[8][my_ind][k1][k2] = trinuc_trans_prob[k]
-        for i in range(len(out_model[8])):
-            for j in range(len(out_model[8][i])):
-                for l in range(len(out_model[8][i][j])):
-                    # if trinuc not present in input mutation model, assign it uniform probability
-                    if float(sum(out_model[8][i][j])) < 1e-12:
-                        out_model[8][i][j] = [0.25, 0.25, 0.25, 0.25]
-                    else:
-                        out_model[8][i][j][l] /= float(sum(out_model[8][i][j]))
+            trinuc_trans_prob = pickle_dict[f'{region.value}.TRINUC_TRANS_PROBS']
+            for k in sorted(trinuc_trans_prob.keys()):
+                my_ind = TRI_IND[k[0][0] + k[0][2]]
+                (k1, k2) = (NUC_IND[k[0][1]], NUC_IND[k[1][1]])
+                out_model[region][8][my_ind][k1][k2] = trinuc_trans_prob[k]
+            for i in range(len(out_model[region][8])):
+                for j in range(len(out_model[region][8][i])):
+                    for l in range(len(out_model[region][8][i][j])):
+                        # if trinuc not present in input mutation model, assign it uniform probability
+                        if float(sum(out_model[region][8][i][j])) < 1e-12:
+                            out_model[region][8][i][j] = [0.25, 0.25, 0.25, 0.25]
+                        else:
+                            out_model[region][8][i][j][l] /= float(sum(out_model[region][8][i][j]))
 
-        trinuc_mut_prob = pickle_dict['TRINUC_MUT_PROB']
-        which_have_we_seen = {n: False for n in ALL_TRI}
-        trinuc_mean = np.mean(list(trinuc_mut_prob.values()))
-        for trinuc in trinuc_mut_prob.keys():
-            out_model[9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
-            which_have_we_seen[trinuc] = True
-        for trinuc in which_have_we_seen.keys():
-            if not which_have_we_seen[trinuc]:
-                out_model[9][ALL_IND[trinuc]] = trinuc_mean
+            trinuc_mut_prob = pickle_dict[f'{region.value}.TRINUC_MUT_PROB']
+            which_have_we_seen = {n: False for n in ALL_TRI}
+            trinuc_mean = np.mean(list(trinuc_mut_prob.values()))
+            for trinuc in trinuc_mut_prob.keys():
+                out_model[region][9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
+                which_have_we_seen[trinuc] = True
+            for trinuc in which_have_we_seen.keys():
+                if not which_have_we_seen[trinuc]:
+                    out_model[region][9][ALL_IND[trinuc]] = trinuc_mean
 
     return out_model
+
+#####################################
+#    Supporting Data Structures     #
+#####################################
+
+class Regions(Enum):
+    EXON = 'exon'
+    INTRON = 'intron'
+    INTERGENIC = 'intergenic'
+    ALL = 'all'
+
+
+class Stats(Enum):
+    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
+    TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
+    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
+    TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
+    # total count of SNPs
+    SNP_COUNT = 'SNP_COUNT'
+    # overall SNP transition probabilities
+    SNP_TRANSITION_COUNT = 'SNP_TRANSITION_COUNT'
+    # total count of indels, indexed by length
+    INDEL_COUNT = 'INDEL_COUNT'
+    # tabulate how much non-N reference sequence we've eaten through
+    TOTAL_REFLEN = 'TOTAL_REFLEN'
+    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
+    COMMON_VARIANTS = 'COMMON_VARIANTS'
+    # identify regions that have significantly higher local mutation rates than the average
+    HIGH_MUT_REGIONS = 'HIGH_MUT_REGIONS'
+    # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
+    VDAT_COMMON = 'VDAT_COMMON'
+    SNP_FREQ = 'SNP_FREQ'
+    AVG_INDEL_FREQ = 'AVG_INDEL_FREQ'
+    INDEL_FREQ = 'INDEL_FREQ'
+    AVG_MUT_RATE = 'AVG_MUT_RATE'
+
+
+class AnnotatedSeqence:
+    _chrom_seqeunces = {}
+    _code_to_annotation = {0:Regions.EXON.value, 1:Regions.INTRON.value, 2:Regions.INTERGENIC.value}
+    _annotation_to_code = {Regions.EXON.value:0, Regions.INTRON.value:1, Regions.INTERGENIC.value:2}
+
+    def __init__(self, annotations_df: pd.DataFrame):
+        if annotations_df is None or annotations_df.empty:
+            self._chrom_seqeunces = None
+            return
+
+        for i, annotation in annotations_df.iterrows():
+            if not annotation['chrom'] in self.chrom_seqeunces:
+                self._chrom_seqeunces[annotation['chrom']] = []
+            annotation_length = annotation['end'] - annotation['start']
+            current_sequence = [self._annotation_to_code[annotation['feature']]] * annotation_length
+            self._chrom_seqeunces[annotation['chrom']] = self._chrom_seqeunces[annotation['chrom']] + current_sequence
+
+    def get_annotation(self, chrom, index):
+        if not self._chrom_seqeunces:
+            return Regions.ALL
+        return self._code_to_annotation[self.chrom_seqeunces[chrom][index]]
+
+
+class RegionStats:
+    def __init__(self, annotations_df = None):
+        self._regions_stats = {Regions.ALL: self.create_stats_dict()}
+        _annotated_sequence = AnnotatedSeqence(None)
+        if annotations_df:
+            self._regions_stats[Regions.EXON] = self.create_stats_dict()
+            self._regions_stats[Regions.INTRON] = self.create_stats_dict()
+            self._regions_stats[Regions.INTERGENIC] = self.create_stats_dict()
+            _annotated_sequence = AnnotatedSeqence(annotations_df)
+
+    def get_region(self, chrom, index):
+        return self._annotated_sequence.get_annotation(chrom, index)
+
+    def get_stat_by_region(self, region_name, stat_name):
+        return self._regions_stats[region_name][stat_name]
+
+    def get_stat_by_location(self, chrom, index, stat_name):
+        region_name = self.get_region(chrom, index)
+        return self.get_stat_by_region(region_name, stat_name)
+
+    def get_all_stats(self):
+        return self._regions_stats
+
+    @staticmethod
+    def create_stats_dict():
+        return {
+            Stats.TRINUC_REF_COUNT: {},
+            Stats.TRINUC_TRANSITION_COUNT: {},
+            Stats.SNP_COUNT: [0],
+            Stats.SNP_TRANSITION_COUNT: {},
+            Stats.INDEL_COUNT: {},
+            Stats.TOTAL_REFLEN: [0],
+            Stats.COMMON_VARIANTS: [],
+            Stats.HIGH_MUT_REGIONS: []
+        }

@@ -26,7 +26,6 @@ import time
 import numpy as np
 import os
 import pandas as pd
-import pybedtools
 from pybedtools import BedTool
 
 from neat.source.fastq_file_writer import FastqFileWriter
@@ -367,7 +366,7 @@ def load_mutation_model(mutation_params):
         is_in_range(mutation_params["mut_rate"], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
     load_mutation_regions(mutation_params)
 
-
+ #TODO erase?
 # parse input mutation rate rescaling regions, if present
 def load_mutation_regions(mutation_params):
     # mutation_params["mut_rate_regions"] = {}
@@ -776,9 +775,9 @@ def update_sequences(coverage_dat, end, output_params, mutation_params, sequenci
             # pdb.set_trace()
             sys.exit(1)
     # insert variants
-    sequences.insert_mutations(
+    sequences.insert_given_mutations(
         vars_from_prev_overlap + list(vars_in_window.itertuples(index=False)))
-    inserted_random_variants = sequences.random_mutations()
+    inserted_random_variants = sequences.insert_random_mutations()
     # print all_inserted_variants
     # init coverage
     if sum(coverage_dat[2]) >= sequencing_params["low_cov_thresh"]:
