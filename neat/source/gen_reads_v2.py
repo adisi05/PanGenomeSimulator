@@ -358,7 +358,8 @@ def get_vars_in_window(start, end, valid_variants_from_vcf):
 
 
 
-def update_sequences(chrom, start, end, sequences, vars_in_current_window, output_params, mutation_params):
+def update_sequences(start, end, sequences, vars_in_current_window):
+    sequences.focus_on_window(start, end)
     # insert variants
     sequences.insert_given_mutations(vars_in_current_window)
     inserted_random_variants = sequences.insert_random_mutations(start, end)

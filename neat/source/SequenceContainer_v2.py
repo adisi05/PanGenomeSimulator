@@ -93,11 +93,7 @@ class SequenceContainer:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, x_offset, sequence, ploidy, window_overlap, mut_models=None, mut_rate=None, dist=None):
-
-        self.update_sequence(x_offset, sequence, ploidy, window_overlap, mut_models, mut_rate, dist)
-
-    def update_sequence(self, x_offset, sequence, ploidy, window_overlap, mut_models=None, mut_rate=None, dist=None):
+    def __init__(self, sequence, ploidy, mut_models=None, mut_rate=None, dist=None):
         # initialize mutation models or reinitialize if changed
         if ploidy != self.ploidy or mut_rate != self.mut_rescale or mut_models is not None:
             self.ploidy = ploidy
@@ -109,7 +105,7 @@ class SequenceContainer:
             self.indel_poisson_per_region, self.snp_poisson_per_region = self.init_poisson()
 
         # basic vars
-        self.update_basic_vars(x_offset, sequence, window_overlap)
+        self.initialize_blacklist()
 
         # sample the number of variants that will be inserted into each ploid
         self.indels_to_add_per_region =  {region: [n.sample() for n in self.indel_poisson_per_region[region]] for region in Regions}
@@ -117,7 +113,7 @@ class SequenceContainer:
 
         # initialize trinuc snp bias
         if not IGNORE_TRINUC:
-            self.update_trinuc_bias()
+            self.initialize_trinuc_bias()
 
 
     def update_mut_models(self, mut_models, mut_rate, dist):
@@ -173,12 +169,7 @@ class SequenceContainer:
                 self.models_per_region[region][-1].append([m for m in n[9]])
 
 
-    def update_basic_vars(self, x_offset, sequence, window_overlap):
-        self.x = x_offset
-        self.sequences = [Seq(str(sequence)) for _ in range(self.ploidy)]
-        self.indel_list = [[] for _ in range(self.ploidy)]
-        self.snp_list = [[] for _ in range(self.ploidy)]
-
+    def initialize_blacklist(self):
         # Blacklist explanation:
         # black_list[ploid][pos] = 0		safe to insert variant here
         # black_list[ploid][pos] = 1		indel inserted here
@@ -186,14 +177,8 @@ class SequenceContainer:
         # black_list[ploid][pos] = 3		invalid position for various processing reasons
         self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
 
-        # disallow mutations to occur on window overlap points
-        self.win_buffer = window_overlap
-        for p in range(self.ploidy):
-            self.black_list[p][-self.win_buffer] = 3
-            self.black_list[p][-self.win_buffer - 1] = 3
 
-
-    def update_trinuc_bias(self):
+    def initialize_trinuc_bias(self):
         # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
         #
@@ -204,9 +189,8 @@ class SequenceContainer:
         for p in range(self.ploidy):
             for region in Regions:
                 for i in range(self.win_buffer + 1, self.seq_len - 1):
-                    trinuc_snp_bias[p][i] = self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
-                self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias[p][self.win_buffer + 1:self.seq_len - 1],
-                                                           range(self.win_buffer + 1, self.seq_len - 1))
+                    trinuc_snp_bias[p][i] = self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p])]]
+                self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias[p], range(self.seq_len))
 
     def init_poisson(self):
         ind_l_list_per_region = {}
@@ -404,8 +388,7 @@ class SequenceContainer:
         # try to find suitable places to insert snps
         event_pos = ???
         if IGNORE_TRINUC:
-            event_pos = random.randint(self.win_buffer + 1,
-                                       self.seq_len - 2)
+            event_pos = random.randint(0, self.seq_len - 1)
         else:
             ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
             event_pos = self.trinuc_bias_per_region[region][
@@ -455,7 +438,7 @@ class SequenceContainer:
 
                     # if event too close to boundary, skip. if event conflicts with other indel, skip.
                     skip_event = False
-                    if event_pos + len(my_indel[1]) >= self.seq_len - self.win_buffer - 1:
+                    if event_pos + len(my_indel[1]) >= self.seq_len - 1:
                         skip_event = True
                     if skip_event:
                         continue
@@ -487,7 +470,7 @@ class SequenceContainer:
         # try to find suitable places to insert indels
         event_pos = -1 ???
         for attempt in range(MAX_ATTEMPTS):
-            event_pos = random.randint(self.win_buffer, self.seq_len - 1)
+            event_pos = random.randint(0, self.seq_len - 1)
             for p in which_ploid:
                 if self.black_list[p][event_pos]:
                     event_pos = -1
