@@ -98,44 +98,12 @@ class ChromosomeSequenceContainer:
         self.seq_len = len(sequence)
         self.ploidy = ploidy
         self.update_mut_models(mut_models, mut_rate, dist)
+        self.initialize_blacklist() # TODO consider if deprecated
+        self.annotated_seq = None #TODO save annotations in an annotated sequence DS
 
-        # TODO consider if deprecated
-        self.initialize_blacklist()
-
-        # # sample the number of variants that will be inserted into each ploid, over the whole chromosome
-        # self.determine_snps_and_indels_for_chromosome_per_region()
-
-        # initialize trinuc snp bias
-        if not IGNORE_TRINUC:
-            self.initialize_trinuc_bias()
-
-
-    # def determine_snps_and_indels_for_chromosome_per_region(self):
-    #     self.start = 0
-    #     self.end = self.seq_len
-    #     self.determine_snps_and_indels_in_window_per_region(self.seq_len)
-    #     self.snps_to_add_per_region = self.snps_to_add_window_per_region
-    #     self.indels_to_add_per_region = self.indels_to_add_window_per_region
-
-
-    def focus_on_window(self, start, end):
-        #TODO sanity check about start, end. Maybe consider N regions?
-        self.start = start
-        self.end = end
-        self.update_counts_of_nucleotides_in_window_per_region() #TODO implement
-        self.determine_snps_and_indels_in_window_per_region()
-
-
-    def determine_snps_and_indels_in_window_per_region(self):
-        indel_poisson_per_region, snp_poisson_per_region = self.init_poisson()
-        self.indels_to_add_window_per_region = {region: [n.sample() for n in indel_poisson_per_region[region]] for region
-                                         in Regions}
-        self.snps_to_add_window_per_region = {region: [n.sample() for n in snp_poisson_per_region[region]] for region in
-                                       Regions}
-
-    def update_mut_models(self, mut_models, mut_rate, dist):
+    def update_mut_models(self, mut_models, mut_rate, dist): #TODO figure out: called one time? or a few times, for each window?
         if not mut_models:
-            single_ploid_model = {region: copy.deepcopy(DEFAULT_MODEL_1) for region in Regions}
+            single_ploid_model = {region: copy.deepcopy(DEFAULT_MODEL_1) for region in self.annotated_seq.get_regions()}
             default_model = [single_ploid_model for _ in range(self.ploidy)]
             self.model_data = default_model[:self.ploidy]
         else:
@@ -145,22 +113,22 @@ class ChromosomeSequenceContainer:
             self.model_data = copy.deepcopy(mut_models)
 
         # do we need to rescale mutation frequencies?
-        mut_rate_sum_per_region = {region: sum([n[region][0] for n in self.model_data]) for region in Regions}
+        mut_rate_sum_per_region = {region: sum([n[region][0] for n in self.model_data]) for region in self.annotated_seq.get_regions()}
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
-            self.mut_scalar_per_region = {region: 1.0 for region in Regions}
+            self.mut_scalar_per_region = {region: 1.0 for region in self.annotated_seq.get_regions()}
         else:
             self.mut_scalar_per_region = {region: float(self.mut_rescale) //
-                         (mut_rate_sum_per_region[region] / float(len(self.model_data))) for region in Regions}
+                         (mut_rate_sum_per_region[region] / float(len(self.model_data))) for region in self.annotated_seq.get_regions()}
         if dist:
-            self.mut_scalar_per_region = {region: self.mut_scalar_per_region[region] * dist for region in Regions}
+            self.mut_scalar_per_region = {region: self.mut_scalar_per_region[region] * dist for region in self.annotated_seq.get_regions()}
 
         # how are mutations spread to each ploid, based on their specified mut rates?
         self.ploid_mut_frac_per_region = \
-            {region: [float(n[0]) / mut_rate_sum_per_region[region] for n in self.model_data] for region in Regions}
+            {region: [float(n[0]) / mut_rate_sum_per_region[region] for n in self.model_data] for region in self.annotated_seq.get_regions()}
         self.ploid_mut_prior_per_region = \
             {region: DiscreteDistribution(self.ploid_mut_frac_per_region[region], range(self.ploidy))
-             for region in Regions}
+             for region in self.annotated_seq.get_regions()}
 
         # init mutation models
         #
@@ -172,8 +140,8 @@ class ChromosomeSequenceContainer:
         # self.models_per_region[region][ploid][5] = distribution of deletion lengths
         # self.models_per_region[region][ploid][6] = distribution of trinucleotide SNP transitions
         # self.models_per_region[region][ploid][7] = p(trinuc mutates)
-        self.models_per_region = {region: [] for region in Regions}
-        for region in Regions:
+        self.models_per_region = {region: [] for region in self.annotated_seq.get_regions()}
+        for region in self.annotated_seq.get_regions():
             for n in self.model_data:
                 self.models_per_region[region].append(
                     [self.mut_scalar_per_region[region] * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),
@@ -186,6 +154,28 @@ class ChromosomeSequenceContainer:
                 self.models_per_region[region][-1].append([m for m in n[9]])
 
 
+    def get_window_mutations(self, start, end): #NOTE: window can be also a whole non-N region or the entire chromosome
+        #TODO sanity check about start, end. Maybe consider N regions?
+        self.window_start = start
+        self.window_end = end
+        # initialize trinuc snp bias
+        if not IGNORE_TRINUC:
+            self.update_trinuc_bias_of_window()
+        indels_to_add_window_per_region, snps_to_add_window_per_region = self.get_planned_snps_and_indels_in_window_per_region()
+        max_mutations_in_window = MAX_MUTFRAC * (end-start) #TODO rethink it
+        return indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window
+
+
+    def get_planned_snps_and_indels_in_window_per_region(self):
+        indel_poisson_per_region = self.init_poisson(indels=True)
+        snp_poisson_per_region = self.init_poisson(indels=False)
+        indels_to_add_window_per_region = {region: [n.sample() for n in indel_poisson_per_region[region]]
+                                                for region in self.annotated_seq.get_regions()}
+        snps_to_add_window_per_region = {region: [n.sample() for n in snp_poisson_per_region[region]]
+                                              for region in self.annotated_seq.get_regions()}
+        return indels_to_add_window_per_region, snps_to_add_window_per_region
+
+
     def initialize_blacklist(self):
         # Blacklist explanation:
         # black_list[ploid][pos] = 0		safe to insert variant here
@@ -195,6 +185,7 @@ class ChromosomeSequenceContainer:
         self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
 
 
+    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-implement
     def update_trinuc_bias_of_window(self, start, end):
         # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
@@ -202,9 +193,9 @@ class ChromosomeSequenceContainer:
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
         seq_len = end - start
-        trinuc_snp_bias_of_window_per_region = {region: [[0. for _ in range(seq_len)] for _ in range(self.ploidy)] for region in Regions}
-        self.trinuc_bias_of_window_per_region = {region: [None for _ in range(self.ploidy)] for region in Regions}
-        for region in Regions:
+        trinuc_snp_bias_of_window_per_region = {region: [[0. for _ in range(seq_len)] for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
+        self.trinuc_bias_of_window_per_region = {region: [None for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
+        for region in self.annotated_seq.get_regions():
             self.update_mask_of_region(start, end) #TODO implement. set to int 0 if all elements are 0
             for p in range(self.ploidy):
                 for i in range(0+1,seq_len-1):
@@ -213,26 +204,18 @@ class ChromosomeSequenceContainer:
                 self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1 :seq_len-1],
                                                            range(0+1,seq_len-1))
 
-
-    def init_poisson(self):
-        ind_l_list_per_region = {}
-        ind_poisson_per_region = {}
-        snp_l_list_per_region = {}
-        snps_poisson_per_region = {}
-        for region in Regions:
+    def init_poisson(self, indels=True):
+        list_per_region = {}
+        poisson_per_region = {}
+        nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.chrom, self.window_start, self.window_end)
+        for region in self.annotated_seq.get_regions():
             ploids = len(self.models_per_region[region])
-            ind_l_list_per_region[region] = [self.nucleotides_count_per_region[region] * self.models_per_region[region][i][0] * self.models_per_region[region][i][2] * self.ploid_mut_frac_per_region[region][i] for i in
-                          range(ploids)]
-            snp_l_list_per_region[region] = [self.nucleotides_count_per_region[region] * self.models_per_region[region][i][0] * (1. - self.models_per_region[region][i][2]) * self.ploid_mut_frac_per_region[region][i] for i in
-                          range(ploids)]
-            k_range = range(int(self.nucleotides_count_per_region[region] * MAX_MUTFRAC))
-            ind_poisson_per_region[region] = [poisson_list(k_range, snp_l_list_per_region[region][n])
-                     for n in range(len(self.models_per_region[region]))]
-            snps_poisson_per_region[region] = [poisson_list(k_range, ind_l_list_per_region[region][n])
-                     for n in range(len(self.models_per_region[region]))]
-        return ind_poisson_per_region, snps_poisson_per_region
-
-
+            for i in range(ploids):
+                param = self.models_per_region[region][i][2] if indels else (1. - self.models_per_region[region][i][2])
+                list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.models_per_region[region][i][2] * self.ploid_mut_frac_per_region[region][i])
+            k_range = range(int(nucleotides_counts_per_region[region] * MAX_MUTFRAC))
+            poisson_per_region[region] = [poisson_list(k_range, list_per_region[region][n]) for n in range(ploids)]
+        return poisson_per_region
 
     def insert_given_mutations(self, input_list):
         for input_variable in input_list:
@@ -301,19 +284,26 @@ class ChromosomeSequenceContainer:
         return which_alts, which_ploids
 
     def insert_random_mutations(self, start, end):
+        inserted_mutations = []
+        intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
 
-        all_indels = self.pick_random_indels()
+        while intended_mutations_in_window.has_next() and len(inserted_mutations) <= max_mutations_in_window:
+            current_mutation = intended_mutations_in_window.next()
+            position = self.find_position_for_mutation(current_mutation)
+            if position == -1:
+                continue
+            inserted_mutations.append(current_mutation)
+            #TODO add a check to see if the mutation was really inserted? something like status code?
+            new_start, new_end = self.insert_mutation_in_position(current_mutation, position)
+            window_chanded = new_start != start or new_end != end
+            annotation_changed = self.check_and_update_annotations_if_needed()
+            if annotation_changed or window_chanded:
+                intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
 
-        all_snps = self.pick_random_snps()
+        return self.mutations_in_vcf_form(inserted_mutations)
 
-        self.insert_snps(all_snps)
-
-        self.insert_indels(all_indels)
-
-        output_variants = self.sum_up_variants(all_indels, all_snps)
-        return output_variants
-
-    def sum_up_variants(self, all_indels, all_snps):
+    def mutations_in_vcf_form(self, inserted_mutations):
+        #TODO implement correctly
         # tally up all the variants we handled...
         count_dict = {}
         all_variants = [sorted(all_snps[i] + all_indels[i]) for i in range(self.ploidy)]
@@ -382,7 +372,7 @@ class ChromosomeSequenceContainer:
     def pick_random_snps(self):
         # add random snps
         all_snps = [[] for _ in self.sequences]
-        for region in Regions:
+        for region in self.annotated_seq.get_regions():
             for i in range(self.ploidy):
                 random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
                 for j in range(random_snps_minus_inserted):
@@ -426,7 +416,7 @@ class ChromosomeSequenceContainer:
     def pick_random_indels(self):
         # add random indels
         all_indels = [[] for _ in self.sequences]
-        for region in Regions:
+        for region in self.annotated_seq.get_regions():
             for i in range(self.ploidy):
                 random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
                 for j in range(random_indels_minus_inserted):
@@ -498,6 +488,7 @@ class ChromosomeSequenceContainer:
                 break
         return event_pos
 
+# TODO use self.annotated_seq.get_regions()?
 # parse mutation model pickle file
 def parse_input_mutation_model(model=None, which_default=1):
     if which_default == 1:
@@ -570,6 +561,8 @@ class Regions(Enum):
     INTRON = 'intron'
     INTERGENIC = 'intergenic'
     ALL = 'all'
+    #TODO see how we pass through evey Region which is not ALL, or only through ALL, when inserting mutations.
+    # need some kind of "strategy" solution
 
 
 class Stats(Enum):
@@ -601,23 +594,43 @@ class AnnotatedSeqence:
     _chrom_seqeunces = {}
     _code_to_annotation = {0:Regions.EXON.value, 1:Regions.INTRON.value, 2:Regions.INTERGENIC.value}
     _annotation_to_code = {Regions.EXON.value:0, Regions.INTRON.value:1, Regions.INTERGENIC.value:2}
+    _relevant_regions = []
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
             self._chrom_seqeunces = None
+            self._relevant_regions.append(Regions.ALL)
             return
 
         for i, annotation in annotations_df.iterrows():
             if not annotation['chrom'] in self.chrom_seqeunces:
                 self._chrom_seqeunces[annotation['chrom']] = []
+            region = Regions(annotation['feature'])
+            if region not in self._relevant_regions:
+                self._relevant_regions(region)
             annotation_length = annotation['end'] - annotation['start']
-            current_sequence = [self._annotation_to_code[annotation['feature']]] * annotation_length
+            current_sequence = [self._annotation_to_code[region.value]] * annotation_length
             self._chrom_seqeunces[annotation['chrom']] = self._chrom_seqeunces[annotation['chrom']] + current_sequence
+        if len(self._relevant_regions) == 0:
+            self._relevant_regions.append(Regions.ALL)
+
+    def get_regions(self):
+        return self._relevant_regions
 
     def get_annotation(self, chrom, index):
         if not self._chrom_seqeunces:
             return Regions.ALL
         return self._code_to_annotation[self.chrom_seqeunces[chrom][index]]
+
+    def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
+        start = start if start != -1 else 0
+        end = end if end != -1 else len(self.chrom_seqeunces[chrom])
+        window = self.chrom_seqeunces[chrom][start:end]
+        counts_per_region = {}
+        for region in self.get_regions():
+            counts_per_region[region] = window.count(str(self._annotation_to_code(region)))
+        return counts_per_region
+
 
 
 class RegionStats:
