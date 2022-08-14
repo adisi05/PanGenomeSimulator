@@ -16,7 +16,7 @@ from probability import DiscreteDistribution, poisson_list
 Constants needed for analysis
 """
 MAX_ATTEMPTS = 100  # max attempts to insert a mutation into a valid position
-MAX_MUTFRAC = 0.3  # the maximum percentage of a window that can contain mutations
+MAX_MUTFRAC = 0.3  # TODO rethink it!!! the maximum percentage of a window/sequence that can contain mutations
 
 NUCL = ['A', 'C', 'G', 'T']
 TRI_IND = {'AA': 0, 'AC': 1, 'AG': 2, 'AT': 3, 'CA': 4, 'CC': 5, 'CG': 6, 'CT': 7,
@@ -88,33 +88,50 @@ DEFAULT_MODEL_2 = [DEFAULT_2_OVERALL_MUT_RATE,
                    DEFAULT_2_TRINUC_BIAS]
 
 
-class SequenceContainer:
+class ChromosomeSequenceContainer:
     """
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, sequence, ploidy, mut_models=None, mut_rate=None, dist=None):
-        # initialize mutation models or reinitialize if changed
-        if ploidy != self.ploidy or mut_rate != self.mut_rescale or mut_models is not None:
-            self.ploidy = ploidy
-            self.update_mut_models(mut_models, mut_rate, dist)
+    def __init__(self, chromosome, sequence, annotations, ploidy, mut_models=None, mut_rate=None, dist=None):
+        self.chromosome = chromosome
+        self.seq_len = len(sequence)
+        self.ploidy = ploidy
+        self.update_mut_models(mut_models, mut_rate, dist)
 
-        # initialize poisson attributes or redo them if sequence length is different than previous window
-        if len(sequence) != self.seq_len:
-            self.seq_len = len(sequence)
-            self.indel_poisson_per_region, self.snp_poisson_per_region = self.init_poisson()
-
-        # basic vars
+        # TODO consider if deprecated
         self.initialize_blacklist()
 
-        # sample the number of variants that will be inserted into each ploid
-        self.indels_to_add_per_region =  {region: [n.sample() for n in self.indel_poisson_per_region[region]] for region in Regions}
-        self.snps_to_add_per_region = {region: [n.sample() for n in self.snp_poisson_per_region[region]] for region in Regions}
+        # # sample the number of variants that will be inserted into each ploid, over the whole chromosome
+        # self.determine_snps_and_indels_for_chromosome_per_region()
 
         # initialize trinuc snp bias
         if not IGNORE_TRINUC:
             self.initialize_trinuc_bias()
 
+
+    # def determine_snps_and_indels_for_chromosome_per_region(self):
+    #     self.start = 0
+    #     self.end = self.seq_len
+    #     self.determine_snps_and_indels_in_window_per_region(self.seq_len)
+    #     self.snps_to_add_per_region = self.snps_to_add_window_per_region
+    #     self.indels_to_add_per_region = self.indels_to_add_window_per_region
+
+
+    def focus_on_window(self, start, end):
+        #TODO sanity check about start, end. Maybe consider N regions?
+        self.start = start
+        self.end = end
+        self.update_counts_of_nucleotides_in_window_per_region() #TODO implement
+        self.determine_snps_and_indels_in_window_per_region()
+
+
+    def determine_snps_and_indels_in_window_per_region(self):
+        indel_poisson_per_region, snp_poisson_per_region = self.init_poisson()
+        self.indels_to_add_window_per_region = {region: [n.sample() for n in indel_poisson_per_region[region]] for region
+                                         in Regions}
+        self.snps_to_add_window_per_region = {region: [n.sample() for n in snp_poisson_per_region[region]] for region in
+                                       Regions}
 
     def update_mut_models(self, mut_models, mut_rate, dist):
         if not mut_models:
@@ -178,39 +195,42 @@ class SequenceContainer:
         self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
 
 
-    def initialize_trinuc_bias(self):
+    def update_trinuc_bias_of_window(self, start, end):
         # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
         #
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
-        trinuc_snp_bias = [[0. for _ in range(self.seq_len)] for _ in range(self.ploidy)]
-        self.trinuc_bias_per_region = {region: [None for _ in range(self.ploidy)] for region in Regions}
-        for p in range(self.ploidy):
-            for region in Regions:
-                for i in range(self.win_buffer + 1, self.seq_len - 1):
-                    trinuc_snp_bias[p][i] = self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p])]]
-                self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias[p], range(self.seq_len))
+        seq_len = end - start
+        trinuc_snp_bias_of_window_per_region = {region: [[0. for _ in range(seq_len)] for _ in range(self.ploidy)] for region in Regions}
+        self.trinuc_bias_of_window_per_region = {region: [None for _ in range(self.ploidy)] for region in Regions}
+        for region in Regions:
+            self.update_mask_of_region(start, end) #TODO implement. set to int 0 if all elements are 0
+            for p in range(self.ploidy):
+                for i in range(0+1,seq_len-1):
+                    trinuc_snp_bias_of_window_per_region[region][p][i] = self.mask_per_region[region][i] * \
+                        self.models_per_region[region][p][7][ALL_IND[str(self.sequences[p][i - 1:i + 2])]]
+                self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1 :seq_len-1],
+                                                           range(0+1,seq_len-1))
+
 
     def init_poisson(self):
         ind_l_list_per_region = {}
+        ind_poisson_per_region = {}
         snp_l_list_per_region = {}
+        snps_poisson_per_region = {}
         for region in Regions:
-            ind_l_list_per_region[region] = [self.seq_len * self.models_per_region[region][i][0] * self.models_per_region[region][i][2] * self.ploid_mut_frac_per_region[region][i] for i in
-                          range(len(self.models_per_region[region]))]
-            snp_l_list_per_region[region] = [self.seq_len * self.models_per_region[region][i][0] * (1. - self.models_per_region[region][i][2]) * self.ploid_mut_frac_per_region[region][i] for i in
-                          range(len(self.models_per_region[region]))]
-        k_range = range(int(self.seq_len * MAX_MUTFRAC))
-        # return (indel_poisson, snp_poisson)
-        # TODO These next two lines are really slow. Maybe there's a better way
-        return {region:
-                    [poisson_list(k_range, ind_l_list_per_region[region][n])
+            ploids = len(self.models_per_region[region])
+            ind_l_list_per_region[region] = [self.nucleotides_count_per_region[region] * self.models_per_region[region][i][0] * self.models_per_region[region][i][2] * self.ploid_mut_frac_per_region[region][i] for i in
+                          range(ploids)]
+            snp_l_list_per_region[region] = [self.nucleotides_count_per_region[region] * self.models_per_region[region][i][0] * (1. - self.models_per_region[region][i][2]) * self.ploid_mut_frac_per_region[region][i] for i in
+                          range(ploids)]
+            k_range = range(int(self.nucleotides_count_per_region[region] * MAX_MUTFRAC))
+            ind_poisson_per_region[region] = [poisson_list(k_range, snp_l_list_per_region[region][n])
                      for n in range(len(self.models_per_region[region]))]
-                for region in Regions}, \
-               {region:
-                    [poisson_list(k_range, snp_l_list_per_region[region][n])
+            snps_poisson_per_region[region] = [poisson_list(k_range, ind_l_list_per_region[region][n])
                      for n in range(len(self.models_per_region[region]))]
-                for region in Regions}
+        return ind_poisson_per_region, snps_poisson_per_region
 
 
 
