@@ -290,9 +290,9 @@ class ChromosomeSequenceContainer:
         #TODO consider ? random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
 
         while intended_mutations_in_window.has_next() and len(inserted_mutations) <= max_mutations_in_window:
-            current_mutation = intended_mutations_in_window.next()
+            mut_type, region = intended_mutations_in_window.next()
             # TODO add a check to see if the mutation was really inserted? something like status code?
-            inserted_mutation, window_updated  = self.insert_random_mutation(current_mutation)
+            inserted_mutation, window_updated  = self.insert_random_mutation(mut_type, region)
             if not inserted_mutation:
                 continue
             inserted_mutations.append(inserted_mutation)
@@ -302,21 +302,138 @@ class ChromosomeSequenceContainer:
 
         return self.mutations_in_vcf_form(inserted_mutations)
 
-    def insert_random_mutation(self, current_mutation):
-        region, mut_type = current_mutation
-        position = self.find_position_for_mutation(region)
+    def insert_random_mutation(self, mut_type, region):
+
+        ploid, position = self.find_position_for_mutation(mut_type, region)
         if position == -1:
-            continue
+            return None
+
+        inserted_mutation = None
+        window_updated = False
         if mut_type == MutType.SNP:
-            # TODO pick position should be specific for snp or general for all?
-            # TODO actuall insert. see insert_snps and convert to single
+            inserted_mutation = self.insert_snp(ploid, position, mut_type, region)
+
         elif mut_type == MutType.INDEL:
-            # TODO pick position should be specific for indel or general for all? see pick_random_indels
-            # TODO actual insert. see insert_indels and convert to single
+            inserted_mutation, window_updated = self.insert_indel(ploid, position, mut_type, region)
+
         #elif mut_type == MutType.SV:
         #   ...
 
         return inserted_mutation, window_updated
+
+    def find_position_mutation(self, mut_type, region):
+        # TODO consider regions, see v1
+        which_ploid = self.determine_random_mutation_ploids()
+
+        event_pos = -1
+        for attempt in range(MAX_ATTEMPTS):
+            if mut_type == MutType.INDEL or IGNORE_TRINUC:
+                event_pos = random.randint(self.window_start, self.window_end-1)
+                #TODO if event_pos is ok return it, otherwise keep trying
+                return event_pos
+            else:
+                ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
+                event_pos = self.trinuc_bias_per_region[region][ploid_to_use].sample()
+                #TODO if event_pos is ok return it, otherwise keep trying
+                return event_pos
+        return event_pos
+
+
+    def determine_random_mutation_ploids(self, region, i):
+        # TODO change to return only single ploid? instead of list
+        #      in general it's not so clear what is happening here...
+
+        # insert homozygous indel
+        if random.random() <= self.models_per_region[region][i][1]:
+            which_ploid = range(self.ploidy)
+        # insert heterozygous indel
+        else:
+            which_ploid = [self.ploid_mut_prior_per_region[region].sample()]
+        return which_ploid
+
+    def insert_snp(self, ploid, position, mut_type, region):# TODO update - insert single SNP
+        for p in which_ploids:
+            ref_nucl = self.sequences[p][event_pos]
+            context = str(self.sequences[p][event_pos - 1]) + str(self.sequences[p][event_pos + 1])
+            # sample from tri-nucleotide substitution matrices to get SNP alt allele
+            new_nucl = self.models_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
+            my_snp = (event_pos, ref_nucl, new_nucl)  # TODO dedicated DS?
+            self.black_list[p][my_snp[0]] = 2  # TODO is blacklist deprecated?
+        return my_snp, which_ploids
+
+        # combine random snps with inserted snps, remove any snps that overlap indels
+        for p in range(len(all_snps)):
+            all_snps[p].extend(self.snp_list[p])
+            all_snps[p] = [n for n in all_snps[p] if self.black_list[p][n[0]] != 1]
+        # MODIFY REFERENCE STRING: SNPS
+        for i in range(len(all_snps)):
+            temp = MutableSeq(self.sequences[i])
+            for j in range(len(all_snps[i])):
+                v_pos = all_snps[i][j][0]
+
+                if all_snps[i][j][1] != temp[v_pos]:
+                    print('\nError: Something went wrong!\n', all_snps[i][j], temp[v_pos], '\n')
+                    print(all_snps[i][j])
+                    print(self.sequences[i][v_pos])
+                    sys.exit(1)
+                else:
+                    temp[v_pos] = all_snps[i][j][2]
+            self.sequences[i] = Seq(temp)
+
+    def insert_indel(self, ploid, position, mut_type, region): # TODO here should update annotation?
+        my_indel = None
+        for p in which_ploids:
+            # insertion
+            if random.random() <= self.models_per_region[region][p][3]:
+                in_len = self.models_per_region[region][p][4].sample()
+                # sequence content of random insertions is uniformly random (change this later, maybe)
+                in_seq = ''.join([random.choice(NUCL) for _ in range(in_len)])
+                ref_nucl = self.sequences[p][event_pos]
+                my_indel = (event_pos, ref_nucl, ref_nucl + in_seq)
+                # TODO if crosses the boundary of annotation, resize? skip?
+
+            # deletion
+            else:
+                in_len = self.models_per_region[region][p][5].sample()
+                # skip if deletion too close to boundary
+                if event_pos + in_len + 1 >= len(self.sequences[p]):
+                    continue
+                if in_len == 1:
+                    in_seq = self.sequences[p][event_pos + 1]
+                else:
+                    in_seq = str(self.sequences[p][event_pos + 1:event_pos + in_len + 1])
+                ref_nucl = self.sequences[p][event_pos]
+                my_indel = (event_pos, ref_nucl + in_seq, ref_nucl)
+                # TODO if crosses the boundary of annotation, resize? skip?
+
+            # TODO is blacklist deprecated?
+            for k in range(event_pos, event_pos + in_len + 1):
+                self.black_list[p][k] = 1
+
+
+        # organize the indels we want to insert
+        for i in range(len(all_indels)):
+            all_indels[i].extend(self.indel_list[i])
+        all_indels_ins = [sorted([list(m) for m in n]) for n in all_indels]
+        # MODIFY REFERENCE STRING: INDELS
+        for i in range(len(all_indels_ins)):
+            rolling_adj = 0
+
+            for j in range(len(all_indels_ins[i])):
+                v_pos = all_indels_ins[i][j][0] + rolling_adj
+                v_pos2 = v_pos + len(all_indels_ins[i][j][1])
+                indel_length = len(all_indels_ins[i][j][2]) - len(all_indels_ins[i][j][1])
+                rolling_adj += indel_length
+
+                if all_indels_ins[i][j][1] != str(self.sequences[i][v_pos:v_pos2]):
+                    print('\nError: Something went wrong!\n', all_indels_ins[i][j], [v_pos, v_pos2],
+                          str(self.sequences[i][v_pos:v_pos2]), '\n')
+                    sys.exit(1)
+                else:
+                    # alter reference sequence
+                    self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
+                                        self.sequences[i][v_pos2:]
+
 
     def check_and_update_annotations_if_needed(self, inserted_mutation):
         if snp - check around if there is stop codon in within the reading frame within the close environment
@@ -349,134 +466,6 @@ class ChromosomeSequenceContainer:
                 ploid_string[k2] = '1'
             output_variants[-1] += tuple(['WP=' + '/'.join(ploid_string)])
         return output_variants
-
-    def insert_snps(self, all_snps):# TODO update - insert single SNP
-        # combine random snps with inserted snps, remove any snps that overlap indels
-        for p in range(len(all_snps)):
-            all_snps[p].extend(self.snp_list[p])
-            all_snps[p] = [n for n in all_snps[p] if self.black_list[p][n[0]] != 1]
-        # MODIFY REFERENCE STRING: SNPS
-        for i in range(len(all_snps)):
-            temp = MutableSeq(self.sequences[i])
-            for j in range(len(all_snps[i])):
-                v_pos = all_snps[i][j][0]
-
-                if all_snps[i][j][1] != temp[v_pos]:
-                    print('\nError: Something went wrong!\n', all_snps[i][j], temp[v_pos], '\n')
-                    print(all_snps[i][j])
-                    print(self.sequences[i][v_pos])
-                    sys.exit(1)
-                else:
-                    temp[v_pos] = all_snps[i][j][2]
-            self.sequences[i] = Seq(temp)
-
-    def insert_indels(self, all_indels): # TODO here should update annotation?
-        # organize the indels we want to insert
-        for i in range(len(all_indels)):
-            all_indels[i].extend(self.indel_list[i])
-        all_indels_ins = [sorted([list(m) for m in n]) for n in all_indels]
-        # MODIFY REFERENCE STRING: INDELS
-        for i in range(len(all_indels_ins)):
-            rolling_adj = 0
-
-            for j in range(len(all_indels_ins[i])):
-                v_pos = all_indels_ins[i][j][0] + rolling_adj
-                v_pos2 = v_pos + len(all_indels_ins[i][j][1])
-                indel_length = len(all_indels_ins[i][j][2]) - len(all_indels_ins[i][j][1])
-                rolling_adj += indel_length
-
-                if all_indels_ins[i][j][1] != str(self.sequences[i][v_pos:v_pos2]):
-                    print('\nError: Something went wrong!\n', all_indels_ins[i][j], [v_pos, v_pos2],
-                          str(self.sequences[i][v_pos:v_pos2]), '\n')
-                    sys.exit(1)
-                else:
-                    # alter reference sequence
-                    self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
-                                        self.sequences[i][v_pos2:]
-
-
-    def find_position_for_mutation(self, region):
-        which_ploids = self.determine_random_mutation_ploids(region)
-
-        if snp:
-            # add random snps
-            event_pos = self.find_position_snp(region, which_ploids)
-            if event_pos == -1:
-                return None
-
-            for p in which_ploids:
-                ref_nucl = self.sequences[p][event_pos]
-                context = str(self.sequences[p][event_pos - 1]) + str(self.sequences[p][event_pos + 1])
-                # sample from tri-nucleotide substitution matrices to get SNP alt allele
-                new_nucl = self.models_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
-                my_snp = (event_pos, ref_nucl, new_nucl) #TODO dedicated DS?
-                self.black_list[p][my_snp[0]] = 2 #TODO is blacklist deprecated?
-            return my_snp, which_ploids
-
-        if indel:
-            # add random indels
-            event_pos = self.find_position_indel(which_ploids)
-            if event_pos == -1:
-                return None
-
-            my_indel = None
-            for p in which_ploids:
-                # insertion
-                if random.random() <= self.models_per_region[region][p][3]:
-                    in_len = self.models_per_region[region][p][4].sample()
-                    # sequence content of random insertions is uniformly random (change this later, maybe)
-                    in_seq = ''.join([random.choice(NUCL) for _ in range(in_len)])
-                    ref_nucl = self.sequences[p][event_pos]
-                    my_indel = (event_pos, ref_nucl, ref_nucl + in_seq)
-                    # TODO if crosses the boundary of annotation, resize? skip?
-
-                # deletion
-                else:
-                    in_len = self.models_per_region[region][p][5].sample()
-                    # skip if deletion too close to boundary
-                    if event_pos + in_len + 1 >= len(self.sequences[p]):
-                        continue
-                    if in_len == 1:
-                        in_seq = self.sequences[p][event_pos + 1]
-                    else:
-                        in_seq = str(self.sequences[p][event_pos + 1:event_pos + in_len + 1])
-                    ref_nucl = self.sequences[p][event_pos]
-                    my_indel = (event_pos, ref_nucl + in_seq, ref_nucl)
-                    # TODO if crosses the boundary of annotation, resize? skip?
-
-                # TODO is blacklist deprecated?
-                for k in range(event_pos, event_pos + in_len + 1):
-                    self.black_list[p][k] = 1
-
-            return my_indel
-
-
-    def determine_random_mutation_ploids(self, region, i):
-        #TODO change to return only single ploid? instead of list
-        # insert homozygous indel
-        if random.random() <= self.models_per_region[region][i][1]:
-            which_ploid = range(self.ploidy)
-        # insert heterozygous indel
-        else:
-            which_ploid = [self.ploid_mut_prior_per_region[region].sample()]
-        return which_ploid
-
-
-    def find_position_mutation(self, which_ploid, mut_type, region):
-        # TODO consider regions, see v1
-
-        event_pos = -1
-        for attempt in range(MAX_ATTEMPTS):
-            if mut_type == MutType.INDEL or IGNORE_TRINUC:
-                event_pos = random.randint(self.window_start, self.window_end-1)
-                #TODO if event_pos is ok return it, otherwise keep trying
-                return event_pos
-            else:
-                ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
-                event_pos = self.trinuc_bias_per_region[region][ploid_to_use].sample()
-                #TODO if event_pos is ok return it, otherwise keep trying
-                return event_pos
-        return event_pos
 
 # TODO use self.annotated_seq.get_regions()?
 # parse mutation model pickle file
