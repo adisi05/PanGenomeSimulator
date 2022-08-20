@@ -200,7 +200,7 @@ class ChromosomeSequenceContainer:
         self.trinuc_bias_in_window_per_region = {region: [None for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
             for p in range(self.ploidy):
-                region_mask = self.annotated_seq.get_mask_in_window_of_region(p, region, start, end)  # TODO implement. set to int 0 if all elements are 0
+                region_mask = self.annotated_seq.get_mask_in_window_of_region(region, start, end)
                 for i in range(0+1,window_seq_len-1):
                     trinuc_snp_bias_of_window_per_region[region][p][i] = region_mask[i] * \
                         self.models_per_region[region][p][7][ALL_IND[str(self.multi_ploid_chromosome[p][self.window_start+i-1:self.window_start+i+2])]]
@@ -602,26 +602,28 @@ class Stats(Enum):
 
 
 class AnnotatedSeqence:
-    _chrom_seqeunces = {}
+    _sequence_per_chrom = {}
     _code_to_annotation = {0:Regions.EXON.value, 1:Regions.INTRON.value, 2:Regions.INTERGENIC.value}
     _annotation_to_code = {Regions.EXON.value:0, Regions.INTRON.value:1, Regions.INTERGENIC.value:2}
     _relevant_regions = []
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
-            self._chrom_seqeunces = None
+            self._sequence_per_chrom = None
             self._relevant_regions.append(Regions.ALL)
             return
 
         for i, annotation in annotations_df.iterrows():
-            if not annotation['chrom'] in self._chrom_seqeunces:
-                self._chrom_seqeunces[annotation['chrom']] = []
+            current_chrom = annotation['chrom']
+            if not current_chrom in self._sequence_per_chrom:
+                self._sequence_per_chrom[current_chrom] = np.array([])
             region = Regions(annotation['feature'])
             if region not in self._relevant_regions:
                 self._relevant_regions(region)
             annotation_length = annotation['end'] - annotation['start']
             current_sequence = [self._annotation_to_code[region.value]] * annotation_length
-            self._chrom_seqeunces[annotation['chrom']] = self._chrom_seqeunces[annotation['chrom']] + current_sequence
+            self._sequence_per_chrom[current_chrom] = \
+                np.concatenate(self._sequence_per_chrom[current_chrom], current_sequence)
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Regions.ALL)
 
@@ -629,18 +631,34 @@ class AnnotatedSeqence:
         return self._relevant_regions
 
     def get_annotation(self, chrom, index):
-        if not self._chrom_seqeunces:
+        if not self._sequence_per_chrom:
             return Regions.ALL
-        return self._code_to_annotation[self._chrom_seqeunces[chrom][index]]
+        return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
 
     def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
         start = start if start != -1 else 0
-        end = end if end != -1 else len(self._chrom_seqeunces[chrom])
-        window = self._chrom_seqeunces[chrom][start:end]
+        end = end if end != -1 else len(self._sequence_per_chrom[chrom])
+        window = self._sequence_per_chrom[chrom][start:end]
         counts_per_region = {}
         for region in self.get_regions():
             counts_per_region[region] = window.count(str(self._annotation_to_code(region)))
         return counts_per_region
+
+    def get_mask_in_window_of_region(self, chrom, region, start, end):
+        # check for cache
+        if start != self._recent_start or end != self._recent_end:
+            self._recent_start = start
+            self._recent_end = end
+            self._mask_in_window_per_region = {}
+        if region in self._mask_in_window_per_region:
+            return self._mask_in_window_per_region[region]
+
+        # compute if no cache
+        window_sequence = self._sequence_per_chrom[chrom][start:end]
+        relevant_code = self._annotation_to_code[region.value]
+        self._mask_in_window_per_region[region] = np.where(window_sequence == relevant_code, 1, 0)
+        return self._mask_in_window_per_region[region]
+
 
 
 
