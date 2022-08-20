@@ -203,7 +203,7 @@ class ChromosomeSequenceContainer:
                 for i in range(0+1,seq_len-1):
                     trinuc_snp_bias_of_window_per_region[region][p][i] = self.mask_per_region[region][i] * \
                         self.models_per_region[region][p][7][ALL_IND[str(self.multi_ploid_chromosome[p][i - 1:i + 2])]]
-                self.trinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1 :seq_len-1],
+                self.trinuc_bias_per_regiontrinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1 :seq_len-1],
                                                            range(0+1,seq_len-1))
 
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
@@ -327,13 +327,20 @@ class ChromosomeSequenceContainer:
         return inserted_mutation, window_shift_per_ploid
 
     def find_position_mutation(self, mut_type, region):
-        # TODO consider regions, see v1
         which_ploid = self.determine_random_mutation_ploids()
 
-        event_pos = -1
+        if self.mask_per_region[region] == 0:  # current annotation doesn't exist in window
+            return -1
         for attempt in range(MAX_ATTEMPTS):
             if mut_type == MutType.INDEL or IGNORE_TRINUC:
-                event_pos = random.randint(self.window_start, self.window_end-1)
+                k = self.window_end - self.window_start - 2 # -2 because we don't allow SNP in the window start/end
+                if k < 1:
+                    return -1
+                event_pos = random.choices(
+                    range(self.window_start+1, self.window_end-1),
+                    weights=self.mask_per_region[region][self.window_start+1:self.window_end-1],
+                    k=k)
+                # https://pynative.com/python-weighted-random-choices-with-probability/
                 #TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
             else:
@@ -341,7 +348,7 @@ class ChromosomeSequenceContainer:
                 event_pos = self.trinuc_bias_per_region[region][ploid_to_use].sample()
                 #TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
-        return event_pos
+        return -1
 
     def determine_random_mutation_ploids(self, region, i):
         # TODO change to return only single ploid? instead of list
