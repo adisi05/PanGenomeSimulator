@@ -93,67 +93,54 @@ class ChromosomeSequenceContainer:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, chromosome_name, chromosome_sequence, annotations, ploidy, mut_models=None, mut_rate=None, dist=None):
+    def __init__(self, chromosome_name, chromosome_sequence, annotations, mut_models=None, mut_rate=None, dist=None):
         self.chromosome_name = chromosome_name
-        self.multi_ploid_chromosome = [MutableSeq(str(chromosome_sequence)) for _ in range(ploidy)]
+        self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.ploidy = ploidy
         self.update_mut_models(mut_models, mut_rate, dist)
         self.initialize_blacklist() # TODO consider if deprecated
         self.annotated_seq = None #TODO save annotations in an annotated sequence DS
 
-    def update_mut_models(self, mut_models, mut_rate, dist): #TODO figure out: called one time? or a few times, for each window?
-        if not mut_models:
-            single_ploid_model = {region: copy.deepcopy(DEFAULT_MODEL_1) for region in self.annotated_seq.get_regions()}
-            default_model = [single_ploid_model for _ in range(self.ploidy)]
-            self.model_data = default_model[:self.ploidy]
+    def update_mut_models(self, model_data, mut_rate, dist): #TODO figure out: called one time? or a few times, for each window?
+        if not model_data:
+            self.model_data = {region: copy.deepcopy(DEFAULT_MODEL_1) for region in self.annotated_seq.get_regions()}
         else:
-            if len(mut_models) != self.ploidy:
-                print('\nError: Number of mutation models received is not equal to specified ploidy\n')
-                sys.exit(1)
-            self.model_data = copy.deepcopy(mut_models)
+            self.model_data = copy.deepcopy(model_data)
 
         # do we need to rescale mutation frequencies?
-        mut_rate_sum_per_region = {region: sum([n[region][0] for n in self.model_data]) for region in self.annotated_seq.get_regions()}
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
             self.mut_scalar_per_region = {region: 1.0 for region in self.annotated_seq.get_regions()}
         else:
             self.mut_scalar_per_region = {region: float(self.mut_rescale) //
-                         (mut_rate_sum_per_region[region] / float(len(self.model_data))) for region in self.annotated_seq.get_regions()}
+                         (self.model_data[region][0] / float(len(self.model_data))) for region in self.annotated_seq.get_regions()}
         if dist:
             self.mut_scalar_per_region = {region: self.mut_scalar_per_region[region] * dist for region in self.annotated_seq.get_regions()}
 
-        # how are mutations spread to each ploid, based on their specified mut rates?
-        self.ploid_mut_frac_per_region = \
-            {region: [float(n[0]) / mut_rate_sum_per_region[region] for n in self.model_data] for region in self.annotated_seq.get_regions()}
-        self.ploid_mut_prior_per_region = \
-            {region: DiscreteDistribution(self.ploid_mut_frac_per_region[region], range(self.ploidy))
-             for region in self.annotated_seq.get_regions()}
 
         # init mutation models
         #
-        # self.models_per_region[region][ploid][0] = average mutation rate
-        # self.models_per_region[region][ploid][1] = p(mut is homozygous | mutation occurs)
-        # self.models_per_region[region][ploid][2] = p(mut is indel | mut occurs)
-        # self.models_per_region[region][ploid][3] = p(insertion | indel occurs)
-        # self.models_per_region[region][ploid][4] = distribution of insertion lengths
-        # self.models_per_region[region][ploid][5] = distribution of deletion lengths
-        # self.models_per_region[region][ploid][6] = distribution of trinucleotide SNP transitions
-        # self.models_per_region[region][ploid][7] = p(trinuc mutates)
-        self.models_per_region = {region: [] for region in self.annotated_seq.get_regions()}
+        # self.models_per_region[region][0] = average mutation rate
+        # self.models_per_region[region][1] = p(mut is homozygous | mutation occurs)
+        # self.models_per_region[region][2] = p(mut is indel | mut occurs)
+        # self.models_per_region[region][3] = p(insertion | indel occurs)
+        # self.models_per_region[region][4] = distribution of insertion lengths
+        # self.models_per_region[region][5] = distribution of deletion lengths
+        # self.models_per_region[region][6] = distribution of trinucleotide SNP transitions
+        # self.models_per_region[region][7] = p(trinuc mutates)
+        self.model_per_region = {region: [] for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
             for n in self.model_data:
-                self.models_per_region[region].append(
+                self.model_per_region[region].append(
                     [self.mut_scalar_per_region[region] * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),
                      DiscreteDistribution(n[7], n[6]), []])
                 for m in n[8]:
                     # noinspection PyTypeChecker
-                    self.models_per_region[region][-1][6].append(
+                    self.model_per_region[region][-1][6].append(
                         [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
                          DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-                self.models_per_region[region][-1].append([m for m in n[9]])
+                self.model_per_region[region][-1].append([m for m in n[9]])
 
 
     def get_window_mutations(self, start, end): #NOTE: window can be also a whole non-N region or the entire chromosome
@@ -182,11 +169,11 @@ class ChromosomeSequenceContainer:
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
     def initialize_blacklist(self):
         # Blacklist explanation:
-        # black_list[ploid][pos] = 0		safe to insert variant here
-        # black_list[ploid][pos] = 1		indel inserted here
-        # black_list[ploid][pos] = 2		snp inserted here
-        # black_list[ploid][pos] = 3		invalid position for various processing reasons
-        self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
+        # black_list[pos] = 0		safe to insert variant here
+        # black_list[pos] = 1		indel inserted here
+        # black_list[pos] = 2		snp inserted here
+        # black_list[pos] = 3		invalid position for various processing reasons
+        self.black_list = np.zeros(self.seq_len, dtype='<i4')
 
 
     def update_trinuc_bias_of_window(self, start, end):
@@ -196,17 +183,16 @@ class ChromosomeSequenceContainer:
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
         window_seq_len = self.window_end - self.window_start
-        trinuc_snp_bias_of_window_per_region = {region: [[0. for _ in range(window_seq_len)] for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
-        self.trinuc_bias_in_window_per_region = {region: [None for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
+        trinuc_snp_bias_of_window_per_region = {region: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
+        self.trinuc_bias_in_window_per_region = {region: None for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
-            for p in range(self.ploidy):
-                region_mask = self.annotated_seq.get_mask_in_window_of_region(region, start, end)
-                for i in range(0+1,window_seq_len-1):
-                    trinuc_snp_bias_of_window_per_region[region][p][i] = region_mask[i] * \
-                        self.models_per_region[region][p][7][ALL_IND[str(self.multi_ploid_chromosome[p][self.window_start+i-1:self.window_start+i+2])]]
-                self.trinuc_bias_per_regiontrinuc_bias_per_region[region][p] = \
-                    DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1:window_seq_len-1],
-                                         range(0+1,window_seq_len-1))
+            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, start, end)
+            for i in range(0+1,window_seq_len-1):
+                trinuc_snp_bias_of_window_per_region[region][p][i] = region_mask[i] * \
+                    self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_start + i - 1:self.window_start + i + 2])]]
+            self.trinuc_bias_per_regiontrinuc_bias_per_region[region][p] = \
+                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1:window_seq_len-1],
+                                     range(0+1,window_seq_len-1))
 
 
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
@@ -215,12 +201,10 @@ class ChromosomeSequenceContainer:
         poisson_per_region = {}
         nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.chromosome_name, self.window_start, self.window_end)
         for region in self.annotated_seq.get_regions():
-            ploids = len(self.models_per_region[region])
-            for i in range(ploids):
-                param = self.models_per_region[region][i][2] if indels else (1. - self.models_per_region[region][i][2])
-                list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.models_per_region[region][i][2] * self.ploid_mut_frac_per_region[region][i])
+            param = self.model_per_region[region][2] if indels else (1. - self.model_per_region[region][2])
+            list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.model_per_region[region][2])
             k_range = range(int(nucleotides_counts_per_region[region] * MAX_MUTFRAC))
-            poisson_per_region[region] = [poisson_list(k_range, list_per_region[region][n]) for n in range(ploids)]
+            poisson_per_region[region] = poisson_list(k_range, list_per_region[region])
         return poisson_per_region
 
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
@@ -260,36 +244,6 @@ class ChromosomeSequenceContainer:
                         self.black_list[p][k] = 1
                     self.indel_list[p].append(my_var)
 
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
-    def determine_given_mutation_ploids(self, input_variable):
-        which_ploids = []
-        wps = input_variable[4][0]
-        # if no genotype given, assume heterozygous and choose a single ploid based on their mut rates
-        if wps is None:
-            region = self.get_region()
-            which_ploids.append(self.ploid_mut_prior_per_region[region].sample())
-            which_alts = [0]
-        else:
-            if '/' in wps or '|' in wps:
-                if '/' in wps:
-                    splt = wps.split('/')
-                else:
-                    splt = wps.split('|')
-                which_ploids = []
-                for i in range(len(splt)):
-                    if splt[i] == '1':
-                        which_ploids.append(i)
-                # assume we're just using first alt for inserted variants?
-                which_alts = [0 for _ in which_ploids]
-            # otherwise assume monoploidy
-            else:
-                which_ploids = [0]
-                which_alts = [0]
-        # ignore invalid ploids
-        for i in range(len(which_ploids) - 1, -1, -1):
-            if which_ploids[i] >= self.ploidy:
-                del which_ploids[i]
-        return which_alts, which_ploids
 
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
     def generate_random_mutations(self, start, end):
@@ -301,36 +255,35 @@ class ChromosomeSequenceContainer:
         while intended_mutations_in_window.has_next() and len(inserted_mutations) <= max_mutations_in_window:
             mut_type, region = intended_mutations_in_window.next()
             # TODO add a check to see if the mutation was really inserted? something like status code?
-            inserted_mutation, window_shift_per_ploid  = self.insert_random_mutation(mut_type, region)
+            inserted_mutation, window_shift  = self.insert_random_mutation(mut_type, region)
             if not inserted_mutation:
                 continue
             inserted_mutations.append(inserted_mutation)
             annotation_changed = self.check_and_update_annotations_if_needed(inserted_mutation)
-            if annotation_changed or bool(window_shift_per_ploid):
+            if annotation_changed or window_shift != 0:
                 intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
 
         return self.mutations_in_vcf_form(inserted_mutations)
 
     def insert_random_mutation(self, mut_type, region):
 
-        mut_ploids, position = self.find_position_for_mutation(mut_type, region)
+        position = self.find_position_for_mutation(mut_type, region)
         if position == -1:
             return None
 
         inserted_mutation = None
         if mut_type == MutType.SNP:
-            inserted_mutation = self.insert_snp(mut_ploids, position, region)
+            inserted_mutation = self.insert_snp(position, region)
 
         elif mut_type == MutType.INDEL:
-            inserted_mutation, window_shift_per_ploid = self.insert_indel(mut_ploids, position, region)
+            inserted_mutation, window_shift = self.insert_indel(position, region)
 
         #elif mut_type == MutType.SV:
         #   ...
 
-        return inserted_mutation, window_shift_per_ploid
+        return inserted_mutation, window_shift
 
-    def find_position_mutation(self, mut_type, region):
-        which_ploid = self.determine_random_mutation_ploids()
+    def find_position_for_mutation(self, mut_type, region):
 
         region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_start, self.window_end)
         if 1 not in region_mask:
@@ -348,116 +301,74 @@ class ChromosomeSequenceContainer:
                 #TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
             else:
-                ploid_to_use = which_ploid[random.randint(0, len(which_ploid) - 1)]
-                event_pos = self.trinuc_bias_per_region[region][ploid_to_use].sample()
+                event_pos = self.trinuc_bias_per_region[region].sample()
                 #TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
         return -1
 
-    def determine_random_mutation_ploids(self, region, i):
-        # TODO change to return only single ploid? instead of list
-        #      in general it's not so clear what is happening here...
+    def insert_snp(self, position, region):# TODO update - insert single SNP
+        snp =  self.get_specific_snp(position, region)
+        self.mutate_sequence(snp)
+        return snp
 
-        # insert homozygous indel
-        if random.random() <= self.models_per_region[region][i][1]:
-            which_ploid = range(self.ploidy)
-        # insert heterozygous indel
+    def get_specific_snp(self, position, region):
+        ref_nucl = self.chromosome_sequence[position]
+        context = str(self.chromosome_sequence[position - 1]) + str(self.chromosome_sequence[position + 1])
+        # sample from tri-nucleotide substitution matrices to get SNP alt allele
+        new_nucl = self.model_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
+        snp = (position, ref_nucl, new_nucl)  # TODO dedicated DS?
+        self.black_list[snp[0]] = 2  # TODO is blacklist deprecated?
+        return snp
+
+    def insert_indel(self, position, region): # TODO here should update annotation?
+        indel = self.get_specific_indel(position, region)
+        window_shift = self.mutate_sequence(indel)
+        return indel, window_shift
+
+    def get_specific_indel(self, position, region):
+        # insertion
+        if random.random() <= self.model_per_region[region][p][3]:
+            indel_len = self.model_per_region[region][p][4].sample()
+            # sequence content of random insertions is uniformly random (change this later, maybe)
+            indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
+            ref_nucl = self.chromosome_sequence[position]
+            indel = (position, ref_nucl, ref_nucl + indel_seq)
+
+        # deletion
         else:
-            which_ploid = [self.ploid_mut_prior_per_region[region].sample()]
-        return which_ploid
-
-    def insert_snp(self, mut_ploids, position, region):# TODO update - insert single SNP
-        multi_ploid_snp =  self.get_specific_snp(mut_ploids, position, region)
-
-        self.mutate_sequence(multi_ploid_snp)
-
-        return multi_ploid_snp
-
-    # TODO deprecated. I use mutate_sequence for both SNPs and Indels. Remove this
-    # def modify_sequence_snp(self, multi_ploid_snp):
-    #     # MODIFY REFERENCE STRING: SNPS
-    #     for p in multi_ploid_snp.keys():
-    #         position = multi_ploid_snp[p][0]
-    #
-    #         if multi_ploid_snp[p][1] != self.multi_ploid_chromosome[p][position]:
-    #             print('\nError: Something went wrong!\n', multi_ploid_snp[p], self.multi_ploid_chromosome[p][position],
-    #                   '\n')
-    #             print(multi_ploid_snp[p])
-    #             print(self.multi_ploid_chromosome[p][position])
-    #             sys.exit(1)
-    #         else:
-    #             self.multi_ploid_chromosome[p][position] = multi_ploid_snp[p][2]
-
-    def get_specific_snp(self, mut_ploids, position, region):
-        multi_ploid_snp = {}
-        for p in mut_ploids:
-            ref_nucl = self.multi_ploid_chromosome[p][position]
-            context = str(self.multi_ploid_chromosome[p][position - 1]) + str(self.multi_ploid_chromosome[p][position + 1])
-            # sample from tri-nucleotide substitution matrices to get SNP alt allele
-            new_nucl = self.models_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
-            new_snp = (position, ref_nucl, new_nucl)  # TODO dedicated DS?
-            multi_ploid_snp[p] = new_snp
-            self.black_list[p][new_snp[0]] = 2  # TODO is blacklist deprecated?
-        return multi_ploid_snp
-
-    def insert_indel(self, mut_ploids, position, region): # TODO here should update annotation?
-        multi_ploid_indel = self.get_specific_indel(mut_ploids, position, region)
-
-        window_shift = self.mutate_sequence(multi_ploid_indel)
-
-        return multi_ploid_indel, window_shift
-
-    def get_specific_indel(self, mut_ploids, position, region):
-        multi_ploid_indel = {}
-        for p in mut_ploids:
-            # insertion
-            if random.random() <= self.models_per_region[region][p][3]:
-                indel_len = self.models_per_region[region][p][4].sample()
-                # sequence content of random insertions is uniformly random (change this later, maybe)
-                indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
-                ref_nucl = self.multi_ploid_chromosome[p][position]
-                new_indel = (position, ref_nucl, ref_nucl + indel_seq)
-
-            # deletion
+            indel_len = self.model_per_region[region][p][5].sample()
+            # skip if deletion too close to boundary
+            if position + indel_len + 1 >= len(self.chromosome_sequence):
+                indel_len = len(self.chromosome_sequence) - 2 - position
+            # TODO if crosses the boundary of annotation, resize? skip?
+            if indel_len == 1:
+                indel_seq = self.chromosome_sequence[position + 1]
             else:
-                indel_len = self.models_per_region[region][p][5].sample()
-                # skip if deletion too close to boundary
-                if position + indel_len + 1 >= len(self.multi_ploid_chromosome[p]):
-                    indel_len = len(self.multi_ploid_chromosome[p]) - 2 - position
-                # TODO if crosses the boundary of annotation, resize? skip?
-                if indel_len == 1:
-                    indel_seq = self.multi_ploid_chromosome[p][position + 1]
-                else:
-                    indel_seq = str(self.multi_ploid_chromosome[p][position + 1:position + indel_len + 1])
-                ref_nucl = self.multi_ploid_chromosome[p][position]
-                new_indel = (position, ref_nucl + indel_seq, ref_nucl)
+                indel_seq = str(self.chromosome_sequence[position + 1:position + indel_len + 1])
+            ref_nucl = self.chromosome_sequence[position]
+            indel = (position, ref_nucl + indel_seq, ref_nucl)
 
-            # TODO is blacklist deprecated? is it implemented correctly anyway?
-            for k in range(position, position + indel_len + 1):
-                self.black_list[p][k] = 1
+        # TODO is blacklist deprecated? is it implemented correctly anyway?
+        for k in range(position, position + indel_len + 1):
+            self.black_list[k] = 1
 
-            multi_ploid_indel[p] = new_indel
-        return multi_ploid_indel
+        return indel
 
-    def mutate_sequence(self, multi_ploid_indel):
-        window_shift = {}
-        for p in multi_ploid_indel.keys():
+    def mutate_sequence(self, mutation):
+        ref_start = mutation[0]
+        ref_len = len(mutation[1])
+        ref_end = ref_start + ref_len
+        mut_len = len(mutation[2])
+        window_shift = mut_len - ref_len
 
-            ref_start = multi_ploid_indel[p][0]
-            ref_len = len(multi_ploid_indel[p][1])
-            ref_end = ref_start + ref_len
-            mut_len = len(multi_ploid_indel[p][2])
-            window_shift[p] = mut_len - ref_len
-
-            if multi_ploid_indel[p][1] != str(self.multi_ploid_chromosome[p][ref_start:ref_end]):
-                print('\nError: Something went wrong!\n', multi_ploid_indel[p], [ref_start, ref_end],
-                      str(self.multi_ploid_chromosome[p][ref_start:ref_end]), '\n')
-                sys.exit(1)
-            else:
-                # alter reference sequence
-                self.multi_ploid_chromosome[p] = self.multi_ploid_chromosome[p][:ref_start] + MutableSeq(
-                    multi_ploid_indel[p][2]) + \
-                                                 self.multi_ploid_chromosome[p][ref_end:]
+        if mutation[1] != str(self.chromosome_sequence[ref_start:ref_end]):
+            print('\nError: Something went wrong!\n', mutation, [ref_start, ref_end],
+                  str(self.chromosome_sequence[ref_start:ref_end]), '\n')
+            sys.exit(1)
+        else:
+            # alter reference sequence
+            self.chromosome_sequence = self.chromosome_sequence[:ref_start] + MutableSeq(mutation[2])+\
+                                       self.chromosome_sequence[ref_end:]
         return window_shift
 
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-implement
