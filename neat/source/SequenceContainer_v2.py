@@ -157,16 +157,18 @@ class ChromosomeSequenceContainer:
 
 
     def get_window_mutations(self, start, end): #NOTE: window can be also a whole non-N region or the entire chromosome
-        #TODO sanity check about start, end. Maybe consider N regions?
+        self.intialize_window(end, start)
+        indels_to_add_window_per_region, snps_to_add_window_per_region = self.get_planned_snps_and_indels_in_window_per_region()
+        max_mutations_in_window = MAX_MUTFRAC * (end-start) #TODO rethink it
+        return indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window
+
+    def intialize_window(self, end, start):
+        # TODO sanity check about start, end. Maybe consider N regions?
         self.window_start = start
         self.window_end = end
         # initialize trinuc snp bias
         if not IGNORE_TRINUC:
             self.update_trinuc_bias_of_window()
-        indels_to_add_window_per_region, snps_to_add_window_per_region = self.get_planned_snps_and_indels_in_window_per_region()
-        max_mutations_in_window = MAX_MUTFRAC * (end-start) #TODO rethink it
-        return indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window
-
 
     def get_planned_snps_and_indels_in_window_per_region(self):
         indel_poisson_per_region = self.init_poisson(indels=True)
@@ -187,24 +189,25 @@ class ChromosomeSequenceContainer:
         self.black_list = [np.zeros(self.seq_len, dtype='<i4') for _ in range(self.ploidy)]
 
 
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-implement
     def update_trinuc_bias_of_window(self, start, end):
         # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
         #
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
-        seq_len = end - start
-        trinuc_snp_bias_of_window_per_region = {region: [[0. for _ in range(seq_len)] for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
-        self.trinuc_bias_of_window_per_region = {region: [None for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
+        window_seq_len = self.window_end - self.window_start
+        trinuc_snp_bias_of_window_per_region = {region: [[0. for _ in range(window_seq_len)] for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
+        self.trinuc_bias_in_window_per_region = {region: [None for _ in range(self.ploidy)] for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
-            self.update_mask_of_region(start, end) #TODO implement. set to int 0 if all elements are 0
             for p in range(self.ploidy):
-                for i in range(0+1,seq_len-1):
-                    trinuc_snp_bias_of_window_per_region[region][p][i] = self.mask_per_region[region][i] * \
-                        self.models_per_region[region][p][7][ALL_IND[str(self.multi_ploid_chromosome[p][i - 1:i + 2])]]
-                self.trinuc_bias_per_regiontrinuc_bias_per_region[region][p] = DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1 :seq_len-1],
-                                                           range(0+1,seq_len-1))
+                region_mask = self.annotated_seq.get_mask_in_window_of_region(p, region, start, end)  # TODO implement. set to int 0 if all elements are 0
+                for i in range(0+1,window_seq_len-1):
+                    trinuc_snp_bias_of_window_per_region[region][p][i] = region_mask[i] * \
+                        self.models_per_region[region][p][7][ALL_IND[str(self.multi_ploid_chromosome[p][self.window_start+i-1:self.window_start+i+2])]]
+                self.trinuc_bias_per_regiontrinuc_bias_per_region[region][p] = \
+                    DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1:window_seq_len-1],
+                                         range(0+1,window_seq_len-1))
+
 
     # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
     def init_poisson(self, indels=True):
@@ -329,8 +332,9 @@ class ChromosomeSequenceContainer:
     def find_position_mutation(self, mut_type, region):
         which_ploid = self.determine_random_mutation_ploids()
 
-        if self.mask_per_region[region] == 0:  # current annotation doesn't exist in window
-            return -1
+        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_start, self.window_end)
+        if 1 not in region_mask:
+            return -1  # current annotation doesn't exist in window
         for attempt in range(MAX_ATTEMPTS):
             if mut_type == MutType.INDEL or IGNORE_TRINUC:
                 k = self.window_end - self.window_start - 2 # -2 because we don't allow SNP in the window start/end
@@ -338,7 +342,7 @@ class ChromosomeSequenceContainer:
                     return -1
                 event_pos = random.choices(
                     range(self.window_start+1, self.window_end-1),
-                    weights=self.mask_per_region[region][self.window_start+1:self.window_end-1],
+                    weights=region_mask[self.window_start+1:self.window_end-1],
                     k=k)
                 # https://pynative.com/python-weighted-random-choices-with-probability/
                 #TODO if event_pos is ok return it, otherwise keep trying
