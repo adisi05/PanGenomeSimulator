@@ -568,7 +568,7 @@ class MutType(Enum):
 
 
 class Regions(Enum):
-    EXON = 'exon'
+    CDS = 'CDS'
     INTRON = 'intron'
     INTERGENIC = 'intergenic'
     ALL = 'all'
@@ -603,8 +603,8 @@ class Stats(Enum):
 
 class AnnotatedSeqence:
     _sequence_per_chrom = {}
-    _code_to_annotation = {0:Regions.EXON.value, 1:Regions.INTRON.value, 2:Regions.INTERGENIC.value}
-    _annotation_to_code = {Regions.EXON.value:0, Regions.INTRON.value:1, Regions.INTERGENIC.value:2}
+    _code_to_annotation = {2:Regions.CDS.value, 1:Regions.INTRON.value, 0:Regions.INTERGENIC.value}
+    _annotation_to_code = {Regions.CDS.value:2, Regions.INTRON.value:1, Regions.INTERGENIC.value:0}
     _relevant_regions = []
 
     def __init__(self, annotations_df: pd.DataFrame):
@@ -667,7 +667,7 @@ class RegionStats:
         self._regions_stats = {Regions.ALL: self.create_stats_dict()}
         _annotated_sequence = AnnotatedSeqence(None)
         if annotations_df:
-            self._regions_stats[Regions.EXON] = self.create_stats_dict()
+            self._regions_stats[Regions.CDS] = self.create_stats_dict()
             self._regions_stats[Regions.INTRON] = self.create_stats_dict()
             self._regions_stats[Regions.INTERGENIC] = self.create_stats_dict()
             _annotated_sequence = AnnotatedSeqence(annotations_df)
