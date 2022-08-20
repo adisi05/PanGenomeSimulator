@@ -304,17 +304,17 @@ class ChromosomeSequenceContainer:
 
     def insert_random_mutation(self, mut_type, region):
 
-        ploid, position = self.find_position_for_mutation(mut_type, region)
+        mut_ploids, position = self.find_position_for_mutation(mut_type, region)
         if position == -1:
             return None
 
         inserted_mutation = None
         window_updated = False
         if mut_type == MutType.SNP:
-            inserted_mutation = self.insert_snp(ploid, position, mut_type, region)
+            inserted_mutation = self.insert_snp(mut_ploids, position, region)
 
         elif mut_type == MutType.INDEL:
-            inserted_mutation, window_updated = self.insert_indel(ploid, position, mut_type, region)
+            inserted_mutation, window_updated = self.insert_indel(mut_ploids, position, region)
 
         #elif mut_type == MutType.SV:
         #   ...
@@ -351,15 +351,8 @@ class ChromosomeSequenceContainer:
             which_ploid = [self.ploid_mut_prior_per_region[region].sample()]
         return which_ploid
 
-    def insert_snp(self, ploid, position, mut_type, region):# TODO update - insert single SNP
-        for p in which_ploids:
-            ref_nucl = self.sequences[p][event_pos]
-            context = str(self.sequences[p][event_pos - 1]) + str(self.sequences[p][event_pos + 1])
-            # sample from tri-nucleotide substitution matrices to get SNP alt allele
-            new_nucl = self.models_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
-            my_snp = (event_pos, ref_nucl, new_nucl)  # TODO dedicated DS?
-            self.black_list[p][my_snp[0]] = 2  # TODO is blacklist deprecated?
-        return my_snp, which_ploids
+    def insert_snp(self, mut_ploids, position, region):# TODO update - insert single SNP
+        new_snp =  self.get_specific_snp(mut_ploids, position, region)
 
         # combine random snps with inserted snps, remove any snps that overlap indels
         for p in range(len(all_snps)):
@@ -380,36 +373,18 @@ class ChromosomeSequenceContainer:
                     temp[v_pos] = all_snps[i][j][2]
             self.sequences[i] = Seq(temp)
 
-    def insert_indel(self, ploid, position, mut_type, region): # TODO here should update annotation?
-        my_indel = None
-        for p in which_ploids:
-            # insertion
-            if random.random() <= self.models_per_region[region][p][3]:
-                in_len = self.models_per_region[region][p][4].sample()
-                # sequence content of random insertions is uniformly random (change this later, maybe)
-                in_seq = ''.join([random.choice(NUCL) for _ in range(in_len)])
-                ref_nucl = self.sequences[p][event_pos]
-                my_indel = (event_pos, ref_nucl, ref_nucl + in_seq)
-                # TODO if crosses the boundary of annotation, resize? skip?
+    def get_specific_snp(self, mut_ploids, position, region):
+        for p in mut_ploids:
+            ref_nucl = self.sequences[p][position]
+            context = str(self.sequences[p][position - 1]) + str(self.sequences[p][position + 1])
+            # sample from tri-nucleotide substitution matrices to get SNP alt allele
+            new_nucl = self.models_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
+            new_snp = (position, ref_nucl, new_nucl)  # TODO dedicated DS?
+            self.black_list[p][new_snp[0]] = 2  # TODO is blacklist deprecated?
+        return new_snp
 
-            # deletion
-            else:
-                in_len = self.models_per_region[region][p][5].sample()
-                # skip if deletion too close to boundary
-                if event_pos + in_len + 1 >= len(self.sequences[p]):
-                    continue
-                if in_len == 1:
-                    in_seq = self.sequences[p][event_pos + 1]
-                else:
-                    in_seq = str(self.sequences[p][event_pos + 1:event_pos + in_len + 1])
-                ref_nucl = self.sequences[p][event_pos]
-                my_indel = (event_pos, ref_nucl + in_seq, ref_nucl)
-                # TODO if crosses the boundary of annotation, resize? skip?
-
-            # TODO is blacklist deprecated?
-            for k in range(event_pos, event_pos + in_len + 1):
-                self.black_list[p][k] = 1
-
+    def insert_indel(self, mut_ploids, position, region): # TODO here should update annotation?
+        new_indel = self.get_specific_indel(mut_ploids, position, region)
 
         # organize the indels we want to insert
         for i in range(len(all_indels)):
@@ -434,6 +409,35 @@ class ChromosomeSequenceContainer:
                     self.sequences[i] = self.sequences[i][:v_pos] + Seq(all_indels_ins[i][j][2]) + \
                                         self.sequences[i][v_pos2:]
 
+    def get_specific_indel(self, mut_ploids, position, region):
+        new_indel = None
+        for p in mut_ploids:
+            # insertion
+            if random.random() <= self.models_per_region[region][p][3]:
+                indel_len = self.models_per_region[region][p][4].sample()
+                # sequence content of random insertions is uniformly random (change this later, maybe)
+                indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
+                ref_nucl = self.sequences[p][position]
+                new_indel = (position, ref_nucl, ref_nucl + indel_seq)
+
+            # deletion
+            else:
+                indel_len = self.models_per_region[region][p][5].sample()
+                # skip if deletion too close to boundary
+                if position + indel_len + 1 >= len(self.sequences[p]):
+                    indel_len = len(self.sequences[p]) - 2 - position
+                # TODO if crosses the boundary of annotation, resize? skip?
+                if indel_len == 1:
+                    indel_seq = self.sequences[p][position + 1]
+                else:
+                    indel_seq = str(self.sequences[p][position + 1:position + indel_len + 1])
+                ref_nucl = self.sequences[p][position]
+                new_indel = (position, ref_nucl + indel_seq, ref_nucl)
+
+            # TODO is blacklist deprecated? is it implemented correctly anyway?
+            for k in range(position, position + indel_len + 1):
+                self.black_list[p][k] = 1
+        return new_indel
 
     def check_and_update_annotations_if_needed(self, inserted_mutation):
         if snp - check around if there is stop codon in within the reading frame within the close environment
