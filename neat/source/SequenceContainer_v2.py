@@ -98,9 +98,9 @@ class ChromosomeSequenceContainer:
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.update_mut_models(mut_models, mut_rate, dist)
         self.initialize_blacklist() # TODO consider if deprecated
         self.annotated_seq = None #TODO save annotations in an annotated sequence DS
+        self.update_mut_models(mut_models, mut_rate, dist)
 
     def update_mut_models(self, model_data, mut_rate, dist): #TODO figure out: called one time? or a few times, for each window?
         if not model_data:
@@ -166,7 +166,7 @@ class ChromosomeSequenceContainer:
                                               for region in self.annotated_seq.get_regions()}
         return indels_to_add_window_per_region, snps_to_add_window_per_region
 
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
+    # TODO re-consider !!!
     def initialize_blacklist(self):
         # Blacklist explanation:
         # black_list[pos] = 0		safe to insert variant here
@@ -188,14 +188,12 @@ class ChromosomeSequenceContainer:
         for region in self.annotated_seq.get_regions():
             region_mask = self.annotated_seq.get_mask_in_window_of_region(region, start, end)
             for i in range(0+1,window_seq_len-1):
-                trinuc_snp_bias_of_window_per_region[region][p][i] = region_mask[i] * \
+                trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
                     self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_start + i - 1:self.window_start + i + 2])]]
-            self.trinuc_bias_per_regiontrinuc_bias_per_region[region][p] = \
-                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[p][0+1:window_seq_len-1],
+            self.trinuc_bias_per_regiontrinuc_bias_per_region[region] = \
+                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[0+1:window_seq_len-1],
                                      range(0+1,window_seq_len-1))
 
-
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
     def init_poisson(self, indels=True):
         list_per_region = {}
         poisson_per_region = {}
@@ -205,9 +203,10 @@ class ChromosomeSequenceContainer:
             list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.model_per_region[region][2])
             k_range = range(int(nucleotides_counts_per_region[region] * MAX_MUTFRAC))
             poisson_per_region[region] = poisson_list(k_range, list_per_region[region])
+            # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
         return poisson_per_region
 
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
+    #TODO re-consider !!!
     def insert_given_mutations(self, input_list):
         for input_variable in input_list:
             which_alts, which_ploids = self.determine_given_mutation_ploids(input_variable)
@@ -245,7 +244,6 @@ class ChromosomeSequenceContainer:
                     self.indel_list[p].append(my_var)
 
 
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-consider
     def generate_random_mutations(self, start, end):
         inserted_mutations = []
         intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
@@ -306,7 +304,7 @@ class ChromosomeSequenceContainer:
                 return event_pos
         return -1
 
-    def insert_snp(self, position, region):# TODO update - insert single SNP
+    def insert_snp(self, position, region):
         snp =  self.get_specific_snp(position, region)
         self.mutate_sequence(snp)
         return snp
@@ -315,12 +313,12 @@ class ChromosomeSequenceContainer:
         ref_nucl = self.chromosome_sequence[position]
         context = str(self.chromosome_sequence[position - 1]) + str(self.chromosome_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
-        new_nucl = self.model_per_region[region][p][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
+        new_nucl = self.model_per_region[region][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
         snp = (position, ref_nucl, new_nucl)  # TODO dedicated DS?
         self.black_list[snp[0]] = 2  # TODO is blacklist deprecated?
         return snp
 
-    def insert_indel(self, position, region): # TODO here should update annotation?
+    def insert_indel(self, position, region):
         indel = self.get_specific_indel(position, region)
         window_shift = self.mutate_sequence(indel)
         return indel, window_shift
@@ -371,7 +369,7 @@ class ChromosomeSequenceContainer:
                                        self.chromosome_sequence[ref_end:]
         return window_shift
 
-    # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO # TODO re-implement
+    # TODO re-implement !!!
     def check_and_update_annotations_if_needed(self, inserted_mutation):
         if snp - check around if there is stop codon in within the reading frame within the close environment
             stop_codon = True
