@@ -209,39 +209,34 @@ class ChromosomeSequenceContainer:
     #TODO re-consider !!!
     def insert_given_mutations(self, input_list):
         for input_variable in input_list:
-            which_alts, which_ploids = self.determine_given_mutation_ploids(input_variable)
+            my_alt = input_variable[2]
+            my_var = (input_variable[0] - self.offset, input_variable[1], my_alt) #TODO validate offset is updated correctly
+            # TODO - use this instead? : in_len = max([len(input_variable[1]), len(my_alt)])
+            in_len = len(input_variable[1])
 
-            for i in range(len(which_ploids)):
-                p = which_ploids[i]
-                my_alt = input_variable[2][which_alts[i]]
-                my_var = (input_variable[0] - self.x, input_variable[1], my_alt)
-                # This is a potential fix implemented by Zach in a previous commit. He left the next line in.
-                # in_len = max([len(input_variable[1]), len(my_alt)])
-                in_len = len(input_variable[1])
-
-                if my_var[0] < 0 or my_var[0] >= len(self.black_list[p]):
-                    print('\nError: Attempting to insert variant out of window bounds:')
-                    print(my_var, '--> blackList[0:' + str(len(self.black_list[p])) + ']\n')
-                    sys.exit(1)
-                if len(input_variable[1]) == 1 and len(my_alt) == 1:
-                    if self.black_list[p][my_var[0]]:
+            if my_var[0] < 0 or my_var[0] >= len(self.black_list):
+                print('\nError: Attempting to insert variant out of window bounds:')
+                print(my_var, '--> blackList[0:' + str(len(self.black_list)) + ']\n')
+                sys.exit(1)
+            if len(input_variable[1]) == 1 and len(my_alt) == 1:
+                if self.black_list[my_var[0]]:
+                    continue
+                self.snp_list.append(my_var)
+                self.black_list[my_var[0]] = 2
+            else:
+                indel_failed = False
+                for k in range(my_var[0], my_var[0] + in_len):
+                    if k >= len(self.black_list):
+                        indel_failed = True
                         continue
-                    self.snp_list[p].append(my_var)
-                    self.black_list[p][my_var[0]] = 2
-                else:
-                    indel_failed = False
-                    for k in range(my_var[0], my_var[0] + in_len):
-                        if k >= len(self.black_list[p]):
-                            indel_failed = True
-                            continue
-                        if self.black_list[p][k]:
-                            indel_failed = True
-                            continue
-                    if indel_failed:
+                    if self.black_list[k]:
+                        indel_failed = True
                         continue
-                    for k in range(my_var[0], my_var[0] + in_len):
-                        self.black_list[p][k] = 1
-                    self.indel_list[p].append(my_var)
+                if indel_failed:
+                    continue
+                for k in range(my_var[0], my_var[0] + in_len):
+                    self.black_list[k] = 1
+                self.indel_list.append(my_var)
 
 
     def generate_random_mutations(self, start, end):
@@ -261,7 +256,7 @@ class ChromosomeSequenceContainer:
             if annotation_changed or window_shift != 0:
                 intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
 
-        return self.mutations_in_vcf_form(inserted_mutations)
+        return self.random_mutations_to_vcf(inserted_mutations)
 
     def insert_random_mutation(self, mut_type, region):
 
@@ -369,7 +364,17 @@ class ChromosomeSequenceContainer:
                                        self.chromosome_sequence[ref_end:]
         return window_shift
 
-    # TODO re-implement !!!
+    def random_mutations_to_vcf(self, inserted_mutations):
+        inserted_mutations = sorted(inserted_mutations) #TODO is it sorting them by position? and is it how they should be sorted?
+        for i in range(inserted_mutations):
+            mut = inserted_mutations[i]
+            inserted_mutations[i] = tuple([mut[0] + self.offset]) + mut[1:] #TODO is adding or substracting offset here is reasonable?
+            inserted_mutations[i] += tuple([1,'WP=1'])
+        # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
+        #       reconsider blacklist for that!
+        return inserted_mutations
+
+    # TODO implement !!!
     def check_and_update_annotations_if_needed(self, inserted_mutation):
         if snp - check around if there is stop codon in within the reading frame within the close environment
             stop_codon = True
@@ -380,27 +385,6 @@ class ChromosomeSequenceContainer:
         if stop_codon:
             change all the gene annotation to be intergenic (cds, exon, intron)
 
-    def mutations_in_vcf_form(self, inserted_mutations):
-        #TODO implement correctly
-        # tally up all the variants we handled...
-        count_dict = {}
-        all_variants = [sorted(all_snps[i] + all_indels[i]) for i in range(self.ploidy)]
-        for i in range(len(all_variants)):
-            for j in range(len(all_variants[i])):
-                all_variants[i][j] = tuple([all_variants[i][j][0] + self.x]) + all_variants[i][j][1:]
-                t = tuple(all_variants[i][j])
-                if t not in count_dict:
-                    count_dict[t] = []
-                count_dict[t].append(i)
-        # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
-        output_variants = []
-        for k in sorted(count_dict.keys()):
-            output_variants.append(k + tuple([len(count_dict[k]) / float(self.ploidy)]))
-            ploid_string = ['0' for _ in range(self.ploidy)]
-            for k2 in [n for n in count_dict[k]]:
-                ploid_string[k2] = '1'
-            output_variants[-1] += tuple(['WP=' + '/'.join(ploid_string)])
-        return output_variants
 
 # TODO use self.annotated_seq.get_regions()?
 # parse mutation model pickle file
