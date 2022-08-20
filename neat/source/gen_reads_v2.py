@@ -52,7 +52,7 @@ ALLOWED_NUCL = ['A', 'C', 'G', 'T']
 
 def simulate(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
-    index_params = process_input_params(input_params)  # , output_params["ploids"])
+    index_params = process_input_params(input_params)
     load_mutation_model(mutation_params)
 
     # initialize output writers
@@ -62,7 +62,7 @@ def simulate(args):
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
     for chrom in range(len(index_params["ref_index"])):
-        simulate_chrom(general_params, input_params, output_params, mutation_params, index_params, vcf_file_writer, chrom)
+        simulate_chrom(input_params, output_params, mutation_params, index_params, vcf_file_writer, chrom)
 
     # TODO translocation feature
 
@@ -104,7 +104,6 @@ def extract_params(args):
         "save_bam": args.bam,
         "save_vcf": args.vcf,
         "no_fastq": args.no_fastq or args.internal,  # TODO maybe convert to save-fastq?
-        "ploids": args.p  # TODO validate it's an output param
     }
     general_params = {
         "rng_seed": args.rng,
@@ -149,7 +148,6 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     random.seed(general_params["rng_seed"])
     is_in_range(sequencing_params["read_len"], 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
     is_in_range(sequencing_params["coverage"], 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
-    is_in_range(output_params["ploids"], 1, 100, 'Error: -p must be between 1 and 100')
     is_in_range(sequencing_params["off_target_scalar"], 0, 1, 'Error: -to must be between 0 and 1')
     if sequencing_params["se_rate"] != None:
         is_in_range(sequencing_params["se_rate"], 0, 0.3, 'Error: -E must be between 0 and 0.3')
@@ -157,7 +155,7 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
         is_in_range(sequencing_params["n_max_qual"], 1, 40, 'Error: -N must be between 1 and 40')
 
 
-def process_input_params(input_params):  # , ploids):
+def process_input_params(input_params):
     index_params = index_reference(input_params)
     # # parse input variants, if present
     # load_input_variants(input_params, ploids)
@@ -248,7 +246,7 @@ def intialize_reads_writers(index_params, input_params, output_params):
     return fasta_file_writer, vcf_file_writer
 
 
-def simulate_chrom(general_params, input_params, output_params, mutation_params, index_params, chrom):
+def simulate_chrom(input_params, output_params, mutation_params, index_params, chrom):
 
     # read in reference sequence and notate blocks of Ns
     chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params["ref_index"][chrom])

@@ -29,10 +29,6 @@ def parse_args(raw_args=None):
                         help="Location of the file for the sequencing error model (omit to use the default)")
     parser.add_argument('-E', type=float, required=False, metavar='Error rate', default=-1,
                         help="Rescale avg sequencing error rate to this, must be between 0.0 and 0.3")
-    # TODO add to the documentation that now ploidy default is 1
-    # TODO Consider adding feature of working with a multiple ploidy *reference* (doesn't exist now, only multi-ploidy output exists)
-    parser.add_argument('-p', type=int, required=False, metavar='ploidy', default=1,
-                        help="Desired ploidy, default = 1")
     parser.add_argument('-tr', type=str, required=False, metavar='target.bed', default=None,
                         help="Bed file containing targeted regions")
     parser.add_argument('-dr', type=str, required=False, metavar='discard_regions.bed', default=None,
@@ -87,7 +83,7 @@ def main(raw_args=None):
     # parse input variants, if present
     if args.v:
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        all_input_variants = load_input_variants(args.v, args.p)  # input_vcf = args.v , ploids = args.p
+        all_input_variants = load_input_variants(args.v, args.p)  # input_vcf = args.v
     else:
         all_input_variants = pd.DataFrame(columns=['dummy'])
 
@@ -232,13 +228,13 @@ def clear_previous_tree_output(prefix, t):
                     os.remove(filename)
 
 
-def load_input_variants(input_vcf, ploids):
+def load_input_variants(input_vcf):
     print("Loading input variants...")
     start = time.time()
     # TODO read this in as a pandas dataframe
     input_variants = None
     if input_vcf:
-        (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=ploids)
+        (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=1)
     end = time.time()
     print("Loading input variants took {} seconds.".format(int(end - start)))
     return input_variants
