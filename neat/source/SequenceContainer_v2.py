@@ -1,14 +1,13 @@
 import random
 import copy
-import pathlib
-import bisect
 import pickle
 import sys
 from enum import Enum
 
 import numpy as np
 import pandas as pd
-from Bio.Seq import Seq, MutableSeq
+from Bio.Seq import MutableSeq
+from dataclasses import dataclass
 
 from probability import DiscreteDistribution, poisson_list
 
@@ -88,6 +87,16 @@ DEFAULT_MODEL_2 = [DEFAULT_2_OVERALL_MUT_RATE,
                    DEFAULT_2_TRINUC_BIAS]
 
 
+# see https://stackoverflow.com/questions/68840767/what-is-the-purpose-of-sort-index-of-a-dataclass-in-python
+@dataclass(order=True)
+@dataclass
+class Mutation:
+    position: int # = field(init=False, repr=False)
+    ref_nucl: str # = field(init=False, repr=False)
+    new_nucl : str
+    def get_offset_change(self):
+        return len(self.new_nucl) - len(self.ref_nucl)
+
 class ChromosomeSequenceContainer:
     """
     Container for reference sequences, applies mutations
@@ -143,16 +152,20 @@ class ChromosomeSequenceContainer:
                 self.model_per_region[region][-1].append([m for m in n[9]])
 
 
-    def get_window_mutations(self, start, end): #NOTE: window can be also a whole non-N region or the entire chromosome
-        self.intialize_window(end, start)
+    def get_window_mutations(self): #NOTE: window can be also a whole non-N region or the entire chromosome
         indels_to_add_window_per_region, snps_to_add_window_per_region = self.get_planned_snps_and_indels_in_window_per_region()
-        max_mutations_in_window = MAX_MUTFRAC * (end-start) #TODO rethink it
+        max_mutations_in_window = MAX_MUTFRAC * (self.window_end-self.window_start) #TODO rethink it
         return indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window
 
-    def intialize_window(self, end, start):
+    def update_window(self, start=-1, end=-1, shift=-1):
         # TODO sanity check about start, end. Maybe consider N regions?
-        self.window_start = start
-        self.window_end = end
+        if start != -1 and end != -1:
+            self.window_start = start
+            self.window_end = end
+        elif shift != -1:
+            self.window_end += shift
+        else:
+            return -1
         # initialize trinuc snp bias
         if not IGNORE_TRINUC:
             self.update_trinuc_bias_of_window()
@@ -176,7 +189,7 @@ class ChromosomeSequenceContainer:
         self.black_list = np.zeros(self.seq_len, dtype='<i4')
 
 
-    def update_trinuc_bias_of_window(self, start, end):
+    def update_trinuc_bias_of_window(self):
         # initialize/update trinuc snp bias
         # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
         #
@@ -186,7 +199,7 @@ class ChromosomeSequenceContainer:
         trinuc_snp_bias_of_window_per_region = {region: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
         self.trinuc_bias_in_window_per_region = {region: None for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
-            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, start, end)
+            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_start, self.window_end)
             for i in range(0+1,window_seq_len-1):
                 trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
                     self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_start + i - 1:self.window_start + i + 2])]]
@@ -240,11 +253,12 @@ class ChromosomeSequenceContainer:
 
 
     def generate_random_mutations(self, start, end):
-        inserted_mutations = []
-        intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
+        self.update_window(start=start, end=end)
+        intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations()
         #TODO consider ? random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
         #TODO consider ? random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
 
+        inserted_mutations = []
         while intended_mutations_in_window.has_next() and len(inserted_mutations) <= max_mutations_in_window:
             mut_type, region = intended_mutations_in_window.next()
             # TODO add a check to see if the mutation was really inserted? something like status code?
@@ -254,9 +268,12 @@ class ChromosomeSequenceContainer:
             inserted_mutations.append(inserted_mutation)
             annotation_changed = self.check_and_update_annotations_if_needed(inserted_mutation)
             if annotation_changed or window_shift != 0:
-                intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations(start, end)
+                self.update_window(shift=window_shift)
+                intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations()
 
-        return self.random_mutations_to_vcf(inserted_mutations)
+        vcf_mutations = self.random_mutations_to_vcf(inserted_mutations)
+        self.sequence_offset += (self.window_end - end)
+        return vcf_mutations
 
     def insert_random_mutation(self, mut_type, region):
 
@@ -309,8 +326,8 @@ class ChromosomeSequenceContainer:
         context = str(self.chromosome_sequence[position - 1]) + str(self.chromosome_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
         new_nucl = self.model_per_region[region][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
-        snp = (position, ref_nucl, new_nucl)  # TODO dedicated DS?
-        self.black_list[snp[0]] = 2  # TODO is blacklist deprecated?
+        snp = Mutation(position, ref_nucl, new_nucl)
+        self.black_list[snp.position] = 2  # TODO is blacklist deprecated?
         return snp
 
     def insert_indel(self, position, region):
@@ -320,12 +337,12 @@ class ChromosomeSequenceContainer:
 
     def get_specific_indel(self, position, region):
         # insertion
-        if random.random() <= self.model_per_region[region][p][3]:
-            indel_len = self.model_per_region[region][p][4].sample()
+        if random.random() <= self.model_per_region[region][3]:
+            indel_len = self.model_per_region[region][4].sample()
             # sequence content of random insertions is uniformly random (change this later, maybe)
             indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
             ref_nucl = self.chromosome_sequence[position]
-            indel = (position, ref_nucl, ref_nucl + indel_seq)
+            indel = Mutation(position, ref_nucl, ref_nucl + indel_seq)
 
         # deletion
         else:
@@ -339,7 +356,7 @@ class ChromosomeSequenceContainer:
             else:
                 indel_seq = str(self.chromosome_sequence[position + 1:position + indel_len + 1])
             ref_nucl = self.chromosome_sequence[position]
-            indel = (position, ref_nucl + indel_seq, ref_nucl)
+            indel = Mutation(position, ref_nucl + indel_seq, ref_nucl)
 
         # TODO is blacklist deprecated? is it implemented correctly anyway?
         for k in range(position, position + indel_len + 1):
@@ -347,12 +364,10 @@ class ChromosomeSequenceContainer:
 
         return indel
 
-    def mutate_sequence(self, mutation):
-        ref_start = mutation[0]
-        ref_len = len(mutation[1])
-        ref_end = ref_start + ref_len
-        mut_len = len(mutation[2])
-        window_shift = mut_len - ref_len
+    def mutate_sequence(self, mutation : Mutation):
+        ref_start = mutation.position
+        ref_end = ref_start + len(mutation.ref_nucl)
+        window_shift = mutation.get_offset_change()
 
         if mutation[1] != str(self.chromosome_sequence[ref_start:ref_end]):
             print('\nError: Something went wrong!\n', mutation, [ref_start, ref_end],
@@ -360,19 +375,21 @@ class ChromosomeSequenceContainer:
             sys.exit(1)
         else:
             # alter reference sequence
-            self.chromosome_sequence = self.chromosome_sequence[:ref_start] + MutableSeq(mutation[2])+\
+            self.chromosome_sequence = self.chromosome_sequence[:ref_start] + MutableSeq(mutation.ref_nucl)+\
                                        self.chromosome_sequence[ref_end:]
         return window_shift
 
-    def random_mutations_to_vcf(self, inserted_mutations):
+    def random_mutations_to_vcf(self, inserted_mutations : list[Mutation]):
         inserted_mutations = sorted(inserted_mutations) #TODO is it sorting them by position? and is it how they should be sorted?
-        for i in range(inserted_mutations):
-            mut = inserted_mutations[i]
-            inserted_mutations[i] = tuple([mut[0] + self.offset]) + mut[1:] #TODO is adding or substracting offset here is reasonable?
-            inserted_mutations[i] += tuple([1,'WP=1'])
+        vcf_mutations = []
+        current_offset = self.sequence_offset
+        for mutation in inserted_mutations:
+            vcf_position = mutation.position - current_offset
+            current_offset += mutation.get_offset_change()
+            vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl,1,'WP=1']))
         # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
         #       reconsider blacklist for that!
-        return inserted_mutations
+        return vcf_mutations
 
     # TODO implement !!!
     def check_and_update_annotations_if_needed(self, inserted_mutation):
@@ -612,7 +629,3 @@ class RandomMutationPool:
 
     def get_counts(self):
         ...
-
-
-
-
