@@ -86,6 +86,10 @@ DEFAULT_MODEL_2 = [DEFAULT_2_OVERALL_MUT_RATE,
                    DEFAULT_2_TRI_FREQS,
                    DEFAULT_2_TRINUC_BIAS]
 
+class MutType(Enum):
+    SNP = 'snp'
+    INDEL = 'indel'
+    SV = 'SV'
 
 # see https://stackoverflow.com/questions/68840767/what-is-the-purpose-of-sort-index-of-a-dataclass-in-python
 @dataclass(order=True)
@@ -94,8 +98,48 @@ class Mutation:
     position: int # = field(init=False, repr=False)
     ref_nucl: str # = field(init=False, repr=False)
     new_nucl : str
+    mut_type : MutType
     def get_offset_change(self):
         return len(self.new_nucl) - len(self.ref_nucl)
+
+class WindowUnit:
+    sequence_offset: int
+    start: int
+    end: int
+    original_end: int
+
+    def __init__(self):
+        self.sequence_offset = 0
+        self.start = 0
+        self.end = 0
+        self.original_end = 0
+
+    def initialize(self, start=-1, end=-1, final_start_end=False):
+        # TODO sanity check about start, end. Maybe consider N regions?
+        self.original_end = end
+        return self.update(start=start, end=end, final_start_end=final_start_end)
+
+    def update(self, start=-1, end=-1, final_start_end=False, end_shift=-1):
+        # TODO sanity check about start, end. Maybe consider N regions?
+        changed = False
+        if start != -1 and end != -1:
+            if not final_start_end:
+                start += self.sequence_offset
+                end += self.sequence_offset
+            if self.start != start or self.end != end:
+                self.start = start
+                self.end = end
+                changed = True
+        elif end_shift != -1:
+            self.end += end_shift
+            changed = True
+        return changed
+
+    def finalize(self):
+        self.sequence_offset += (self.end - self.original_end)
+        #TODO add the feature to calculate the "bite" from the next window to come?
+
+
 
 class ChromosomeSequenceContainer:
     """
@@ -110,6 +154,7 @@ class ChromosomeSequenceContainer:
         self.initialize_blacklist() # TODO consider if deprecated
         self.annotated_seq = None #TODO save annotations in an annotated sequence DS
         self.update_mut_models(mut_models, mut_rate, dist)
+        self.window_unit = WindowUnit()
 
     def update_mut_models(self, model_data, mut_rate, dist): #TODO figure out: called one time? or a few times, for each window?
         if not model_data:
@@ -154,21 +199,8 @@ class ChromosomeSequenceContainer:
 
     def get_window_mutations(self): #NOTE: window can be also a whole non-N region or the entire chromosome
         indels_to_add_window_per_region, snps_to_add_window_per_region = self.get_planned_snps_and_indels_in_window_per_region()
-        max_mutations_in_window = MAX_MUTFRAC * (self.window_end-self.window_start) #TODO rethink it
+        max_mutations_in_window = MAX_MUTFRAC * (self.window_unit.end-self.window_unit.start) #TODO rethink it
         return indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window
-
-    def update_window(self, start=-1, end=-1, shift=-1):
-        # TODO sanity check about start, end. Maybe consider N regions?
-        if start != -1 and end != -1:
-            self.window_start = start
-            self.window_end = end
-        elif shift != -1:
-            self.window_end += shift
-        else:
-            return -1
-        # initialize trinuc snp bias
-        if not IGNORE_TRINUC:
-            self.update_trinuc_bias_of_window()
 
     def get_planned_snps_and_indels_in_window_per_region(self):
         indel_poisson_per_region = self.init_poisson(indels=True)
@@ -195,22 +227,22 @@ class ChromosomeSequenceContainer:
         #
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
-        window_seq_len = self.window_end - self.window_start
+        window_seq_len = self.window_unit.end - self.window_unit.start
         trinuc_snp_bias_of_window_per_region = {region: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
-        self.trinuc_bias_in_window_per_region = {region: None for region in self.annotated_seq.get_regions()}
+        self.trinuc_bias_per_region = {region: None for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
-            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_start, self.window_end)
+            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start, self.window_unit.end)
             for i in range(0+1,window_seq_len-1):
                 trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
-                    self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_start + i - 1:self.window_start + i + 2])]]
-            self.trinuc_bias_per_regiontrinuc_bias_per_region[region] = \
+                    self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
+            self.trinuc_bias_per_region[region] = \
                 DiscreteDistribution(trinuc_snp_bias_of_window_per_region[0+1:window_seq_len-1],
                                      range(0+1,window_seq_len-1))
 
     def init_poisson(self, indels=True):
         list_per_region = {}
         poisson_per_region = {}
-        nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.chromosome_name, self.window_start, self.window_end)
+        nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.chromosome_name, self.window_unit.start, self.window_unit.end)
         for region in self.annotated_seq.get_regions():
             param = self.model_per_region[region][2] if indels else (1. - self.model_per_region[region][2])
             list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.model_per_region[region][2])
@@ -219,42 +251,51 @@ class ChromosomeSequenceContainer:
             # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
         return poisson_per_region
 
-    #TODO re-consider !!!
-    def insert_given_mutations(self, input_list):
-        for input_variable in input_list:
-            my_alt = input_variable[2]
-            my_var = (input_variable[0] - self.offset, input_variable[1], my_alt) #TODO validate offset is updated correctly
-            # TODO - use this instead? : in_len = max([len(input_variable[1]), len(my_alt)])
-            in_len = len(input_variable[1])
+    def insert_given_mutations(self, input_list, start=-1, end=-1, final_start_end=False): #, use_sequence_offset=True, offset=0):
+        self.window_unit.initialize(start=start, end=end, final_start_end=final_start_end)
 
-            if my_var[0] < 0 or my_var[0] >= len(self.black_list):
-                print('\nError: Attempting to insert variant out of window bounds:')
-                print(my_var, '--> blackList[0:' + str(len(self.black_list)) + ']\n')
-                sys.exit(1)
-            if len(input_variable[1]) == 1 and len(my_alt) == 1:
-                if self.black_list[my_var[0]]:
-                    continue
-                self.snp_list.append(my_var)
-                self.black_list[my_var[0]] = 2
-            else:
-                indel_failed = False
-                for k in range(my_var[0], my_var[0] + in_len):
-                    if k >= len(self.black_list):
-                        indel_failed = True
-                        continue
-                    if self.black_list[k]:
-                        indel_failed = True
-                        continue
-                if indel_failed:
-                    continue
-                for k in range(my_var[0], my_var[0] + in_len):
-                    self.black_list[k] = 1
-                self.indel_list.append(my_var)
+        inserted_mutations = []
+        # current_offset = self.sequence_offset if use_sequence_offset else offset
+        current_offset = 0
+        for elem in input_list:
+            mutation = Mutation(elem[0] + self.window_unit.sequence_offset + current_offset, elem[1], elem[2])
+            mutation.mut_type = MutType.SNP if len(mutation.ref_nucl) == 1 and len(mutation.new_nucl) == 1 \
+                                else MutType.INDEL
 
+            failed = self.check_if_mutation_allowed(mutation)
+
+            if not failed:
+                for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
+                    self.black_list[k] = 1 if mutation.mut_type == MutType.INDEL else 2
+                inserted_mutations.append(mutation)
+                self.window_unit.update(end_shift=mutation.get_offset_change())
+                current_offset += mutation.get_offset_change()
+
+        vcf_mutations = self.prepare_mutations_to_vcf(inserted_mutations)
+        self.window_unit.finalize()
+        return vcf_mutations
+
+    def check_if_mutation_allowed(self, mutation):
+        if mutation.position < self.window_unit.start or mutation.position >= self.window_unit.end:
+            print('\nError: Attempting to insert variant out of window bounds.')
+            sys.exit(1)
+        failed = False
+        # TODO - use this instead? : ref_len = max([len(input_variable[1]), len(my_alt)])
+        if mutation.position + len(mutation.ref_nucl) >= self.window_unit.end:
+            # TODO mind that by using self.window_unit.end and not self.seq_len + self.sequence_offset + current_offset
+            #  we don't allow deletions to take a "bite" form the next window. Should we aloow that?
+            failed = True
+        for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
+            if self.black_list[k]:
+                failed = True
+                break
+        return failed
 
     def generate_random_mutations(self, start, end):
-        self.update_window(start=start, end=end)
+        self.window_unit.initialize(start=start, end=end)
         intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations()
+        if not IGNORE_TRINUC:
+            self.update_trinuc_bias_of_window()
         #TODO consider ? random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
         #TODO consider ? random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
 
@@ -266,13 +307,19 @@ class ChromosomeSequenceContainer:
             if not inserted_mutation:
                 continue
             inserted_mutations.append(inserted_mutation)
+            # check window
+            if window_shift != 0:
+                self.window_unit.update(end_shift=window_shift)
+            # check annotations
             annotation_changed = self.check_and_update_annotations_if_needed(inserted_mutation)
+            # if at least one has changed - sample mutations again
             if annotation_changed or window_shift != 0:
-                self.update_window(shift=window_shift)
                 intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations()
+                if not IGNORE_TRINUC:
+                    self.update_trinuc_bias_of_window()
 
-        vcf_mutations = self.random_mutations_to_vcf(inserted_mutations)
-        self.sequence_offset += (self.window_end - end)
+       vcf_mutations = self.prepare_mutations_to_vcf(inserted_mutations)
+        self.window_unit.finalize()
         return vcf_mutations
 
     def insert_random_mutation(self, mut_type, region):
@@ -295,17 +342,17 @@ class ChromosomeSequenceContainer:
 
     def find_position_for_mutation(self, mut_type, region):
 
-        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_start, self.window_end)
+        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start, self.window_unit.end)
         if 1 not in region_mask:
             return -1  # current annotation doesn't exist in window
         for attempt in range(MAX_ATTEMPTS):
             if mut_type == MutType.INDEL or IGNORE_TRINUC:
-                k = self.window_end - self.window_start - 2 # -2 because we don't allow SNP in the window start/end
+                k = self.window_unit.end - self.window_unit.start - 2 # -2 because we don't allow SNP in the window start/end
                 if k < 1:
                     return -1
                 event_pos = random.choices(
-                    range(self.window_start+1, self.window_end-1),
-                    weights=region_mask[self.window_start+1:self.window_end-1],
+                    range(self.window_unit.start+1, self.window_unit.end-1),
+                    weights=region_mask[self.window_unit.start+1:self.window_unit.end-1],
                     k=k)
                 # https://pynative.com/python-weighted-random-choices-with-probability/
                 #TODO if event_pos is ok return it, otherwise keep trying
@@ -346,10 +393,12 @@ class ChromosomeSequenceContainer:
 
         # deletion
         else:
-            indel_len = self.model_per_region[region][p][5].sample()
+            indel_len = self.model_per_region[region][5].sample()
             # skip if deletion too close to boundary
-            if position + indel_len + 1 >= len(self.chromosome_sequence):
-                indel_len = len(self.chromosome_sequence) - 2 - position
+            if position + indel_len + 1 >= self.window_unit.end:
+                # TODO mind that by using self.window_unit.end and not self.seq_len + self.sequence_offset + current_offset
+                #  we don't allow deletions to take a "bite" form the next window. Should we aloow that?
+                indel_len = self.window_unit.end - 2 - position
             # TODO if crosses the boundary of annotation, resize? skip?
             if indel_len == 1:
                 indel_seq = self.chromosome_sequence[position + 1]
@@ -379,10 +428,10 @@ class ChromosomeSequenceContainer:
                                        self.chromosome_sequence[ref_end:]
         return window_shift
 
-    def random_mutations_to_vcf(self, inserted_mutations : list[Mutation]):
+    def prepare_mutations_to_vcf(self, inserted_mutations : list[Mutation]):
         inserted_mutations = sorted(inserted_mutations) #TODO is it sorting them by position? and is it how they should be sorted?
         vcf_mutations = []
-        current_offset = self.sequence_offset
+        current_offset = self.window_unit.sequence_offset
         for mutation in inserted_mutations:
             vcf_position = mutation.position - current_offset
             current_offset += mutation.get_offset_change()
@@ -470,11 +519,6 @@ def parse_input_mutation_model(model=None, which_default=1):
 #####################################
 #    Supporting Data Structures     #
 #####################################
-
-class MutType(Enum):
-    SNP = 'snp'
-    INDEL = 'indel'
-    SV = 'SV'
 
 
 class Regions(Enum):
