@@ -7,7 +7,8 @@ import numpy as np
 from Bio.Seq import MutableSeq
 from dataclasses import dataclass
 from probability import DiscreteDistribution, poisson_list
-from neat.utilities.common_data_structues import Region, MutType, AnnotatedSeqence
+from neat.utilities.common_data_structues import Region, MutType
+from neat.utilities.annotated_sequence import AnnotatedSeqence
 
 """
 Constants needed for analysis
@@ -179,12 +180,12 @@ class ChromosomeProcessor:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, chromosome_name, chromosome_sequence, annotations, mut_models=None, mut_rate=None, dist=None):
+    def __init__(self, chromosome_name, chromosome_sequence, annotations_df, mut_models=None, mut_rate=None, dist=None):
         self.chromosome_name = chromosome_name
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.annotated_seq = None #TODO save annotations in an annotated sequence DS
+        self.annotated_seq = AnnotatedSeqence(annotations_df) #TODO save annotations in an annotated sequence DS
         self.update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
 

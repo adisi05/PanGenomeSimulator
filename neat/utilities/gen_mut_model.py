@@ -11,8 +11,8 @@ from Bio import SeqIO
 import pandas as pd
 from enum import Enum
 
-from neat.utilities.common_data_structues import Region, AnnotatedSeqence
-from neat.utilities.compute_annotation_regions import seperate_exons_genes_intergenics
+from neat.utilities.common_data_structues import Region
+from neat.utilities.annotated_sequence import AnnotatedSeqence, to_annotations_df
 
 # Some constants we'll need later
 VALID_NUCL = ['A', 'C', 'G', 'T']
@@ -117,7 +117,7 @@ def main(working_dir):
     (ref, vcf, out_pickle, save_trinuc, skip_common) = (
         args.r, args.m, args.o, args.save_trinuc, args.skip_common)
 
-    annotations_df = process_annotations_file(args, working_dir)
+    annotations_df = to_annotations_df(args, working_dir)
 
     regions_stats = RegionStats(annotations_df)
 
@@ -280,19 +280,6 @@ def process_reference(ref):
     return ref_dict, ref_list
 
 
-def process_annotations_file(args, working_dir):
-    # Process bed file
-    annotations_df = None
-    if args.b:
-        print('Processing bed file...')
-        try:
-            annotations_df = seperate_exons_genes_intergenics(args.b, working_dir)
-            annotations_df[['chrom', 'feature']] = annotations_df[['chrom', 'feature']].astype(str)
-            # TODO validate chromosome length are same as in reference
-        except ValueError:
-            print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
-    return annotations_df
-
 
 def process_trinuc_counts_file(ref, regions_stats, save_trinuc):
     # if we didn't count ref trinucs because we found file, read in ref counts from file now
@@ -301,7 +288,7 @@ def process_trinuc_counts_file(ref, regions_stats, save_trinuc):
         f = open(ref + '.trinucCounts', 'r')
         for line in f:
             splt = line.strip().split('\t')
-            regions_stats.get_stat_by_region(Regions(splt[0]),
+            regions_stats.get_stat_by_region(Region(splt[0]),
                                              Stats.TRINUC_REF_COUNT)[splt[1]] = int(splt[2])
         f.close()
     # otherwise, save trinuc counts to file, if desired

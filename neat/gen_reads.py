@@ -23,11 +23,12 @@ import os
 import pandas as pd
 
 from neat.source.fastq_file_writer import FastqFileWriter
-from source.ChromosomeProcessor import ChromosomeProcessor, parse_input_mutation_model
+from source.chromosome_processor import ChromosomeProcessor, parse_input_mutation_model
 from source.fasta_file_writer import FastaFileWriter
 from source.input_checking import check_file_open, is_in_range
 from source.ref_func import index_ref, read_ref
 from source.vcf_file_writer import VcfFileWriter
+from utilities.annotated_sequence import to_annotations_df
 
 """
 Some constants needed for analysis
@@ -44,6 +45,7 @@ def simulate(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
     index_params = process_input_params(input_params)
     load_mutation_model(mutation_params)
+    annotations_df = to_annotations_df(mutation_params["mut_bed"])
 
     # initialize output writers
     fasta_file_writer, vcf_file_writer = intialize_reads_writers(index_params,input_params, output_params, sequencing_params)
@@ -52,7 +54,7 @@ def simulate(args):
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
     for chrom in range(len(index_params["ref_index"])):
-        simulate_chrom(input_params, output_params, mutation_params, index_params, vcf_file_writer, chrom)
+        simulate_chrom(input_params, output_params, mutation_params, index_params, vcf_file_writer, chrom, annotations_df)
 
     # TODO translocation feature
 
@@ -236,7 +238,7 @@ def intialize_reads_writers(index_params, input_params, output_params):
     return fasta_file_writer, vcf_file_writer
 
 
-def simulate_chrom(input_params, output_params, mutation_params, index_params, chrom):
+def simulate_chrom(input_params, output_params, mutation_params, index_params, chrom, annotations_df):
 
     # read in reference sequence and notate blocks of Ns
     chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params["ref_index"][chrom])
@@ -244,8 +246,8 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, c
     variants_from_vcf = get_input_variants_from_vcf(input_params)
     current_chrom_given_valid_variants = prune_invalid_variants(chrom, variants_from_vcf, index_params["ref_index"],
                                                      chrom_sequence)
-    all_variants_out = {}
-    chromosome_processor = ChromosomeProcessor.py(chrom, chrom_sequence, mutation_params["mut_bed"], mut_model=mutation_params["mut_model"], mut_rate = mutation_params["mut_rate"], dist = mutation_params["dist"])
+    chrom_annotations_df = annotations_df[annotations_df['chrom']==chrom]
+    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, mut_model=mutation_params["mut_model"], mut_rate = mutation_params["mut_rate"], dist = mutation_params["dist"])
 
     #TODO add large random structural variants
 
@@ -255,7 +257,7 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, c
     # Applying variants to non-N regions
     for non_n_region in index_params['n_regions']['non_N']:
         start, end = non_n_region
-        inserted_mutations = apply_variants_to_non_n_region(output_params, mutation_params, chrom, current_chrom_given_valid_variants, all_variants_out, chromosome_processor, start, end)
+        inserted_mutations = apply_variants_to_non_n_region(output_params, mutation_params, chrom, current_chrom_given_valid_variants, chromosome_processor, start, end)
 
     # write all output variants for this reference
     #TODO write inserted_mutations - write_vcf?
@@ -318,7 +320,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, chrom_sequence):
 
 
 def apply_variants_to_non_n_region(output_params, mutation_params, chrom,
-                                   valid_variants_from_vcf, all_variants_out, chromosome_processor, start, end):
+                                   valid_variants_from_vcf, chromosome_processor, start, end):
 
     vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
 
@@ -353,10 +355,10 @@ def insert_given_and_random_mutations(start, end, chromosome_processor, vars_in_
 
 
 
-def write_vcf(vcf_file_writer, all_variants_out, chrom, ref_index):
+def write_vcf(vcf_file_writer, inserted_mutations, chrom, ref_index):
     print('Writing output VCF started...')
     start = time.time()
-    for k in sorted(all_variants_out.keys()):
+    for k in sorted(inserted_mutations.keys()):
         current_ref = ref_index[chrom][0]
         my_id = '.'
         my_quality = '.'
