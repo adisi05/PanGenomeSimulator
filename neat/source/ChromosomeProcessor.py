@@ -103,20 +103,21 @@ class Mutation:
         return len(self.new_nucl) - len(self.ref_nucl)
 
 class WindowUnit:
-    sequence_offset: int
-    start: int
-    end: int
-    original_end: int
-
-    def __init__(self):
-        self.sequence_offset = 0
-        self.start = 0
-        self.end = 0
-        self.original_end = 0
+    start_offset: int = 0
+    start: int = 0
+    end: int = 0
+    original_end: int = 0
+    # Blocklist explanation:
+    # blocklist[pos] = 0		safe to insert variant here
+    # blocklist[pos] = 1		indel inserted here
+    # blocklist[pos] = 2		snp inserted here
+    # blocklist[pos] = 3		invalid position for various processing reasons
+    blocklist : dict    # TODO re-consider !!!
 
     def initialize(self, start=-1, end=-1, final_start_end=False):
         # TODO sanity check about start, end. Maybe consider N regions?
         self.original_end = end
+        self.blocklist = {} #np.zeros(end-start, dtype='<i4')
         return self.update(start=start, end=end, final_start_end=final_start_end)
 
     def update(self, start=-1, end=-1, final_start_end=False, end_shift=-1):
@@ -124,8 +125,8 @@ class WindowUnit:
         changed = False
         if start != -1 and end != -1:
             if not final_start_end:
-                start += self.sequence_offset
-                end += self.sequence_offset
+                start += self.start_offset
+                end += self.start_offset
             if self.start != start or self.end != end:
                 self.start = start
                 self.end = end
@@ -136,12 +137,21 @@ class WindowUnit:
         return changed
 
     def finalize(self):
-        self.sequence_offset += (self.end - self.original_end)
+        self.start_offset += (self.end - self.original_end)
         #TODO add the feature to calculate the "bite" from the next window to come?
 
+    def update_blocklist(self, mutation):
+        for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):  # TODO continue here
+            self.blocklist[k] = 1 if mutation.mut_type == MutType.INDEL else 2
+
+    def check_blocklist(self, mutation):
+        for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
+            if self.blocklist.get(k, 0):
+                return False
+        return True
 
 
-class ChromosomeSequenceContainer:
+class ChromosomeProcessor:
     """
     Container for reference sequences, applies mutations
     """
@@ -151,7 +161,6 @@ class ChromosomeSequenceContainer:
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.initialize_blacklist() # TODO consider if deprecated
         self.annotated_seq = None #TODO save annotations in an annotated sequence DS
         self.update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
@@ -211,15 +220,6 @@ class ChromosomeSequenceContainer:
                                               for region in self.annotated_seq.get_regions()}
         return indels_to_add_window_per_region, snps_to_add_window_per_region
 
-    # TODO re-consider !!!
-    def initialize_blacklist(self):
-        # Blacklist explanation:
-        # black_list[pos] = 0		safe to insert variant here
-        # black_list[pos] = 1		indel inserted here
-        # black_list[pos] = 2		snp inserted here
-        # black_list[pos] = 3		invalid position for various processing reasons
-        self.black_list = np.zeros(self.seq_len, dtype='<i4')
-
 
     def update_trinuc_bias_of_window(self):
         # initialize/update trinuc snp bias
@@ -251,45 +251,38 @@ class ChromosomeSequenceContainer:
             # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
         return poisson_per_region
 
-    def insert_given_mutations(self, input_list, start=-1, end=-1, final_start_end=False): #, use_sequence_offset=True, offset=0):
+    def insert_given_mutations(self, vars_in_current_window, start=-1, end=-1, final_start_end=False): #, use_sequence_offset=True, offset=0):
         self.window_unit.initialize(start=start, end=end, final_start_end=final_start_end)
 
-        inserted_mutations = []
-        # current_offset = self.sequence_offset if use_sequence_offset else offset
-        current_offset = 0
-        for elem in input_list:
-            mutation = Mutation(elem[0] + self.window_unit.sequence_offset + current_offset, elem[1], elem[2])
-            mutation.mut_type = MutType.SNP if len(mutation.ref_nucl) == 1 and len(mutation.new_nucl) == 1 \
-                                else MutType.INDEL
+        mutations_to_insert = self.validate_given_mutations_list(vars_in_current_window)
 
-            failed = self.check_if_mutation_allowed(mutation)
-
-            if not failed:
-                for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
-                    self.black_list[k] = 1 if mutation.mut_type == MutType.INDEL else 2
-                inserted_mutations.append(mutation)
-                self.window_unit.update(end_shift=mutation.get_offset_change())
-                current_offset += mutation.get_offset_change()
-
-        vcf_mutations = self.prepare_mutations_to_vcf(inserted_mutations)
+        #TODO actually insert mutations!!! - consider current_offset and self.window_unit.update(end_shift=mutation.get_offset_change())
+        vcf_mutations = self.prepare_mutations_to_vcf(mutations_to_insert, mutations_already_inserted=False)
         self.window_unit.finalize()
         return vcf_mutations
 
-    def check_if_mutation_allowed(self, mutation):
+    def validate_given_mutations_list(self, input_list):
+        inserted_mutations = []
+        for elem in input_list:
+            mut_type = MutType.SNP if len(mutation.ref_nucl) == 1 and len(mutation.new_nucl) == 1 else MutType.INDEL
+            mutation = Mutation(elem[0] + self.window_unit.start_offset, elem[1], elem[2], mut_type)
+            if self.validate_given_mutation(mutation):
+                self.window_unit.update_blocklist(mutation)
+                inserted_mutations.append(mutation)
+
+        return inserted_mutations
+
+
+    def validate_given_mutation(self, mutation):
         if mutation.position < self.window_unit.start or mutation.position >= self.window_unit.end:
             print('\nError: Attempting to insert variant out of window bounds.')
             sys.exit(1)
-        failed = False
         # TODO - use this instead? : ref_len = max([len(input_variable[1]), len(my_alt)])
         if mutation.position + len(mutation.ref_nucl) >= self.window_unit.end:
             # TODO mind that by using self.window_unit.end and not self.seq_len + self.sequence_offset + current_offset
             #  we don't allow deletions to take a "bite" form the next window. Should we aloow that?
-            failed = True
-        for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
-            if self.black_list[k]:
-                failed = True
-                break
-        return failed
+            return False
+        return self.check_blocklist(mutation)
 
     def generate_random_mutations(self, start, end):
         self.window_unit.initialize(start=start, end=end)
@@ -318,7 +311,7 @@ class ChromosomeSequenceContainer:
                 if not IGNORE_TRINUC:
                     self.update_trinuc_bias_of_window()
 
-       vcf_mutations = self.prepare_mutations_to_vcf(inserted_mutations)
+        vcf_mutations = self.prepare_mutations_to_vcf(inserted_mutations, mutations_already_inserted=True)
         self.window_unit.finalize()
         return vcf_mutations
 
@@ -341,7 +334,7 @@ class ChromosomeSequenceContainer:
         return inserted_mutation, window_shift
 
     def find_position_for_mutation(self, mut_type, region):
-
+        # TODO use blocklist?
         region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start, self.window_unit.end)
         if 1 not in region_mask:
             return -1  # current annotation doesn't exist in window
@@ -374,7 +367,7 @@ class ChromosomeSequenceContainer:
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
         new_nucl = self.model_per_region[region][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
         snp = Mutation(position, ref_nucl, new_nucl)
-        self.black_list[snp.position] = 2  # TODO is blacklist deprecated?
+        # self.blocklist[snp.position] = 2  # TODO use blocklist?
         return snp
 
     def insert_indel(self, position, region):
@@ -407,9 +400,9 @@ class ChromosomeSequenceContainer:
             ref_nucl = self.chromosome_sequence[position]
             indel = Mutation(position, ref_nucl + indel_seq, ref_nucl)
 
-        # TODO is blacklist deprecated? is it implemented correctly anyway?
-        for k in range(position, position + indel_len + 1):
-            self.black_list[k] = 1
+        # TODO use blocklist?
+        # for k in range(position, position + indel_len + 1):
+        #     self.blocklist[k] = 1
 
         return indel
 
@@ -428,28 +421,31 @@ class ChromosomeSequenceContainer:
                                        self.chromosome_sequence[ref_end:]
         return window_shift
 
-    def prepare_mutations_to_vcf(self, inserted_mutations : list[Mutation]):
-        inserted_mutations = sorted(inserted_mutations) #TODO is it sorting them by position? and is it how they should be sorted?
+    def prepare_mutations_to_vcf(self, inserted_mutations : list[Mutation], mutations_already_inserted):
+        inserted_mutations = sorted(inserted_mutations)
         vcf_mutations = []
-        current_offset = self.window_unit.sequence_offset
+        mutations_affected_offset = 0
         for mutation in inserted_mutations:
-            vcf_position = mutation.position - current_offset
-            current_offset += mutation.get_offset_change()
+            vcf_position = mutation.position - self.window_unit.start_offset
+            if mutations_already_inserted:
+                vcf_position -= mutations_affected_offset
+                mutations_affected_offset += mutation.get_offset_change()
             vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl,1,'WP=1']))
         # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
-        #       reconsider blacklist for that!
+        #       reconsider blocklist for that!
         return vcf_mutations
 
     # TODO implement !!!
     def check_and_update_annotations_if_needed(self, inserted_mutation):
-        if snp - check around if there is stop codon in within the reading frame within the close environment
-            stop_codon = True
-        if indel - continue with the cds strand and look & reading frame and look for stop codon until the end of the cds
-                stop_codon = True
-        #if sv - to be continued
-
-        if stop_codon:
-            change all the gene annotation to be intergenic (cds, exon, intron)
+        pass
+        # if snp - check around if there is stop codon in within the reading frame within the close environment
+        #     stop_codon = True
+        # if indel - continue with the cds strand and look & reading frame and look for stop codon until the end of the cds
+        #         stop_codon = True
+        # #if sv - to be continued
+        #
+        # if stop_codon:
+        #     change all the gene annotation to be intergenic (cds, exon, intron)
 
 
 # TODO use self.annotated_seq.get_regions()?
