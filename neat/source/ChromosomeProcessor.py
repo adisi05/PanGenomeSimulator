@@ -91,6 +91,14 @@ class MutType(Enum):
     INDEL = 'indel'
     SV = 'SV'
 
+class Region(Enum):
+    CDS = 'CDS'
+    INTRON = 'intron'
+    INTERGENIC = 'intergenic'
+    ALL = 'all'
+    #TODO see how we pass through evey Region which is not ALL, or only through ALL, when inserting mutations.
+    # need some kind of "strategy" solution
+
 # see https://stackoverflow.com/questions/68840767/what-is-the-purpose-of-sort-index-of-a-dataclass-in-python
 @dataclass(order=True)
 @dataclass
@@ -150,6 +158,36 @@ class WindowUnit:
                 return False
         return True
 
+class RandomMutationPool:
+    def __init__(self, indels_per_region : int, snps_per_region : int, max_mutations_in_window : int, sv_list : list = []):
+        #TODO add SVs
+        self.indels_per_region = indels_per_region
+        self.snps_per_region = snps_per_region
+        self.options = {}
+        for region, count in indels_per_region.items():
+            if count != 0:
+                self.options[(MutType.INDEL, region)] = count
+        for region, count in snps_per_region.items():
+            if count != 0:
+                self.options[(MutType.SNP, region)] = count
+        self.overall_count = min(max_mutations_in_window, sum(self.options.values()))
+
+    def has_next(self) -> bool:
+        return self.overall_count > 0
+
+    def get_next(self) -> (MutType, Region):
+        if self.overall_count <= 0:
+            return None
+        option_with_count_list = self.options.items()
+        # https://pynative.com/python-weighted-random-choices-with-probability/
+        choice = random.choices([opt[0] for opt in option_with_count_list],
+                                weights=[opt[1] for opt in option_with_count_list],
+                                k=len(option_with_count_list))
+        self.overall_count -= self.overall_count
+        self.options[choice] -= self.options[choice]
+        if self.options[choice] == 0:
+            del self.options[choice]
+        return choice
 
 class ChromosomeProcessor:
     """
@@ -206,12 +244,12 @@ class ChromosomeProcessor:
                 self.model_per_region[region][-1].append([m for m in n[9]])
 
 
-    def get_window_mutations(self): #NOTE: window can be also a whole non-N region or the entire chromosome
+    def get_window_mutations(self) -> RandomMutationPool: #NOTE: window can be also a whole non-N region or the entire chromosome
         indels_to_add_window_per_region, snps_to_add_window_per_region = self.get_planned_snps_and_indels_in_window_per_region()
         max_mutations_in_window = MAX_MUTFRAC * (self.window_unit.end-self.window_unit.start) #TODO rethink it
-        return indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window
+        return RandomMutationPool(indels_to_add_window_per_region, snps_to_add_window_per_region, max_mutations_in_window)
 
-    def get_planned_snps_and_indels_in_window_per_region(self):
+    def get_planned_snps_and_indels_in_window_per_region(self) -> (dict, dict):
         indel_poisson_per_region = self.init_poisson(indels=True)
         snp_poisson_per_region = self.init_poisson(indels=False)
         indels_to_add_window_per_region = {region: [n.sample() for n in indel_poisson_per_region[region]]
@@ -286,15 +324,15 @@ class ChromosomeProcessor:
 
     def generate_random_mutations(self, start, end):
         self.window_unit.initialize(start=start, end=end)
-        intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations()
+        random_mutations_pool = self.get_window_mutations()
         if not IGNORE_TRINUC:
             self.update_trinuc_bias_of_window()
         #TODO consider ? random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
         #TODO consider ? random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
 
         inserted_mutations = []
-        while intended_mutations_in_window.has_next() and len(inserted_mutations) <= max_mutations_in_window:
-            mut_type, region = intended_mutations_in_window.next()
+        while random_mutations_pool.has_next():
+            mut_type, region = random_mutations_pool.next()
             # TODO add a check to see if the mutation was really inserted? something like status code?
             inserted_mutation, window_shift  = self.insert_random_mutation(mut_type, region)
             if not inserted_mutation:
@@ -307,7 +345,7 @@ class ChromosomeProcessor:
             annotation_changed = self.check_and_update_annotations_if_needed(inserted_mutation)
             # if at least one has changed - sample mutations again
             if annotation_changed or window_shift != 0:
-                intended_mutations_in_window, max_mutations_in_window = self.get_window_mutations()
+                random_mutations_pool = self.get_window_mutations()
                 if not IGNORE_TRINUC:
                     self.update_trinuc_bias_of_window()
 
@@ -315,7 +353,7 @@ class ChromosomeProcessor:
         self.window_unit.finalize()
         return vcf_mutations
 
-    def insert_random_mutation(self, mut_type, region):
+    def insert_random_mutation(self, mut_type : MutType, region : Region):
 
         position = self.find_position_for_mutation(mut_type, region)
         if position == -1:
@@ -333,7 +371,7 @@ class ChromosomeProcessor:
 
         return inserted_mutation, window_shift
 
-    def find_position_for_mutation(self, mut_type, region):
+    def find_position_for_mutation(self, mut_type : MutType, region : Region):
         # TODO use blocklist?
         region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start, self.window_unit.end)
         if 1 not in region_mask:
@@ -356,7 +394,7 @@ class ChromosomeProcessor:
                 return event_pos
         return -1
 
-    def insert_snp(self, position, region):
+    def insert_snp(self, position : int, region : Region):
         snp =  self.get_specific_snp(position, region)
         self.mutate_sequence(snp)
         return snp
@@ -370,7 +408,7 @@ class ChromosomeProcessor:
         # self.blocklist[snp.position] = 2  # TODO use blocklist?
         return snp
 
-    def insert_indel(self, position, region):
+    def insert_indel(self, position : int, region : Region):
         indel = self.get_specific_indel(position, region)
         window_shift = self.mutate_sequence(indel)
         return indel, window_shift
@@ -452,16 +490,16 @@ class ChromosomeProcessor:
 # parse mutation model pickle file
 def parse_input_mutation_model(model=None, which_default=1):
     if which_default == 1:
-        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_1] for region in Regions}
+        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_1] for region in Region}
     elif which_default == 2:
-        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_2] for region in Regions}
+        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_2] for region in Region}
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)
 
     if model is not None:
         pickle_dict = pickle.load(open(model, "rb"))
-        for region in Regions:
+        for region in Region:
             out_model[region][0] = pickle_dict[f'{region.value}.AVG_MUT_RATE']
             out_model[region][2] = 1. - pickle_dict[f'{region.value}.SNP_FREQ']
 
@@ -517,15 +555,6 @@ def parse_input_mutation_model(model=None, which_default=1):
 #####################################
 
 
-class Regions(Enum):
-    CDS = 'CDS'
-    INTRON = 'intron'
-    INTERGENIC = 'intergenic'
-    ALL = 'all'
-    #TODO see how we pass through evey Region which is not ALL, or only through ALL, when inserting mutations.
-    # need some kind of "strategy" solution
-
-
 class Stats(Enum):
     # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
     TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
@@ -553,14 +582,14 @@ class Stats(Enum):
 
 class AnnotatedSeqence:
     _sequence_per_chrom = {}
-    _code_to_annotation = {2:Regions.CDS.value, 1:Regions.INTRON.value, 0:Regions.INTERGENIC.value}
-    _annotation_to_code = {Regions.CDS.value:2, Regions.INTRON.value:1, Regions.INTERGENIC.value:0}
+    _code_to_annotation = {2:Region.CDS.value, 1:Region.INTRON.value, 0:Region.INTERGENIC.value}
+    _annotation_to_code = {Region.CDS.value:2, Region.INTRON.value:1, Region.INTERGENIC.value:0}
     _relevant_regions = []
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
             self._sequence_per_chrom = None
-            self._relevant_regions.append(Regions.ALL)
+            self._relevant_regions.append(Region.ALL)
             return
 
         for i, annotation in annotations_df.iterrows():
@@ -575,14 +604,14 @@ class AnnotatedSeqence:
             self._sequence_per_chrom[current_chrom] = \
                 np.concatenate(self._sequence_per_chrom[current_chrom], current_sequence)
         if len(self._relevant_regions) == 0:
-            self._relevant_regions.append(Regions.ALL)
+            self._relevant_regions.append(Region.ALL)
 
     def get_regions(self):
         return self._relevant_regions
 
     def get_annotation(self, chrom, index):
         if not self._sequence_per_chrom:
-            return Regions.ALL
+            return Region.ALL
         return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
 
     def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
@@ -594,7 +623,7 @@ class AnnotatedSeqence:
             counts_per_region[region] = window.count(str(self._annotation_to_code(region)))
         return counts_per_region
 
-    def get_mask_in_window_of_region(self, chrom, region, start, end):
+    def get_mask_in_window_of_region(self, region, start, end):
         # check for cache
         if start != self._recent_start or end != self._recent_end:
             self._recent_start = start
@@ -604,7 +633,7 @@ class AnnotatedSeqence:
             return self._mask_in_window_per_region[region]
 
         # compute if no cache
-        window_sequence = self._sequence_per_chrom[chrom][start:end]
+        window_sequence = self._sequence_per_chrom[self.chromosome_name][start:end]
         relevant_code = self._annotation_to_code[region.value]
         self._mask_in_window_per_region[region] = np.where(window_sequence == relevant_code, 1, 0)
         return self._mask_in_window_per_region[region]
@@ -614,12 +643,12 @@ class AnnotatedSeqence:
 
 class RegionStats:
     def __init__(self, annotations_df = None):
-        self._regions_stats = {Regions.ALL: self.create_stats_dict()}
+        self._regions_stats = {Region.ALL: self.create_stats_dict()}
         _annotated_sequence = AnnotatedSeqence(None)
         if annotations_df:
-            self._regions_stats[Regions.CDS] = self.create_stats_dict()
-            self._regions_stats[Regions.INTRON] = self.create_stats_dict()
-            self._regions_stats[Regions.INTERGENIC] = self.create_stats_dict()
+            self._regions_stats[Region.CDS] = self.create_stats_dict()
+            self._regions_stats[Region.INTRON] = self.create_stats_dict()
+            self._regions_stats[Region.INTERGENIC] = self.create_stats_dict()
             _annotated_sequence = AnnotatedSeqence(annotations_df)
 
     def get_region(self, chrom, index):
@@ -647,25 +676,3 @@ class RegionStats:
             Stats.COMMON_VARIANTS: [],
             Stats.HIGH_MUT_REGIONS: []
         }
-
-
-class RandomMutationPool:
-    def __init__(self, indels_per_region, snps_per_region, sv_list=[]):
-        #TODO add SVs
-        self.indels_per_region = indels_per_region
-        self.snps_per_region = snps_per_region
-        self.overall_count = ...
-
-    def has_next(self):
-        return self.overall_count > 0
-
-    def get_next(self):
-        self.overall_count -= self.overall_count
-        choice
-        return ...
-
-    def set_counts(self):
-        ...
-
-    def get_counts(self):
-        ...
