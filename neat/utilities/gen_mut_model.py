@@ -9,8 +9,9 @@ import argparse
 import numpy as np
 from Bio import SeqIO
 import pandas as pd
+from enum import Enum
 
-from neat.source.SequenceContainer import Regions, Stats, RegionStats
+from neat.utilities.common_data_structues import Region, AnnotatedSeqence
 from neat.utilities.compute_annotation_regions import seperate_exons_genes_intergenics
 
 # Some constants we'll need later
@@ -19,6 +20,66 @@ VALID_TRINUC = [VALID_NUCL[i] + VALID_NUCL[j] + VALID_NUCL[k] for i in range(len
                 range(len(VALID_NUCL)) for k in range(len(VALID_NUCL))]
 # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
 VCF_DEFAULT_POP_FREQ = 0.00001
+
+class Stats(Enum):
+    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
+    TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
+    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
+    TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
+    # total count of SNPs
+    SNP_COUNT = 'SNP_COUNT'
+    # overall SNP transition probabilities
+    SNP_TRANSITION_COUNT = 'SNP_TRANSITION_COUNT'
+    # total count of indels, indexed by length
+    INDEL_COUNT = 'INDEL_COUNT'
+    # tabulate how much non-N reference sequence we've eaten through
+    TOTAL_REFLEN = 'TOTAL_REFLEN'
+    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
+    COMMON_VARIANTS = 'COMMON_VARIANTS'
+    # identify regions that have significantly higher local mutation rates than the average
+    HIGH_MUT_REGIONS = 'HIGH_MUT_REGIONS'
+    # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
+    VDAT_COMMON = 'VDAT_COMMON'
+    SNP_FREQ = 'SNP_FREQ'
+    AVG_INDEL_FREQ = 'AVG_INDEL_FREQ'
+    INDEL_FREQ = 'INDEL_FREQ'
+    AVG_MUT_RATE = 'AVG_MUT_RATE'
+
+class RegionStats:
+    def __init__(self, annotations_df = None):
+        self._regions_stats = {Region.ALL: self.create_stats_dict()}
+        _annotated_sequence = AnnotatedSeqence(None)
+        if annotations_df:
+            self._regions_stats[Region.CDS] = self.create_stats_dict()
+            self._regions_stats[Region.INTRON] = self.create_stats_dict()
+            self._regions_stats[Region.INTERGENIC] = self.create_stats_dict()
+            _annotated_sequence = AnnotatedSeqence(annotations_df)
+
+    def get_region(self, chrom, index):
+        return self._annotated_sequence.get_annotation(chrom, index)
+
+    def get_stat_by_region(self, region_name, stat_name):
+        return self._regions_stats[region_name][stat_name]
+
+    def get_stat_by_location(self, chrom, index, stat_name):
+        region_name = self.get_region(chrom, index)
+        return self.get_stat_by_region(region_name, stat_name)
+
+    def get_all_stats(self):
+        return self._regions_stats
+
+    @staticmethod
+    def create_stats_dict():
+        return {
+            Stats.TRINUC_REF_COUNT: {},
+            Stats.TRINUC_TRANSITION_COUNT: {},
+            Stats.SNP_COUNT: [0],
+            Stats.SNP_TRANSITION_COUNT: {},
+            Stats.INDEL_COUNT: {},
+            Stats.TOTAL_REFLEN: [0],
+            Stats.COMMON_VARIANTS: [],
+            Stats.HIGH_MUT_REGIONS: []
+        }
 
 #########################################################
 #				VARIOUS HELPER FUNCTIONS				#
@@ -324,8 +385,8 @@ def save_stats_to_file(out_pickle, skip_common, regions_stats):
     pickle.dump(OUT_DICT, open(out_pickle, "wb"))
 
 
-def update_vdat_common(ref_name, row, my_pop_freq, regions_stats, region = Regions.ALL):
-    regions_to_update = {Regions.ALL, region}
+def update_vdat_common(ref_name, row, my_pop_freq, regions_stats, region = Region.ALL):
+    regions_to_update = {Region.ALL, region}
     for current_region in regions_to_update:
         regions_stats.get_stat_by_region(current_region, Stats.VDAT_COMMON)[ref_name].append(
             (row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
@@ -383,8 +444,8 @@ def process_common_variants(ref_dict, ref_name, regions_stats):
 
 def compute_probabilities(regions_stats):
     # if for some reason we didn't find any valid input variants AT ALL, exit gracefully...
-    total_var = regions_stats.get_stat_by_region(Regions.ALL, Stats.SNP_COUNT) + \
-                sum(regions_stats.get_stat_by_region(Regions.ALL, Stats.INDEL_COUNT).values())
+    total_var = regions_stats.get_stat_by_region(Region.ALL, Stats.SNP_COUNT) + \
+                sum(regions_stats.get_stat_by_region(Region.ALL, Stats.INDEL_COUNT).values())
     if total_var == 0:
         print(
             '\nError: No valid variants were found, model could not be created. (Are you using the correct reference?)\n')
@@ -476,8 +537,8 @@ def compute_probabilities(regions_stats):
         print('total variants processed:', total_var)
 
 
-def update_indel_count(indel_len, regions_stats, region = Regions.ALL):
-    regions_to_update = {Regions.ALL, region}
+def update_indel_count(indel_len, regions_stats, region = Region.ALL):
+    regions_to_update = {Region.ALL, region}
     for current_region in regions_to_update:
         if indel_len not in regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT):
             regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] = 0
@@ -496,28 +557,28 @@ def update_total_reflen(ref_dict, ref_name, regions_stats, annotations_df):
             update_total_reflen_for_region(reflen_annotation, regions_stats, annotations_df['feature'])
 
 
-def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region = Regions.ALL):
+def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region = Region.ALL):
     total_reflen_region = regions_stats.get_stat_by_region(region, Stats.TOTAL_REFLEN)
     total_reflen_region[0] += total_reflen_region_chrom
 
 
-def update_snp_transition_count(row_ref, row_alt, regions_stats, region = Regions.ALL):
+def update_snp_transition_count(row_ref, row_alt, regions_stats, region = Region.ALL):
     key2 = (row_ref, row_alt)
-    regions_to_update = {Regions.ALL, region}
+    regions_to_update = {Region.ALL, region}
     for current_region in regions_to_update:
         if key2 not in regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT):
             regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] = 0
         regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] += 1
 
 
-def update_snp_count(regions_stats, region = Regions.ALL):
-    regions_to_update = {Regions.ALL, region}
+def update_snp_count(regions_stats, region = Region.ALL):
+    regions_to_update = {Region.ALL, region}
     for current_region in regions_to_update:
         regions_stats.get_stat_by_region(current_region, Stats.SNP_COUNT)[0] += 1
 
 
-def update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region = Regions.ALL):
-    regions_to_update = {Regions.ALL, region}
+def update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region = Region.ALL):
+    regions_to_update = {Region.ALL, region}
     key = (trinuc_ref, trinuc_alt)
     for current_region in regions_to_update:
         if key not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT):
@@ -525,8 +586,8 @@ def update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region
         regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT)[key] += 1
 
 
-def update_trinuc_ref_count(sub_seq, regions_stats, region = Regions.ALL):
-    regions_to_update = {Regions.ALL, region}
+def update_trinuc_ref_count(sub_seq, regions_stats, region = Region.ALL):
+    regions_to_update = {Region.ALL, region}
     for trinuc in VALID_TRINUC:
         for current_region in regions_to_update:
             if trinuc not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT):

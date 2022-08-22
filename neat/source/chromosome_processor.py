@@ -2,14 +2,12 @@ import random
 import copy
 import pickle
 import sys
-from enum import Enum
 
 import numpy as np
-import pandas as pd
 from Bio.Seq import MutableSeq
 from dataclasses import dataclass
-
 from probability import DiscreteDistribution, poisson_list
+from neat.utilities.common_data_structues import Region, MutType, AnnotatedSeqence
 
 """
 Constants needed for analysis
@@ -85,19 +83,6 @@ DEFAULT_MODEL_2 = [DEFAULT_2_OVERALL_MUT_RATE,
                    DEFAULT_2_DEL_LENGTH_WEIGHTS,
                    DEFAULT_2_TRI_FREQS,
                    DEFAULT_2_TRINUC_BIAS]
-
-class MutType(Enum):
-    SNP = 'snp'
-    INDEL = 'indel'
-    SV = 'SV'
-
-class Region(Enum):
-    CDS = 'CDS'
-    INTRON = 'intron'
-    INTERGENIC = 'intergenic'
-    ALL = 'all'
-    #TODO see how we pass through evey Region which is not ALL, or only through ALL, when inserting mutations.
-    # need some kind of "strategy" solution
 
 # see https://stackoverflow.com/questions/68840767/what-is-the-purpose-of-sort-index-of-a-dataclass-in-python
 @dataclass(order=True)
@@ -549,130 +534,3 @@ def parse_input_mutation_model(model=None, which_default=1):
                     out_model[region][9][ALL_IND[trinuc]] = trinuc_mean
 
     return out_model
-
-#####################################
-#    Supporting Data Structures     #
-#####################################
-
-
-class Stats(Enum):
-    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
-    TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
-    # [(trinuc_a, trinuc_b)] = # of times we observed a mutation from trinuc_a into trinuc_b
-    TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
-    # total count of SNPs
-    SNP_COUNT = 'SNP_COUNT'
-    # overall SNP transition probabilities
-    SNP_TRANSITION_COUNT = 'SNP_TRANSITION_COUNT'
-    # total count of indels, indexed by length
-    INDEL_COUNT = 'INDEL_COUNT'
-    # tabulate how much non-N reference sequence we've eaten through
-    TOTAL_REFLEN = 'TOTAL_REFLEN'
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
-    COMMON_VARIANTS = 'COMMON_VARIANTS'
-    # identify regions that have significantly higher local mutation rates than the average
-    HIGH_MUT_REGIONS = 'HIGH_MUT_REGIONS'
-    # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
-    VDAT_COMMON = 'VDAT_COMMON'
-    SNP_FREQ = 'SNP_FREQ'
-    AVG_INDEL_FREQ = 'AVG_INDEL_FREQ'
-    INDEL_FREQ = 'INDEL_FREQ'
-    AVG_MUT_RATE = 'AVG_MUT_RATE'
-
-
-class AnnotatedSeqence:
-    _sequence_per_chrom = {}
-    _code_to_annotation = {2:Region.CDS.value, 1:Region.INTRON.value, 0:Region.INTERGENIC.value}
-    _annotation_to_code = {Region.CDS.value:2, Region.INTRON.value:1, Region.INTERGENIC.value:0}
-    _relevant_regions = []
-
-    def __init__(self, annotations_df: pd.DataFrame):
-        if annotations_df is None or annotations_df.empty:
-            self._sequence_per_chrom = None
-            self._relevant_regions.append(Region.ALL)
-            return
-
-        for i, annotation in annotations_df.iterrows():
-            current_chrom = annotation['chrom']
-            if not current_chrom in self._sequence_per_chrom:
-                self._sequence_per_chrom[current_chrom] = np.array([])
-            region = Regions(annotation['feature'])
-            if region not in self._relevant_regions:
-                self._relevant_regions(region)
-            annotation_length = annotation['end'] - annotation['start']
-            current_sequence = [self._annotation_to_code[region.value]] * annotation_length
-            self._sequence_per_chrom[current_chrom] = \
-                np.concatenate(self._sequence_per_chrom[current_chrom], current_sequence)
-        if len(self._relevant_regions) == 0:
-            self._relevant_regions.append(Region.ALL)
-
-    def get_regions(self):
-        return self._relevant_regions
-
-    def get_annotation(self, chrom, index):
-        if not self._sequence_per_chrom:
-            return Region.ALL
-        return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
-
-    def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
-        start = start if start != -1 else 0
-        end = end if end != -1 else len(self._sequence_per_chrom[chrom])
-        window = self._sequence_per_chrom[chrom][start:end]
-        counts_per_region = {}
-        for region in self.get_regions():
-            counts_per_region[region] = window.count(str(self._annotation_to_code(region)))
-        return counts_per_region
-
-    def get_mask_in_window_of_region(self, region, start, end):
-        # check for cache
-        if start != self._recent_start or end != self._recent_end:
-            self._recent_start = start
-            self._recent_end = end
-            self._mask_in_window_per_region = {}
-        if region in self._mask_in_window_per_region:
-            return self._mask_in_window_per_region[region]
-
-        # compute if no cache
-        window_sequence = self._sequence_per_chrom[self.chromosome_name][start:end]
-        relevant_code = self._annotation_to_code[region.value]
-        self._mask_in_window_per_region[region] = np.where(window_sequence == relevant_code, 1, 0)
-        return self._mask_in_window_per_region[region]
-
-
-
-
-class RegionStats:
-    def __init__(self, annotations_df = None):
-        self._regions_stats = {Region.ALL: self.create_stats_dict()}
-        _annotated_sequence = AnnotatedSeqence(None)
-        if annotations_df:
-            self._regions_stats[Region.CDS] = self.create_stats_dict()
-            self._regions_stats[Region.INTRON] = self.create_stats_dict()
-            self._regions_stats[Region.INTERGENIC] = self.create_stats_dict()
-            _annotated_sequence = AnnotatedSeqence(annotations_df)
-
-    def get_region(self, chrom, index):
-        return self._annotated_sequence.get_annotation(chrom, index)
-
-    def get_stat_by_region(self, region_name, stat_name):
-        return self._regions_stats[region_name][stat_name]
-
-    def get_stat_by_location(self, chrom, index, stat_name):
-        region_name = self.get_region(chrom, index)
-        return self.get_stat_by_region(region_name, stat_name)
-
-    def get_all_stats(self):
-        return self._regions_stats
-
-    @staticmethod
-    def create_stats_dict():
-        return {
-            Stats.TRINUC_REF_COUNT: {},
-            Stats.TRINUC_TRANSITION_COUNT: {},
-            Stats.SNP_COUNT: [0],
-            Stats.SNP_TRANSITION_COUNT: {},
-            Stats.INDEL_COUNT: {},
-            Stats.TOTAL_REFLEN: [0],
-            Stats.COMMON_VARIANTS: [],
-            Stats.HIGH_MUT_REGIONS: []
-        }
