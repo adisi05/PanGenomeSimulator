@@ -589,8 +589,7 @@ class ChromosomeProcessor:
             raise Exception("unknown annotation")
 
 def is_stop_codon(codon : str) -> bool:
-    # TODO implement
-    pass
+    return codon in ['TAG','TAA','TGA']
 
 # TODO use self.annotated_seq.get_regions()?
 # parse mutation model pickle file
