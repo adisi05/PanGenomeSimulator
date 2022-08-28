@@ -114,6 +114,10 @@ class AnnotatedSeqence:
             return Region.ALL
         return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
 
+    def get_annotation_start_end(self, chrom, index):
+        # TODO implement
+        pass
+
     def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
         start = start if start != -1 else 0
         end = end if end != -1 else len(self._sequence_per_chrom[chrom])

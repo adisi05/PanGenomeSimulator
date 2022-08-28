@@ -411,12 +411,21 @@ class ChromosomeProcessor:
         # deletion
         else:
             indel_len = self.model_per_region[region][5].sample()
+
             # skip if deletion too close to boundary
             if position + indel_len + 1 >= self.window_unit.end:
                 # TODO mind that by using self.window_unit.end and not self.seq_len + self.sequence_offset + current_offset
-                #  we don't allow deletions to take a "bite" form the next window. Should we aloow that?
+                #  we don't allow deletions to take a "bite" form the next window. Should we allow that?
                 indel_len = self.window_unit.end - 2 - position
-            # TODO if crosses the boundary of annotation, resize? skip?
+
+            # forbid deletion to crossing the boundary of annotation!
+            _, annotation_end = self.get_annotation_start_end(self.chromosome_name, position)
+            if position + indel_len > annotation_end:
+                indel_len = annotation_end - position
+            if indel_len < 1:
+                # shoudn't occure
+                raise Exception("deletion length is less than 0, program error")
+
             if indel_len == 1:
                 indel_seq = self.chromosome_sequence[position + 1]
             else:
@@ -460,16 +469,128 @@ class ChromosomeProcessor:
         return vcf_mutations
 
     # TODO implement !!!
-    def check_and_update_annotations_if_needed(self, inserted_mutation):
-        pass
-        # if snp - check around if there is stop codon in within the reading frame within the close environment
-        #     stop_codon = True
-        # if indel - continue with the cds strand and look & reading frame and look for stop codon until the end of the cds
-        #         stop_codon = True
-        # #if sv - to be continued
-        #
-        # if stop_codon:
-        #     change all the gene annotation to be intergenic (cds, exon, intron)
+    def check_and_update_annotations_if_needed(self, inserted_mutation: Mutation):
+        if SNP
+            if intergenic
+                nothing to do
+            elif intron
+                nothing to do
+            elif cds
+                1 gene involved - check for stop codon
+                if stop
+                    mute gene (remove from gene df + change annotations of sequence)
+                else
+                    nothing to do
+            else
+                throw unknown annotation exception
+
+        elif insertion
+            if intergenic
+                insert - elongate intergenic region and shift downstream genes
+            elif intron
+                insert - elongate intron region and shift downstream genes, including current
+            elif cds
+                if framshift
+                    mute gene (remove from gene df + change annotations of sequence)
+                    insert - elongate (the new) intergenic region and shift downstream genes
+                else - no frameshift
+                    check for stop codon within framshift
+                    if stop
+                        mute gene (remove from gene df + change annotations of sequence)
+                        insert - elongate (the new) intergenic region and shift downstream genes
+                    else - no stop
+                        insert - elongate cds region and shift downstream genes, including current
+            else
+                throw unknown annotation exception
+
+        elif deletion
+            how many annotations involved?
+            if 1:
+                if intergenic
+                    delete - shorten intergenic region and shift downstream genes
+                elif intron
+                    delete - shorten intron region and shift downstream genes, including current
+                elif cds
+                    if framshift
+                        mute gene (remove from gene df + change annotations of sequence)
+                        delete - shorten (the new) intergenic region and shift downstream genes
+                    else - no frameshift
+                        check for stop codon within framshift
+                        if stop
+                            mute gene (remove from gene df + change annotations of sequence)
+                            delete - shorten (the new) intergenic region and shift downstream genes
+                        else - no stop
+                            delete - shorten cds region and shift downstream genes, including current
+            else:
+                throw exception - not supporting large deletions (SVs) currently
+                # how many genes involved? get names by order
+                # if 0 genes - must be intergenic region (should be handled above - 1 notification)
+                #    delete - shorten intergenic region and shift downstream genes
+                # elif 1 gene
+                #     get all cds involved. was there a framshift? have we gotten stop codon?
+                #     mute if needed
+                #     shorten cds + intron regions as needed
+                # elif 2 genes
+                #     ...
+                # else - 3 and more genes
+                #     ...
+
+        else SV - not handling right now
+
+
+    # def check_and_update_annotations_if_needed_old(self, inserted_mutation : Mutation):
+    #
+    #     # any gene to mute?
+    #
+    #     if not cds for all ref_nucl positions:
+    #         return False
+    #     # else - some of ref_nucl positions are in CDS region
+    #     is_gene_muted = False
+    #     muted_genes = []
+    #     if inserted_mutation.mut_type == MutType.SNP:
+    #         # if snp - check around if there is stop codon in within the reading frame within the close environment
+    #         trinuc_positions = self.annotated_seq.get_encapsulating_codon_positions(self.chromosome_name,
+    #                                                                      inserted_mutation.position)
+    #         is_gene_muted = self.is_stop_codon(trinuc_positions)
+    #         return the gene we have to mute
+    #
+    #     # Check for frameshift
+    #     effected_positions = []
+    #     if inserted_mutation.mut_type == MutType.INDEL_INSERTION:
+    #         effected_positions = some new nucl calculation
+    #     elif inserted_mutation.mut_type == MutType.INDEL_DELETION:
+    #         effected_positions = some ref nucl calculation
+    #     else:
+    #         return [] # currently not supporting framshift detection from other types of mutations
+    #
+    #     effected_cds_positions_per_gene = self.annotated_seq.get_per_gene_cds_posistions(effected_positions)
+    #     for gene, effected_nucleotides in effected_cds_positions_per_gene:
+    #         if len(effected_nucleotides) % 3 != 0:
+    #             muted_genes.append(gene)
+    #     if len(muted_genes) == len(effected_cds_positions_per_gene):
+    #         return muted_genes
+    #
+    #     # Some of the effected genes didn't get a frameshift and so, not necessarily muted.
+    #     # Should continue to check them
+    #     for gene in muted_genes:
+    #         effected_cds_positions_per_gene.pop(gene, None)
+    #     # continue with the cds strand and look & reading frame and look for stop codon until the end of the cds
+    #     codons may be spread accross non-adjacent cds
+    #     else:
+    #         if insertion:
+    #             end_codon_pos = ?
+    #             # continue from start_codon_pos to end_codon_pos
+    #         if deletion:
+    #             # deletion with no framshift - check only start_codon_pos
+    #
+    #     # elif inserted_mutation.mut_type = MutType.SV
+    #     # #if sv - to be continued
+    #
+    #     # mute them genes
+    #
+    #     if genes_to_mute:
+    #         pass
+    #     #     change all the gene annotation to be intergenic (cds, exon, intron)
 
 
 # TODO use self.annotated_seq.get_regions()?
