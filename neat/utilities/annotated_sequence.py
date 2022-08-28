@@ -109,13 +109,34 @@ class AnnotatedSeqence:
     def get_regions(self):
         return self._relevant_regions
 
-    def get_annotation(self, chrom, index):
+    def get_annotation(self, chrom, index) -> Region:
         if not self._sequence_per_chrom:
             return Region.ALL
         return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
 
     def get_annotation_start_end(self, chrom, index):
         # TODO implement
+        pass
+
+    def get_encapsulating_trinuc_positions(self, chrom, index):
+        # TODO implement
+        pass
+
+    def get_involved_annotations(self, chrom, start, end):
+        # TODO implement
+        pass
+
+    def mute_encapsulating_gene(self, chrom, index):
+        # TODO implement - remove from gene df + change annotations of sequence
+        pass
+
+    def handle_insertion(self, chrom, index, insertion_len):
+        # TODO implement - elongate sequence and shift downstream genes, including current (if not intergenic region)
+        pass
+
+
+    def handle_deletion(self, chrom, start, end):
+        # TODO implement - shorten sequence and shift downstream genes, including current (if not intergenic region)
         pass
 
     def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):

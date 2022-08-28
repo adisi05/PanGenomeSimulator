@@ -328,7 +328,7 @@ class ChromosomeProcessor:
             if window_shift != 0:
                 self.window_unit.update(end_shift=window_shift)
             # check annotations
-            annotation_changed = self.check_and_update_annotations_if_needed(inserted_mutation)
+            annotation_changed = self.handle_annotations_after_mutated_sequence(inserted_mutation)
             # if at least one has changed - sample mutations again
             if annotation_changed or window_shift != 0:
                 random_mutations_pool = self.get_window_mutations()
@@ -390,7 +390,7 @@ class ChromosomeProcessor:
         context = str(self.chromosome_sequence[position - 1]) + str(self.chromosome_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
         new_nucl = self.model_per_region[region][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
-        snp = Mutation(position, ref_nucl, new_nucl)
+        snp = Mutation(position, ref_nucl, new_nucl, MutType.SNP)
         # self.blocklist[snp.position] = 2  # TODO use blocklist?
         return snp
 
@@ -406,7 +406,7 @@ class ChromosomeProcessor:
             # sequence content of random insertions is uniformly random (change this later, maybe)
             indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
             ref_nucl = self.chromosome_sequence[position]
-            indel = Mutation(position, ref_nucl, ref_nucl + indel_seq)
+            indel = Mutation(position, ref_nucl, ref_nucl + indel_seq, MutType.INDEL)
 
         # deletion
         else:
@@ -431,7 +431,7 @@ class ChromosomeProcessor:
             else:
                 indel_seq = str(self.chromosome_sequence[position + 1:position + indel_len + 1])
             ref_nucl = self.chromosome_sequence[position]
-            indel = Mutation(position, ref_nucl + indel_seq, ref_nucl)
+            indel = Mutation(position, ref_nucl + indel_seq, ref_nucl, MutType.INDEL)
 
         # TODO use blocklist?
         # for k in range(position, position + indel_len + 1):
@@ -468,130 +468,129 @@ class ChromosomeProcessor:
         #       reconsider blocklist for that!
         return vcf_mutations
 
-    # TODO implement !!!
-    def check_and_update_annotations_if_needed(self, inserted_mutation: Mutation):
-        if SNP
-            if intergenic
-                nothing to do
-            elif intron
-                nothing to do
-            elif cds
-                1 gene involved - check for stop codon
-                if stop
-                    mute gene (remove from gene df + change annotations of sequence)
-                else
-                    nothing to do
-            else
-                throw unknown annotation exception
+    def handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation) -> bool:
+        if self.annotated_seq.get_regions() == [Region.ALL]:
+            return False # sequence is not annotated
 
-        elif insertion
-            if intergenic
-                insert - elongate intergenic region and shift downstream genes
-            elif intron
-                insert - elongate intron region and shift downstream genes, including current
-            elif cds
-                if framshift
-                    mute gene (remove from gene df + change annotations of sequence)
-                    insert - elongate (the new) intergenic region and shift downstream genes
-                else - no frameshift
-                    check for stop codon within framshift
-                    if stop
-                        mute gene (remove from gene df + change annotations of sequence)
-                        insert - elongate (the new) intergenic region and shift downstream genes
-                    else - no stop
-                        insert - elongate cds region and shift downstream genes, including current
-            else
-                throw unknown annotation exception
+        # SNP
+        if inserted_mutation.mut_type == MutType.SNP:
+            return self.handle_annotations_after_SNP(inserted_mutation)
+        # INDEL - insertion
+        elif inserted_mutation.mut_type == MutType.INDEL \
+                and len(inserted_mutation.ref_nucl) < len(inserted_mutation.new_nucl):
+            self.handle_annotations_after_small_insertion(inserted_mutation)
+            return True
+        # INDEL - deletion
+        elif inserted_mutation.mut_type == MutType.INDEL \
+                and len(inserted_mutation.ref_nucl) >= len(inserted_mutation.new_nucl):
+            self.handle_annotations_after_small_deletion(inserted_mutation)
+            return True
+        # SVs and other - currently not supported
+        else:
+            raise Exception("currently supporting only SNPs and INDELs")
 
-        elif deletion
-            how many annotations involved?
-            if 1:
-                if intergenic
-                    delete - shorten intergenic region and shift downstream genes
-                elif intron
-                    delete - shorten intron region and shift downstream genes, including current
-                elif cds
-                    if framshift
-                        mute gene (remove from gene df + change annotations of sequence)
-                        delete - shorten (the new) intergenic region and shift downstream genes
-                    else - no frameshift
-                        check for stop codon within framshift
-                        if stop
-                            mute gene (remove from gene df + change annotations of sequence)
-                            delete - shorten (the new) intergenic region and shift downstream genes
-                        else - no stop
-                            delete - shorten cds region and shift downstream genes, including current
+    def handle_annotations_after_SNP(self, inserted_mutation: Mutation) -> bool:
+        """
+        Handle annotaions after SNP
+        :param inserted_mutation:
+        :return: True if annotation has changed somehow, False otherwise
+        """
+        region = self.annotated_seq.get_annotation(self.chromosome_name, inserted_mutation.position)
+
+        if region == Region.INTERGENIC or region == Region.INTRON:
+            return False # current behaviour is not to check for start/stop codon in these regions.
+
+        elif region == Region.CDS:
+            start, end = self.annotated_seq.get_encapsulating_trinuc_positions(self.chromosome_name, inserted_mutation.position)
+            # assuming sequence has been mutated already!
+            codon = self.chromosome_sequence[start:end]
+            if is_stop_codon(codon):
+                self.annotated_seq.mute_encapsulating_gene(self.chromosome_name, inserted_mutation.position)
+                return True
+            return False
+        else:
+            raise Exception("unknown annotation")
+
+
+    def handle_annotations_after_small_insertion(self, inserted_mutation: Mutation):
+        if self.should_mute_gene_after_small_insertion(inserted_mutation):
+            self.annotated_seq.mute_encapsulating_gene(self.chromosome_name, inserted_mutation.position)
+        self.annotated_seq.handle_insertion(self.chromosome_name,
+                                            inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
+
+    def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
+        region = self.annotated_seq.get_annotation(self.chromosome_name, inserted_mutation.position)
+
+        if region == Region.INTERGENIC or region == Region.INTRON:
+            return False
+
+        elif region == Region.CDS:
+            frameshift = (len(inserted_mutation.new_nucl) - 1) % 3 != 0
+            if frameshift:
+                return True
             else:
-                throw exception - not supporting large deletions (SVs) currently
-                # how many genes involved? get names by order
-                # if 0 genes - must be intergenic region (should be handled above - 1 notification)
-                #    delete - shorten intergenic region and shift downstream genes
-                # elif 1 gene
-                #     get all cds involved. was there a framshift? have we gotten stop codon?
-                #     mute if needed
-                #     shorten cds + intron regions as needed
-                # elif 2 genes
-                #     ...
-                # else - 3 and more genes
-                #     ...
+                first_codon_start, first_codon_end = \
+                    self.annotated_seq.get_encapsulating_trinuc_positions(self.chromosome_name,
+                                                                          inserted_mutation.position)
+                added_codons = (len(inserted_mutation.new_nucl) - 1) / 3
+                for i in range(added_codons):
+                    # assuming sequence has been mutated already!
+                    codon = self.chromosome_sequence[first_codon_start + (3 * i):first_codon_end + (3 * i)]
+                    if is_stop_codon(codon):
+                        return True
+            return False
 
-        else SV - not handling right now
+        else:
+            raise Exception("unknown annotation")
 
+    def handle_annotations_after_small_deletion(self, inserted_mutation: Mutation):
+        mut_start = inserted_mutation.position
+        mut_end = inserted_mutation.position + len(inserted_mutation.ref_nucl) - 1
+        involved_annotations = self.annotated_seq.get_involved_annotations(self.chromosome_name, mut_start, mut_end)
+        if len(involved_annotations) > 1:
+            raise Exception("currently not supporting large deletions (SVs)")
+            # how many genes involved? get names by order
+            # if 0 genes - must be intergenic region (should be handled above - 1 notification)
+            #    delete - shorten intergenic region and shift downstream genes
+            # elif 1 gene
+            #     get all cds involved. was there a frameshift? have we gotten stop codon?
+            #     mute if needed
+            #     shorten cds + intron regions as needed
+            # elif 2 genes
+            #     ...
+            # else - 3 and more genes
+            #     ...
 
-    # def check_and_update_annotations_if_needed_old(self, inserted_mutation : Mutation):
-    #
-    #     # any gene to mute?
-    #
-    #     if not cds for all ref_nucl positions:
-    #         return False
-    #     # else - some of ref_nucl positions are in CDS region
-    #     is_gene_muted = False
-    #     muted_genes = []
-    #     if inserted_mutation.mut_type == MutType.SNP:
-    #         # if snp - check around if there is stop codon in within the reading frame within the close environment
-    #         trinuc_positions = self.annotated_seq.get_encapsulating_codon_positions(self.chromosome_name,
-    #                                                                      inserted_mutation.position)
-    #         is_gene_muted = self.is_stop_codon(trinuc_positions)
-    #         return the gene we have to mute
-    #
-    #     # Check for frameshift
-    #     effected_positions = []
-    #     if inserted_mutation.mut_type == MutType.INDEL_INSERTION:
-    #         effected_positions = some new nucl calculation
-    #     elif inserted_mutation.mut_type == MutType.INDEL_DELETION:
-    #         effected_positions = some ref nucl calculation
-    #     else:
-    #         return [] # currently not supporting framshift detection from other types of mutations
-    #
-    #     effected_cds_positions_per_gene = self.annotated_seq.get_per_gene_cds_posistions(effected_positions)
-    #     for gene, effected_nucleotides in effected_cds_positions_per_gene:
-    #         if len(effected_nucleotides) % 3 != 0:
-    #             muted_genes.append(gene)
-    #     if len(muted_genes) == len(effected_cds_positions_per_gene):
-    #         return muted_genes
-    #
-    #     # Some of the effected genes didn't get a frameshift and so, not necessarily muted.
-    #     # Should continue to check them
-    #     for gene in muted_genes:
-    #         effected_cds_positions_per_gene.pop(gene, None)
-    #     # continue with the cds strand and look & reading frame and look for stop codon until the end of the cds
-    #     codons may be spread accross non-adjacent cds
-    #     else:
-    #         if insertion:
-    #             end_codon_pos = ?
-    #             # continue from start_codon_pos to end_codon_pos
-    #         if deletion:
-    #             # deletion with no framshift - check only start_codon_pos
-    #
-    #     # elif inserted_mutation.mut_type = MutType.SV
-    #     # #if sv - to be continued
-    #
-    #     # mute them genes
-    #
-    #     if genes_to_mute:
-    #         pass
-    #     #     change all the gene annotation to be intergenic (cds, exon, intron)
+        if self.should_mute_gene_after_deletion(inserted_mutation):
+            self.annotated_seq.mute_encapsulating_gene(self.chromosome_name, inserted_mutation.position)
+        self.annotated_seq.handle_deletion(self.chromosome_name,
+                                            inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
+    def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
+        region = self.annotated_seq.get_annotation(self.chromosome_name, inserted_mutation.position)
+
+        if region == Region.INTERGENIC or region == Region.INTRON:
+            return False
+
+        elif region == Region.CDS:
+            frameshift = (len(inserted_mutation.ref_nucl) - 1) % 3 != 0
+            if frameshift:
+                return True
+            else:
+                start, end = self.annotated_seq.get_encapsulating_trinuc_positions(self.chromosome_name,
+                                                                                   inserted_mutation.position)
+                # assuming sequence has been mutated already!
+                codon = self.chromosome_sequence[start:end]
+                if is_stop_codon(codon):
+                    return True
+            return False
+
+        else:
+            raise Exception("unknown annotation")
+
+def is_stop_codon(codon : str) -> bool:
+    # TODO implement
+    pass
 
 # TODO use self.annotated_seq.get_regions()?
 # parse mutation model pickle file
