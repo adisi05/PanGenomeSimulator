@@ -39,7 +39,7 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 cds_elements = cds_elements.sort()
                 cds_elements = cds_elements.merge()
                 cds_elements_df = cds_elements.to_dataframe()
-                cds_elements_df['feature'] = 'CDS'
+                cds_elements_df['feature'] = Region.CDS.value
                 cds_elements_df = cds_elements_df.loc[:,['feature','start','end']]
                 cds_elements_df = cds_elements_df.drop_duplicates()
 
@@ -49,7 +49,7 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 intron_elements = intron_elements.sort()
                 intron_elements = intron_elements.merge()
                 intron_elements_df = intron_elements.to_dataframe()
-                intron_elements_df['feature'] = 'intron'
+                intron_elements_df['feature'] = Region.INTRON.value
                 intron_elements_df = intron_elements_df.loc[:,['feature','start','end']]
                 intron_elements_df = intron_elements_df.drop_duplicates()
 
@@ -59,7 +59,7 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 intergenic_elements = intergenic_elements.sort()
                 intergenic_elements = intergenic_elements.merge()
                 intergenic_elements_df = intergenic_elements.to_dataframe()
-                intergenic_elements_df['feature'] = 'intergenic'
+                intergenic_elements_df['feature'] = Region.INTERGENIC.value
                 intergenic_elements_df = intergenic_elements_df.loc[:,['feature','start','end']]
                 intergenic_elements_df = intergenic_elements_df.drop_duplicates()
 
@@ -80,11 +80,12 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
             print("\nProblem reading annotation (BED/GFF) file.\n")
 
 
-class AnnotatedSeqence:
+class AnnotatedSequence:
     _sequence_per_chrom = {}
     _code_to_annotation = {2:Region.CDS.value, 1:Region.INTRON.value, 0:Region.INTERGENIC.value}
     _annotation_to_code = {Region.CDS.value:2, Region.INTRON.value:1, Region.INTERGENIC.value:0}
     _relevant_regions = []
+    _annotations_df = None
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
@@ -92,6 +93,7 @@ class AnnotatedSeqence:
             self._relevant_regions.append(Region.ALL)
             return
 
+        self._annotations_df = annotations_df
         for i, annotation in annotations_df.iterrows():
             current_chrom = annotation['chrom']
             if not current_chrom in self._sequence_per_chrom:
@@ -106,21 +108,71 @@ class AnnotatedSeqence:
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
 
+    def _get_annotation_by_index(self, chrom, index) -> pd.DataFrame:
+        annotation = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
+                                          (self._annotations_df['start'] <= index) &
+                                          (self._annotations_df['end'] >= index)]
+        if len(annotation.index) != 1:
+            raise Exception(f"Can't determine annotation for chromosome {chrom} index {index}")
+        return annotation
+
     def get_regions(self):
         return self._relevant_regions
 
-    def get_annotation(self, chrom, index) -> Region:
-        if not self._sequence_per_chrom:
+    def get_region_by_index(self, chrom, index) -> Region:
+        # if not self._sequence_per_chrom:
+        #     return Region.ALL
+        # return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
+        if not self._annotations_df:
             return Region.ALL
-        return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
+        return self._get_annotation_by_index(chrom, index)
 
-    def get_annotation_start_end(self, chrom, index):
-        # TODO implement
-        pass
+    def get_annotation_start_end(self, chrom, index) -> (int, int):
+        annotation = self._get_annotation_by_index(chrom, index)
+
+        return annotation.iloc[0, annotation.columns.get_loc('start')].item(),\
+               annotation.iloc[0, annotation.columns.get_loc('end')].item()
 
     def get_encapsulating_trinuc_positions(self, chrom, index):
-        # TODO implement
-        pass
+        cds = self._get_annotation_by_index(chrom, index)
+        if cds.iloc[0, cds.columns.get_loc('feature')].item() != Region.CDS.value:
+            raise Exception("Trinuc is only relevant for CDS region")
+        cds_start = cds.iloc[0, cds.columns.get_loc('start')].item()
+        cds_end = cds.iloc[0, cds.columns.get_loc('end')].item()
+        reading_frame_offset = cds.iloc[0, cds.columns.get_loc('reading_frame_offset')].item() + (index - cds_start)
+        reading_frame_offset = reading_frame_offset % 3
+        first = index - reading_frame_offset
+        second = index + 1 - reading_frame_offset
+        third = index + 2 - reading_frame_offset
+
+        if first < cds_start or second < cds_start:
+            prev_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
+                                            (self._annotations_df['feature'] == Region.CDS.value) &
+                                            (self._annotations_df['end'] < cds_start)]
+            if len(prev_cds.index) != 1:
+                raise Exception(f"Can't determine previous CDS for chromosome {chrom} index {index}")
+            prev_cds_end = prev_cds.iloc[0, cds.columns.get_loc('end')].item()
+            if second < cds_start:
+                second = prev_cds_end
+                first =  prev_cds_end - 1
+            elif first < cds_start:
+                first = prev_cds_end
+
+        if cds_end < second or cds_end < third:
+            next_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
+                                            (self._annotations_df['feature'] == Region.CDS.value) &
+                                            (self._annotations_df['start'] > index)]
+            if len(next_cds.index) != 1:
+                raise Exception(f"Can't determine next CDS for chromosome {chrom} index {index}")
+            next_cds_start = prev_cds.iloc[0, cds.columns.get_loc('start')].item()
+            if cds_end < second:
+                second = next_cds_start
+                third = next_cds_start + 1
+            elif cds_end < third:
+                third = next_cds_start
+
+        return first, second, third
+
 
     def get_involved_annotations(self, chrom, start, end):
         # TODO implement

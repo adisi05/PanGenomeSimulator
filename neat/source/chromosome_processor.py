@@ -8,7 +8,7 @@ from Bio.Seq import MutableSeq
 from dataclasses import dataclass
 from probability import DiscreteDistribution, poisson_list
 from neat.utilities.common_data_structues import Region, MutType
-from neat.utilities.annotated_sequence import AnnotatedSeqence
+from neat.utilities.annotated_sequence import AnnotatedSequence
 
 """
 Constants needed for analysis
@@ -185,7 +185,7 @@ class ChromosomeProcessor:
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.annotated_seq = AnnotatedSeqence(annotations_df) #TODO save annotations in an annotated sequence DS
+        self.annotated_seq = AnnotatedSequence(annotations_df) #TODO save annotations in an annotated sequence DS
         self.update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
 
@@ -495,7 +495,7 @@ class ChromosomeProcessor:
         :param inserted_mutation:
         :return: True if annotation has changed somehow, False otherwise
         """
-        region = self.annotated_seq.get_annotation(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_index(self.chromosome_name, inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.INTRON:
             return False # current behaviour is not to check for start/stop codon in these regions.
@@ -519,7 +519,7 @@ class ChromosomeProcessor:
                                             inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_annotation(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_index(self.chromosome_name, inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.INTRON:
             return False
@@ -567,7 +567,7 @@ class ChromosomeProcessor:
                                             inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_annotation(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_index(self.chromosome_name, inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.INTRON:
             return False

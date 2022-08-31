@@ -12,7 +12,7 @@ import pandas as pd
 from enum import Enum
 
 from neat.utilities.common_data_structues import Region
-from neat.utilities.annotated_sequence import AnnotatedSeqence, to_annotations_df
+from neat.utilities.annotated_sequence import AnnotatedSequence, to_annotations_df
 
 # Some constants we'll need later
 VALID_NUCL = ['A', 'C', 'G', 'T']
@@ -48,15 +48,15 @@ class Stats(Enum):
 class RegionStats:
     def __init__(self, annotations_df = None):
         self._regions_stats = {Region.ALL: self.create_stats_dict()}
-        _annotated_sequence = AnnotatedSeqence(None)
+        _annotated_sequence = AnnotatedSequence(None)
         if annotations_df:
             self._regions_stats[Region.CDS] = self.create_stats_dict()
             self._regions_stats[Region.INTRON] = self.create_stats_dict()
             self._regions_stats[Region.INTERGENIC] = self.create_stats_dict()
-            _annotated_sequence = AnnotatedSeqence(annotations_df)
+            _annotated_sequence = AnnotatedSequence(annotations_df)
 
     def get_region(self, chrom, index):
-        return self._annotated_sequence.get_annotation(chrom, index)
+        return self._annotated_sequence.get_region_by_index(chrom, index)
 
     def get_stat_by_region(self, region_name, stat_name):
         return self._regions_stats[region_name][stat_name]
@@ -314,7 +314,7 @@ def process_snps(snp_df, ref_name, ref_sequence, regions_stats):
                 trinuc_alt = trinuc_to_analyze[0] + snp_df.loc[index, 'ALT'] + trinuc_to_analyze[2]
                 if trinuc_alt not in VALID_TRINUC:
                     continue
-                region = regions_stats.get_annotation(ref_name, index)
+                region = regions_stats.get_region_by_index(ref_name, index)
                 update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region)
                 update_snp_count(regions_stats, region)
                 update_snp_transition_count(str(row.REF), str(row.ALT), regions_stats, region)
@@ -343,7 +343,7 @@ def process_indels(indel_df, ref_name, regions_stats):
                 len_alt = len(row.ALT)
             if len_ref != len_alt:
                 indel_len = len_alt - len_ref
-                region = regions_stats.get_annotation(ref_name, index)
+                region = regions_stats.get_region_by_index(ref_name, index)
                 update_indel_count(indel_len, regions_stats, region)
 
                 my_pop_freq = VCF_DEFAULT_POP_FREQ
