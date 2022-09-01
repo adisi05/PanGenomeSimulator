@@ -236,17 +236,12 @@ class AnnotatedSequence:
         """
         annotation, index = self._get_annotation_by_position(chrom, pos)
         annotation_residue = self._annotations_df.iloc[index]['end'].item() - pos
-
-        # deletion involves only one annotation
-        if deletion_len <= annotation_residue:
-            annotation['end'] = annotation['end'] - deletion_len
-            index += 1
+        deleted_already = min(annotation_residue, deletion_len)
+        annotation['end'] = annotation['end'] - deleted_already
+        index += 1
 
         # deletion involves more than one annotation
-        else:
-            annotation['end'] = pos
-            deleted_already = annotation_residue
-            index += 1
+        if deleted_already < deletion_len:
             annotations_to_delete = []
             while deleted_already < deletion_len and index < len(self._annotations_df):
                 annotation_len = self._annotations_df.iloc[index]['end'].item() - \
