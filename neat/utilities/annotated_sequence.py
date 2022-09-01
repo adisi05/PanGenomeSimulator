@@ -81,77 +81,67 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 
 
 class AnnotatedSequence:
-    _sequence_per_chrom = {}
-    _code_to_annotation = {2:Region.CDS.value, 1:Region.INTRON.value, 0:Region.INTERGENIC.value}
-    _annotation_to_code = {Region.CDS.value:2, Region.INTRON.value:1, Region.INTERGENIC.value:0}
     _relevant_regions = []
     _annotations_df = None
 
     def __init__(self, annotations_df: pd.DataFrame):
         if annotations_df is None or annotations_df.empty:
-            self._sequence_per_chrom = None
             self._relevant_regions.append(Region.ALL)
             return
 
         self._annotations_df = annotations_df
-        for i, annotation in annotations_df.iterrows():
-            current_chrom = annotation['chrom']
-            if not current_chrom in self._sequence_per_chrom:
-                self._sequence_per_chrom[current_chrom] = np.array([])
-            region = Region(annotation['feature'])
-            if region not in self._relevant_regions:
-                self._relevant_regions(region)
-            annotation_length = annotation['end'] - annotation['start']
-            current_sequence = [self._annotation_to_code[region.value]] * annotation_length
-            self._sequence_per_chrom[current_chrom] = \
-                np.concatenate(self._sequence_per_chrom[current_chrom], current_sequence)
+        relevant_region_names = self._annotations_df['feature'].unique()
+        self._relevant_regions = [Region(name) for name in relevant_region_names]
+
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
+
+    def len(self):
+        if self._annotations_df is None or self._annotations_df.empty:
+            return None
+        return self._annotations_df.iloc[-1]['end'].item()
 
     def _get_annotation_by_position(self, chrom, pos) -> (pd.DataFrame, int):
         condition = (self._annotations_df['chrom'] == chrom) & \
                     (self._annotations_df['start'] <= pos) & (self._annotations_df['end'] >= pos)
         annotation_indices = self._annotations_df.index[condition].tolist()
         if len(annotation_indices) != 1:
-            raise Exception(f"Can't determine annotation for chromosome {chrom} index {pos}")
+            raise Exception(f"Can't determine annotation for chromosome {chrom} position {pos}")
         return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
 
     def get_regions(self):
         return self._relevant_regions
 
     def get_region_by_position(self, chrom, pos) -> Region:
-        # if not self._sequence_per_chrom:
-        #     return Region.ALL
-        # return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
         if not self._annotations_df:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(chrom, pos)
         return annotation.iloc[0]['feature'].item()
 
-    def get_annotation_start_end(self, chrom, index) -> (int, int):
-        annotation, _ = self._get_annotation_by_position(chrom, index)
+    def get_annotation_start_end(self, chrom, pos) -> (int, int):
+        annotation, _ = self._get_annotation_by_position(chrom, pos)
 
         return annotation.iloc[0, annotation.columns.get_loc('start')].item(),\
                annotation.iloc[0, annotation.columns.get_loc('end')].item()
 
-    def get_encapsulating_trinuc_positions(self, chrom, index):
-        cds, _ = self._get_annotation_by_position(chrom, index)
+    def get_encapsulating_trinuc_positions(self, chrom, pos):
+        cds, _ = self._get_annotation_by_position(chrom, pos)
         if cds.iloc[0, cds.columns.get_loc('feature')].item() != Region.CDS.value:
             raise Exception("Trinuc is only relevant for CDS region")
         cds_start = cds.iloc[0, cds.columns.get_loc('start')].item()
         cds_end = cds.iloc[0, cds.columns.get_loc('end')].item()
-        reading_frame_offset = cds.iloc[0, cds.columns.get_loc('reading_frame_offset')].item() + (index - cds_start)
+        reading_frame_offset = cds.iloc[0, cds.columns.get_loc('reading_frame_offset')].item() + (pos - cds_start)
         reading_frame_offset = reading_frame_offset % 3
-        first = index - reading_frame_offset
-        second = index + 1 - reading_frame_offset
-        third = index + 2 - reading_frame_offset
+        first = pos - reading_frame_offset
+        second = pos + 1 - reading_frame_offset
+        third = pos + 2 - reading_frame_offset
 
         if first < cds_start or second < cds_start:
             prev_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
                                             (self._annotations_df['feature'] == Region.CDS.value) &
                                             (self._annotations_df['end'] < cds_start)]
             if len(prev_cds.index) != 1:
-                raise Exception(f"Can't determine previous CDS for chromosome {chrom} index {index}")
+                raise Exception(f"Can't determine previous CDS for chromosome {chrom} index {pos}")
             prev_cds_end = prev_cds.iloc[0, cds.columns.get_loc('end')].item()
             if second < cds_start:
                 second = prev_cds_end
@@ -162,9 +152,9 @@ class AnnotatedSequence:
         if cds_end < second or cds_end < third:
             next_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
                                             (self._annotations_df['feature'] == Region.CDS.value) &
-                                            (self._annotations_df['start'] > index)]
+                                            (self._annotations_df['start'] > pos)]
             if len(next_cds.index) != 1:
-                raise Exception(f"Can't determine next CDS for chromosome {chrom} index {index}")
+                raise Exception(f"Can't determine next CDS for chromosome {chrom} index {pos}")
             next_cds_start = prev_cds.iloc[0, cds.columns.get_loc('start')].item()
             if cds_end < second:
                 second = next_cds_start
@@ -175,14 +165,14 @@ class AnnotatedSequence:
         return first, second, third
 
 
-    def get_involved_annotations(self, chrom, start, end) -> pd.DataFrame:
+    def get_annotations_in_range(self, chrom, start, end) -> pd.DataFrame:
         annotations = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
                                           (start <= self._annotations_df['end'] ) &
                                           (self._annotations_df['start'] <= end)]
         return annotations
 
-    def mute_encapsulating_gene(self, chrom, index):
-        annotation, annotation_index = self._get_annotation_by_position(chrom, index)
+    def mute_encapsulating_gene(self, chrom, pos):
+        annotation, annotation_index = self._get_annotation_by_position(chrom, pos)
         gene = annotation.iloc[0, annotation.columns.get_loc('gene')].item()
         gene_annotations_indices = self._annotations_df.index[(self._annotations_df['chrom'] == chrom) &
                                                               (self._annotations_df['gene'] == gene)].tolist()
@@ -263,24 +253,38 @@ class AnnotatedSequence:
 
     def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
         start = start if start != -1 else 0
-        end = end if end != -1 else len(self._sequence_per_chrom[chrom])
-        window = self._sequence_per_chrom[chrom][start:end]
+        end = end if end != -1 else self.len()
+        relevant_annotations = self.get_annotations_in_range(chrom, start, end - 1)
         counts_per_region = {}
-        for region in self.get_regions():
-            counts_per_region[region] = window.count(str(self._annotation_to_code(region)))
+        for _, annotation in relevant_annotations.iterrows():
+            region = annotation['feature'].item()
+            if region not in counts_per_region:
+                counts_per_region[region] = 0
+            region_start = max(start, annotation['start'].item())
+            region_end = min(end - 1, annotation['end'].item())
+            counts_per_region[region] += region_end - region_start + 1
         return counts_per_region
 
-    def get_mask_in_window_of_region(self, region, start, end):
-        # check for cache
-        if start != self._recent_start or end != self._recent_end:
-            self._recent_start = start
-            self._recent_end = end
-            self._mask_in_window_per_region = {}
-        if region in self._mask_in_window_per_region:
-            return self._mask_in_window_per_region[region]
+    def get_mask_in_window_of_region(self, relevant_region, chrom, start, end):
+        # if cache is valid and contains the region - return it
+        if start == self._recent_start and end == self._recent_end and relevant_region in self._mask_in_window_per_region:
+            return self._mask_in_window_per_region[relevant_region]
+
+        # else - initialize cache
+        self._recent_start = start
+        self._recent_end = end
+        self._mask_in_window_per_region = {region: np.array([]) for region in  self.get_regions()}
 
         # compute if no cache
-        window_sequence = self._sequence_per_chrom[self.chromosome_name][start:end]
-        relevant_code = self._annotation_to_code[region.value]
-        self._mask_in_window_per_region[region] = np.where(window_sequence == relevant_code, 1, 0)
+        relevant_annotations = self.get_annotations_in_range(chrom, start, end - 1)
+        for _, annotation in relevant_annotations.iterrows():
+            region = annotation['feature'].item()
+            annotation_start = max(start, annotation['start'].item())
+            annotation_end = min(end - 1, annotation['end'].item())
+            annotation_length = annotation_end - annotation_start + 1
+            for region in  self._mask_in_window_per_region.keys():
+                mask = 1 if region == relevant_region else 0
+                self._mask_in_window_per_region[region] = np.concatenate(
+                    self._mask_in_window_per_region[region], mask * annotation_length)
+
         return self._mask_in_window_per_region[region]

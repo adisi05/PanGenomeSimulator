@@ -255,7 +255,7 @@ class ChromosomeProcessor:
         trinuc_snp_bias_of_window_per_region = {region: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
         self.trinuc_bias_per_region = {region: None for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
-            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start, self.window_unit.end)
+            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.chromosome_name, self.window_unit.start, self.window_unit.end)
             for i in range(0+1,window_seq_len-1):
                 trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
                     self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
@@ -359,7 +359,7 @@ class ChromosomeProcessor:
 
     def find_position_for_mutation(self, mut_type : MutType, region : Region):
         # TODO use blocklist?
-        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start, self.window_unit.end)
+        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.chromosome_name, self.window_unit.start, self.window_unit.end)
         if 1 not in region_mask:
             return -1  # current annotation doesn't exist in window
         for attempt in range(MAX_ATTEMPTS):
@@ -546,7 +546,7 @@ class ChromosomeProcessor:
     def handle_annotations_after_small_deletion(self, inserted_mutation: Mutation):
         mut_start = inserted_mutation.position
         mut_end = inserted_mutation.position + len(inserted_mutation.ref_nucl) - 1
-        involved_annotations = self.annotated_seq.get_involved_annotations(self.chromosome_name, mut_start, mut_end)
+        involved_annotations = self.annotated_seq.get_annotations_in_range(self.chromosome_name, mut_start, mut_end)
         if len(involved_annotations) > 1:
             raise Exception("currently not supporting large deletions (SVs)")
             # how many genes involved? get names by order
