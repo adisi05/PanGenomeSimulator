@@ -15,7 +15,7 @@ def to_annotations_df(args, working_dir):
         print('Processing bed/gff file...')
         try:
             annotations_df = seperate_cds_genes_intergenics(args.b, working_dir)
-            annotations_df[['chrom', 'feature']] = annotations_df[['chrom', 'feature']].astype(str)
+            annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
             # TODO validate chromosome length are same as in reference
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
@@ -39,19 +39,19 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 cds_elements = cds_elements.sort()
                 cds_elements = cds_elements.merge()
                 cds_elements_df = cds_elements.to_dataframe()
-                cds_elements_df['feature'] = Region.CDS.value
-                cds_elements_df = cds_elements_df.loc[:,['feature','start','end']]
+                cds_elements_df['region'] = Region.CDS.value
+                cds_elements_df = cds_elements_df.loc[:,['region','start','end']]
                 cds_elements_df = cds_elements_df.drop_duplicates()
 
                 gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
                 gene_elements = gene_elements.sort()
-                intron_elements = gene_elements.subtract(cds_elements)
-                intron_elements = intron_elements.sort()
-                intron_elements = intron_elements.merge()
-                intron_elements_df = intron_elements.to_dataframe()
-                intron_elements_df['feature'] = Region.INTRON.value
-                intron_elements_df = intron_elements_df.loc[:,['feature','start','end']]
-                intron_elements_df = intron_elements_df.drop_duplicates()
+                non_coding_gene_elements = gene_elements.subtract(cds_elements)
+                non_coding_gene_elements = non_coding_gene_elements.sort()
+                non_coding_gene_elements = non_coding_gene_elements.merge()
+                non_coding_gene_elements_df = non_coding_gene_elements.to_dataframe()
+                non_coding_gene_elements_df['region'] = Region.NON_CODING_GENE.value
+                non_coding_gene_elements_df = non_coding_gene_elements_df.loc[:,['region','start','end']]
+                non_coding_gene_elements_df = non_coding_gene_elements_df.drop_duplicates()
 
                 all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
                 all_elements = all_elements.sort()
@@ -59,17 +59,17 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 intergenic_elements = intergenic_elements.sort()
                 intergenic_elements = intergenic_elements.merge()
                 intergenic_elements_df = intergenic_elements.to_dataframe()
-                intergenic_elements_df['feature'] = Region.INTERGENIC.value
-                intergenic_elements_df = intergenic_elements_df.loc[:,['feature','start','end']]
+                intergenic_elements_df['region'] = Region.INTERGENIC.value
+                intergenic_elements_df = intergenic_elements_df.loc[:,['region','start','end']]
                 intergenic_elements_df = intergenic_elements_df.drop_duplicates()
 
-                cds_genes_intergenics = pd.concat([cds_elements_df, intron_elements_df, intergenic_elements_df], ignore_index=True)
+                cds_genes_intergenics = pd.concat([cds_elements_df, non_coding_gene_elements_df, intergenic_elements_df], ignore_index=True)
                 cds_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
                 cds_genes_intergenics = cds_genes_intergenics.reset_index(drop=True)
                 cds_genes_intergenics.insert(0,'chrom', str(chrom.chrom))
-                cds_genes_intergenics[['chrom', 'feature']] = cds_genes_intergenics[['chrom', 'feature']].astype(str)
+                cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
-                # cds_genes_intergenics[['chrom', 'feature']] = cds_genes_intergenics[['chrom', 'feature']].astype(str)
+                # cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
                 chroms_annotaions.append(cds_genes_intergenics)
             #TODO remove index column
@@ -90,7 +90,7 @@ class AnnotatedSequence:
             return
 
         self._annotations_df = annotations_df
-        relevant_region_names = self._annotations_df['feature'].unique()
+        relevant_region_names = self._annotations_df['region'].unique()
         self._relevant_regions = [Region(name) for name in relevant_region_names]
 
         if len(self._relevant_regions) == 0:
@@ -116,7 +116,7 @@ class AnnotatedSequence:
         if not self._annotations_df:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(chrom, pos)
-        return annotation.iloc[0]['feature'].item()
+        return annotation.iloc[0]['region'].item()
 
     def get_annotation_start_end(self, chrom, pos) -> (int, int):
         annotation, _ = self._get_annotation_by_position(chrom, pos)
@@ -126,7 +126,7 @@ class AnnotatedSequence:
 
     def get_encapsulating_trinuc_positions(self, chrom, pos):
         cds, _ = self._get_annotation_by_position(chrom, pos)
-        if cds.iloc[0, cds.columns.get_loc('feature')].item() != Region.CDS.value:
+        if cds.iloc[0]['region'].item() != Region.CDS.value:
             raise Exception("Trinuc is only relevant for CDS region")
         cds_start = cds.iloc[0, cds.columns.get_loc('start')].item()
         cds_end = cds.iloc[0, cds.columns.get_loc('end')].item()
@@ -138,7 +138,7 @@ class AnnotatedSequence:
 
         if first < cds_start or second < cds_start:
             prev_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
-                                            (self._annotations_df['feature'] == Region.CDS.value) &
+                                            (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] < cds_start)]
             if len(prev_cds.index) != 1:
                 raise Exception(f"Can't determine previous CDS for chromosome {chrom} index {pos}")
@@ -151,7 +151,7 @@ class AnnotatedSequence:
 
         if cds_end < second or cds_end < third:
             next_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
-                                            (self._annotations_df['feature'] == Region.CDS.value) &
+                                            (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['start'] > pos)]
             if len(next_cds.index) != 1:
                 raise Exception(f"Can't determine next CDS for chromosome {chrom} index {pos}")
@@ -181,12 +181,12 @@ class AnnotatedSequence:
 
         # melt with previous intergenic region if exists
         if first_index != 0 and \
-            self._annotations_df.iloc[first_index - 1]['feature'].item() == Region.INTERGENIC.value:
+            self._annotations_df.iloc[first_index - 1]['region'].item() == Region.INTERGENIC.value:
             first_index -= 1
 
         # melt with next intergenic region if exists
         if last_index + 1 != len(self._annotations_df) and \
-            self._annotations_df.iloc[last_index + 1]['feature'].item() == Region.INTERGENIC.value:
+            self._annotations_df.iloc[last_index + 1]['region'].item() == Region.INTERGENIC.value:
             last_index += 1
 
         # create new intergenic region
@@ -195,7 +195,7 @@ class AnnotatedSequence:
         new_intergenic = pd.DataFrame({'chrom': chrom,
                                        'start': intergenic_start,
                                        'end': intergenic_end,
-                                       'feature': Region.INTERGENIC.value}) #TODO add index?
+                                       'region': Region.INTERGENIC.value}) #TODO add index?
 
         # insert new intergenic region instead of muted gene
         dfs_to_concat = []
@@ -257,7 +257,7 @@ class AnnotatedSequence:
         relevant_annotations = self.get_annotations_in_range(chrom, start, end - 1)
         counts_per_region = {}
         for _, annotation in relevant_annotations.iterrows():
-            region = annotation['feature'].item()
+            region = annotation['region'].item()
             if region not in counts_per_region:
                 counts_per_region[region] = 0
             region_start = max(start, annotation['start'].item())
@@ -278,7 +278,7 @@ class AnnotatedSequence:
         # compute if no cache
         relevant_annotations = self.get_annotations_in_range(chrom, start, end - 1)
         for _, annotation in relevant_annotations.iterrows():
-            region = annotation['feature'].item()
+            region = annotation['region'].item()
             annotation_start = max(start, annotation['start'].item())
             annotation_end = min(end - 1, annotation['end'].item())
             annotation_length = annotation_end - annotation_start + 1

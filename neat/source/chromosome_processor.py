@@ -497,7 +497,7 @@ class ChromosomeProcessor:
         """
         region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
 
-        if region == Region.INTERGENIC or region == Region.INTRON:
+        if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False # current behaviour is not to check for start/stop codon in these regions.
 
         elif region == Region.CDS:
@@ -521,7 +521,7 @@ class ChromosomeProcessor:
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
         region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
 
-        if region == Region.INTERGENIC or region == Region.INTRON:
+        if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False
 
         elif region == Region.CDS:
@@ -555,7 +555,7 @@ class ChromosomeProcessor:
             # elif 1 gene
             #     get all cds involved. was there a frameshift? have we gotten stop codon?
             #     mute if needed
-            #     shorten cds + intron regions as needed
+            #     shorten cds + non_coding_gene regions as needed
             # elif 2 genes
             #     ...
             # else - 3 and more genes
@@ -569,7 +569,7 @@ class ChromosomeProcessor:
     def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
         region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
 
-        if region == Region.INTERGENIC or region == Region.INTRON:
+        if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False
 
         elif region == Region.CDS:

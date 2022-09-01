@@ -51,7 +51,7 @@ class RegionStats:
         _annotated_sequence = AnnotatedSequence(None)
         if annotations_df:
             self._regions_stats[Region.CDS] = self.create_stats_dict()
-            self._regions_stats[Region.INTRON] = self.create_stats_dict()
+            self._regions_stats[Region.NON_CODING_GENE] = self.create_stats_dict()
             self._regions_stats[Region.INTERGENIC] = self.create_stats_dict()
             _annotated_sequence = AnnotatedSequence(annotations_df)
 
@@ -541,7 +541,7 @@ def update_total_reflen(ref_dict, ref_name, regions_stats, annotations_df):
         for i, annotation in chrom_annotations.iterrows():
             sub_seq = ref_dict[ref_name][annotation['start']: annotation['end']].seq
             reflen_annotation = len(sub_seq) - sub_seq.count('N')
-            update_total_reflen_for_region(reflen_annotation, regions_stats, annotations_df['feature'])
+            update_total_reflen_for_region(reflen_annotation, regions_stats, annotations_df['region'])
 
 
 def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region = Region.ALL):
