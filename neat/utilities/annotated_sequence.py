@@ -119,14 +119,14 @@ class AnnotatedSequence:
     def get_regions(self):
         return self._relevant_regions
 
-    def get_region_by_index(self, chrom, index) -> Region:
+    def get_region_by_position(self, chrom, pos) -> Region:
         # if not self._sequence_per_chrom:
         #     return Region.ALL
         # return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
         if not self._annotations_df:
             return Region.ALL
-        annotation, _ = self._get_annotation_by_position(chrom, index)
-        return annotation.iloc[0, annotation.columns.get_loc('feature')].item()
+        annotation, _ = self._get_annotation_by_position(chrom, pos)
+        return annotation.iloc[0]['feature'].item()
 
     def get_annotation_start_end(self, chrom, index) -> (int, int):
         annotation, _ = self._get_annotation_by_position(chrom, index)
@@ -217,14 +217,54 @@ class AnnotatedSequence:
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
 
-    def handle_insertion(self, chrom, index, insertion_len):
-        # TODO implement - elongate sequence and shift downstream genes, including current (if not intergenic region)
-        pass
+    def handle_insertion(self, chrom, pos, insertion_len):
+        _, index = self._get_annotation_by_position(chrom, pos)
+        self._annotations_df.iloc[index]['end'] += insertion_len
+        if index + 1 != len(self._annotations_df):
+            self._annotations_df.iloc[index+1:]['start'] += insertion_len
+            self._annotations_df.iloc[index+1:]['end'] += insertion_len
+        # TODO should implement special behaviour to CDS because of framshift?
 
 
-    def handle_deletion(self, chrom, start, end):
-        # TODO implement - shorten sequence and shift downstream genes, including current (if not intergenic region)
-        pass
+    def handle_deletion(self, chrom, pos, deletion_len):
+        """
+        Delete right after pos, sequence at the length deletion_len
+        :param chrom:
+        :param start:
+        :param end:
+        :return:
+        """
+        annotation, index = self._get_annotation_by_position(chrom, pos)
+        annotation_residue = self._annotations_df.iloc[index]['end'].item() - pos
+
+        # deletion involves only one annotation
+        if deletion_len <= annotation_residue:
+            annotation['end'] = annotation['end'] - deletion_len
+            index += 1
+
+        # deletion involves more than one annotation
+        else:
+            annotation['end'] = pos
+            deleted_already = annotation_residue
+            index += 1
+            annotations_to_delete = []
+            while deleted_already < deletion_len and index < len(self._annotations_df):
+                annotation_len = self._annotations_df.iloc[index]['end'].item() - \
+                                 self._annotations_df.iloc[index]['start'].item() + 1
+                if annotation_len <= deletion_len - deleted_already:
+                    annotations_to_delete.append(index)
+                    deleted_already += annotation_len
+                else:
+                    self._annotations_df.iloc[index]['start'] = pos + 1
+                    self._annotations_df.iloc[index]['end'] = (pos + annotation_len) - (deletion_len - deleted_already)
+                    deleted_already = deletion_len
+                index += 1
+
+        if index != len(self._annotations_df):
+            self._annotations_df.iloc[index:]['start'] -= deletion_len
+            self._annotations_df.iloc[index:]['end'] -= deletion_len
+
+        self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
 
     def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
         start = start if start != -1 else 0

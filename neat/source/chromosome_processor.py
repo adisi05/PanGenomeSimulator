@@ -495,7 +495,7 @@ class ChromosomeProcessor:
         :param inserted_mutation:
         :return: True if annotation has changed somehow, False otherwise
         """
-        region = self.annotated_seq.get_region_by_index(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.INTRON:
             return False # current behaviour is not to check for start/stop codon in these regions.
@@ -519,7 +519,7 @@ class ChromosomeProcessor:
                                             inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_region_by_index(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.INTRON:
             return False
@@ -567,7 +567,7 @@ class ChromosomeProcessor:
                                             inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_region_by_index(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.INTRON:
             return False
