@@ -83,13 +83,19 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 class AnnotatedSequence:
     _relevant_regions = []
     _annotations_df = None
+    _chromosome = None
 
-    def __init__(self, annotations_df: pd.DataFrame):
+    def __init__(self, annotations_df: pd.DataFrame, chromosome : str):
+        self._chromosome = chromosome
         if annotations_df is None or annotations_df.empty:
             self._relevant_regions.append(Region.ALL)
             return
 
-        self._annotations_df = annotations_df
+        self._annotations_df = annotations_df[annotations_df['chrom'] == chromosome].copy()
+        del self._annotations_df['chrom']
+
+        # TODO set 'start' as index? or reset index in some other way???
+
         relevant_region_names = self._annotations_df['region'].unique()
         self._relevant_regions = [Region(name) for name in relevant_region_names]
 
@@ -101,31 +107,30 @@ class AnnotatedSequence:
             return None
         return self._annotations_df.iloc[-1]['end'].item()
 
-    def _get_annotation_by_position(self, chrom, pos) -> (pd.DataFrame, int):
-        condition = (self._annotations_df['chrom'] == chrom) & \
-                    (self._annotations_df['start'] <= pos) & (self._annotations_df['end'] >= pos)
+    def _get_annotation_by_position(self, pos) -> (pd.DataFrame, int):
+        condition = (self._annotations_df['start'] <= pos) & (self._annotations_df['end'] >= pos)
         annotation_indices = self._annotations_df.index[condition].tolist()
         if len(annotation_indices) != 1:
-            raise Exception(f"Can't determine annotation for chromosome {chrom} position {pos}")
+            raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}")
         return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
 
     def get_regions(self):
         return self._relevant_regions
 
-    def get_region_by_position(self, chrom, pos) -> Region:
+    def get_region_by_position(self, pos) -> Region:
         if not self._annotations_df:
             return Region.ALL
-        annotation, _ = self._get_annotation_by_position(chrom, pos)
+        annotation, _ = self._get_annotation_by_position(pos)
         return annotation.iloc[0]['region'].item()
 
-    def get_annotation_start_end(self, chrom, pos) -> (int, int):
-        annotation, _ = self._get_annotation_by_position(chrom, pos)
+    def get_annotation_start_end(self, pos) -> (int, int):
+        annotation, _ = self._get_annotation_by_position(pos)
 
         return annotation.iloc[0, annotation.columns.get_loc('start')].item(),\
                annotation.iloc[0, annotation.columns.get_loc('end')].item()
 
-    def get_encapsulating_trinuc_positions(self, chrom, pos):
-        cds, _ = self._get_annotation_by_position(chrom, pos)
+    def get_encapsulating_trinuc_positions(self, pos):
+        cds, _ = self._get_annotation_by_position(pos)
         if cds.iloc[0]['region'].item() != Region.CDS.value:
             raise Exception("Trinuc is only relevant for CDS region")
         cds_start = cds.iloc[0, cds.columns.get_loc('start')].item()
@@ -137,11 +142,10 @@ class AnnotatedSequence:
         third = pos + 2 - reading_frame_offset
 
         if first < cds_start or second < cds_start:
-            prev_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
-                                            (self._annotations_df['region'] == Region.CDS.value) &
+            prev_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] < cds_start)]
             if len(prev_cds.index) != 1:
-                raise Exception(f"Can't determine previous CDS for chromosome {chrom} index {pos}")
+                raise Exception(f"Can't determine previous CDS for chromosome {self._chromosome} index {pos}")
             prev_cds_end = prev_cds.iloc[0, cds.columns.get_loc('end')].item()
             if second < cds_start:
                 second = prev_cds_end
@@ -150,11 +154,10 @@ class AnnotatedSequence:
                 first = prev_cds_end
 
         if cds_end < second or cds_end < third:
-            next_cds = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
-                                            (self._annotations_df['region'] == Region.CDS.value) &
+            next_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['start'] > pos)]
             if len(next_cds.index) != 1:
-                raise Exception(f"Can't determine next CDS for chromosome {chrom} index {pos}")
+                raise Exception(f"Can't determine next CDS for chromosome {self._chromosome} index {pos}")
             next_cds_start = prev_cds.iloc[0, cds.columns.get_loc('start')].item()
             if cds_end < second:
                 second = next_cds_start
@@ -165,17 +168,15 @@ class AnnotatedSequence:
         return first, second, third
 
 
-    def get_annotations_in_range(self, chrom, start, end) -> pd.DataFrame:
-        annotations = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
-                                          (start <= self._annotations_df['end'] ) &
-                                          (self._annotations_df['start'] <= end)]
+    def get_annotations_in_range(self, start, end) -> pd.DataFrame:
+        annotations = self._annotations_df[(start <= self._annotations_df['end'] ) &
+                                           (self._annotations_df['start'] <= end)]
         return annotations
 
-    def mute_encapsulating_gene(self, chrom, pos):
-        annotation, annotation_index = self._get_annotation_by_position(chrom, pos)
+    def mute_encapsulating_gene(self, pos):
+        annotation, annotation_index = self._get_annotation_by_position(pos)
         gene = annotation.iloc[0, annotation.columns.get_loc('gene')].item()
-        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['chrom'] == chrom) &
-                                                              (self._annotations_df['gene'] == gene)].tolist()
+        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene)].tolist()
         first_index = gene_annotations_indices[0]
         last_index = gene_annotations_indices[-1]
 
@@ -192,8 +193,7 @@ class AnnotatedSequence:
         # create new intergenic region
         intergenic_start = self._annotations_df.iloc[first_index]['start'].item()
         intergenic_end = self._annotations_df.iloc[last_index]['end'].item()
-        new_intergenic = pd.DataFrame({'chrom': chrom,
-                                       'start': intergenic_start,
+        new_intergenic = pd.DataFrame({'start': intergenic_start,
                                        'end': intergenic_end,
                                        'region': Region.INTERGENIC.value}) #TODO add index?
 
@@ -207,8 +207,8 @@ class AnnotatedSequence:
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
 
-    def handle_insertion(self, chrom, pos, insertion_len):
-        _, index = self._get_annotation_by_position(chrom, pos)
+    def handle_insertion(self, pos, insertion_len):
+        _, index = self._get_annotation_by_position(pos)
         self._annotations_df.iloc[index]['end'] += insertion_len
         if index + 1 != len(self._annotations_df):
             self._annotations_df.iloc[index+1:]['start'] += insertion_len
@@ -216,15 +216,14 @@ class AnnotatedSequence:
         # TODO should implement special behaviour to CDS because of framshift?
 
 
-    def handle_deletion(self, chrom, pos, deletion_len):
+    def handle_deletion(self, pos, deletion_len):
         """
         Delete right after pos, sequence at the length deletion_len
-        :param chrom:
         :param start:
         :param end:
         :return:
         """
-        annotation, index = self._get_annotation_by_position(chrom, pos)
+        annotation, index = self._get_annotation_by_position(pos)
         annotation_residue = self._annotations_df.iloc[index]['end'].item() - pos
         deleted_already = min(annotation_residue, deletion_len)
         annotation['end'] = annotation['end'] - deleted_already
@@ -251,10 +250,10 @@ class AnnotatedSequence:
 
         self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
 
-    def get_nucleotides_counts_per_region(self, chrom, start=-1, end=-1):
+    def get_nucleotides_counts_per_region(self, start=-1, end=-1):
         start = start if start != -1 else 0
         end = end if end != -1 else self.len()
-        relevant_annotations = self.get_annotations_in_range(chrom, start, end - 1)
+        relevant_annotations = self.get_annotations_in_range(start, end - 1)
         counts_per_region = {}
         for _, annotation in relevant_annotations.iterrows():
             region = annotation['region'].item()
@@ -265,7 +264,7 @@ class AnnotatedSequence:
             counts_per_region[region] += region_end - region_start + 1
         return counts_per_region
 
-    def get_mask_in_window_of_region(self, relevant_region, chrom, start, end):
+    def get_mask_in_window_of_region(self, relevant_region, start, end):
         # if cache is valid and contains the region - return it
         if start == self._recent_start and end == self._recent_end and relevant_region in self._mask_in_window_per_region:
             return self._mask_in_window_per_region[relevant_region]
@@ -276,7 +275,7 @@ class AnnotatedSequence:
         self._mask_in_window_per_region = {region: np.array([]) for region in  self.get_regions()}
 
         # compute if no cache
-        relevant_annotations = self.get_annotations_in_range(chrom, start, end - 1)
+        relevant_annotations = self.get_annotations_in_range(start, end - 1)
         for _, annotation in relevant_annotations.iterrows():
             region = annotation['region'].item()
             annotation_start = max(start, annotation['start'].item())

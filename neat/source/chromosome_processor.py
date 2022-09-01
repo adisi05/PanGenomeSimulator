@@ -255,7 +255,8 @@ class ChromosomeProcessor:
         trinuc_snp_bias_of_window_per_region = {region: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
         self.trinuc_bias_per_region = {region: None for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
-            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.chromosome_name, self.window_unit.start, self.window_unit.end)
+            region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
+                                                                          self.window_unit.end)
             for i in range(0+1,window_seq_len-1):
                 trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
                     self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
@@ -266,7 +267,8 @@ class ChromosomeProcessor:
     def init_poisson(self, indels=True):
         list_per_region = {}
         poisson_per_region = {}
-        nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.chromosome_name, self.window_unit.start, self.window_unit.end)
+        nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.window_unit.start,
+                                                                                             self.window_unit.end)
         for region in self.annotated_seq.get_regions():
             param = self.model_per_region[region][2] if indels else (1. - self.model_per_region[region][2])
             list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.model_per_region[region][2])
@@ -359,7 +361,8 @@ class ChromosomeProcessor:
 
     def find_position_for_mutation(self, mut_type : MutType, region : Region):
         # TODO use blocklist?
-        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.chromosome_name, self.window_unit.start, self.window_unit.end)
+        region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
+                                                                      self.window_unit.end)
         if 1 not in region_mask:
             return -1  # current annotation doesn't exist in window
         for attempt in range(MAX_ATTEMPTS):
@@ -495,17 +498,17 @@ class ChromosomeProcessor:
         :param inserted_mutation:
         :return: True if annotation has changed somehow, False otherwise
         """
-        region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False # current behaviour is not to check for start/stop codon in these regions.
 
         elif region == Region.CDS:
-            start, end = self.annotated_seq.get_encapsulating_trinuc_positions(self.chromosome_name, inserted_mutation.position)
+            start, end = self.annotated_seq.get_encapsulating_trinuc_positions(inserted_mutation.position)
             # assuming sequence has been mutated already!
             codon = self.chromosome_sequence[start:end]
             if is_stop_codon(codon):
-                self.annotated_seq.mute_encapsulating_gene(self.chromosome_name, inserted_mutation.position)
+                self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
                 return True
             return False
         else:
@@ -514,12 +517,11 @@ class ChromosomeProcessor:
 
     def handle_annotations_after_small_insertion(self, inserted_mutation: Mutation):
         if self.should_mute_gene_after_small_insertion(inserted_mutation):
-            self.annotated_seq.mute_encapsulating_gene(self.chromosome_name, inserted_mutation.position)
-        self.annotated_seq.handle_insertion(self.chromosome_name,
-                                            inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
+            self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
+        self.annotated_seq.handle_insertion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False
@@ -530,8 +532,7 @@ class ChromosomeProcessor:
                 return True
             else:
                 first_codon_start, first_codon_end = \
-                    self.annotated_seq.get_encapsulating_trinuc_positions(self.chromosome_name,
-                                                                          inserted_mutation.position)
+                    self.annotated_seq.get_encapsulating_trinuc_positions(inserted_mutation.position)
                 added_codons = (len(inserted_mutation.new_nucl) - 1) / 3
                 for i in range(added_codons):
                     # assuming sequence has been mutated already!
@@ -546,7 +547,7 @@ class ChromosomeProcessor:
     def handle_annotations_after_small_deletion(self, inserted_mutation: Mutation):
         mut_start = inserted_mutation.position
         mut_end = inserted_mutation.position + len(inserted_mutation.ref_nucl) - 1
-        involved_annotations = self.annotated_seq.get_annotations_in_range(self.chromosome_name, mut_start, mut_end)
+        involved_annotations = self.annotated_seq.get_annotations_in_range(mut_start, mut_end)
         if len(involved_annotations) > 1:
             raise Exception("currently not supporting large deletions (SVs)")
             # how many genes involved? get names by order
@@ -562,12 +563,11 @@ class ChromosomeProcessor:
             #     ...
 
         if self.should_mute_gene_after_deletion(inserted_mutation):
-            self.annotated_seq.mute_encapsulating_gene(self.chromosome_name, inserted_mutation.position)
-        self.annotated_seq.handle_deletion(self.chromosome_name,
-                                            inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
+            self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
+        self.annotated_seq.handle_deletion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_region_by_position(self.chromosome_name, inserted_mutation.position)
+        region = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False
@@ -577,8 +577,7 @@ class ChromosomeProcessor:
             if frameshift:
                 return True
             else:
-                start, end = self.annotated_seq.get_encapsulating_trinuc_positions(self.chromosome_name,
-                                                                                   inserted_mutation.position)
+                start, end = self.annotated_seq.get_encapsulating_trinuc_positions(inserted_mutation.position)
                 # assuming sequence has been mutated already!
                 codon = self.chromosome_sequence[start:end]
                 if is_stop_codon(codon):
