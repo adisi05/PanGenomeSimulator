@@ -108,13 +108,13 @@ class AnnotatedSequence:
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
 
-    def _get_annotation_by_index(self, chrom, index) -> pd.DataFrame:
-        annotation = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
-                                          (self._annotations_df['start'] <= index) &
-                                          (self._annotations_df['end'] >= index)]
-        if len(annotation.index) != 1:
-            raise Exception(f"Can't determine annotation for chromosome {chrom} index {index}")
-        return annotation
+    def _get_annotation_by_position(self, chrom, pos) -> (pd.DataFrame, int):
+        condition = (self._annotations_df['chrom'] == chrom) & \
+                    (self._annotations_df['start'] <= pos) & (self._annotations_df['end'] >= pos)
+        annotation_indices = self._annotations_df.index[condition].tolist()
+        if len(annotation_indices) != 1:
+            raise Exception(f"Can't determine annotation for chromosome {chrom} index {pos}")
+        return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
 
     def get_regions(self):
         return self._relevant_regions
@@ -125,16 +125,17 @@ class AnnotatedSequence:
         # return self._code_to_annotation[self._sequence_per_chrom[chrom][index]]
         if not self._annotations_df:
             return Region.ALL
-        return self._get_annotation_by_index(chrom, index)
+        annotation, _ = self._get_annotation_by_position(chrom, index)
+        return annotation.iloc[0, annotation.columns.get_loc('feature')].item()
 
     def get_annotation_start_end(self, chrom, index) -> (int, int):
-        annotation = self._get_annotation_by_index(chrom, index)
+        annotation, _ = self._get_annotation_by_position(chrom, index)
 
         return annotation.iloc[0, annotation.columns.get_loc('start')].item(),\
                annotation.iloc[0, annotation.columns.get_loc('end')].item()
 
     def get_encapsulating_trinuc_positions(self, chrom, index):
-        cds = self._get_annotation_by_index(chrom, index)
+        cds, _ = self._get_annotation_by_position(chrom, index)
         if cds.iloc[0, cds.columns.get_loc('feature')].item() != Region.CDS.value:
             raise Exception("Trinuc is only relevant for CDS region")
         cds_start = cds.iloc[0, cds.columns.get_loc('start')].item()
@@ -174,13 +175,47 @@ class AnnotatedSequence:
         return first, second, third
 
 
-    def get_involved_annotations(self, chrom, start, end):
-        # TODO implement
-        pass
+    def get_involved_annotations(self, chrom, start, end) -> pd.DataFrame:
+        annotations = self._annotations_df[(self._annotations_df['chrom'] == chrom) &
+                                          (start <= self._annotations_df['end'] ) &
+                                          (self._annotations_df['start'] <= end)]
+        return annotations
 
     def mute_encapsulating_gene(self, chrom, index):
-        # TODO implement - remove from gene df + change annotations of sequence
-        pass
+        annotation, annotation_index = self._get_annotation_by_position(chrom, index)
+        gene = annotation.iloc[0, annotation.columns.get_loc('gene')].item()
+        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['chrom'] == chrom) &
+                                                              (self._annotations_df['gene'] == gene)].tolist()
+        first_index = gene_annotations_indices[0]
+        last_index = gene_annotations_indices[-1]
+
+        # melt with previous intergenic region if exists
+        if first_index != 0 and \
+            self._annotations_df.iloc[first_index - 1]['feature'].item() == Region.INTERGENIC.value:
+            first_index -= 1
+
+        # melt with next intergenic region if exists
+        if last_index + 1 != len(self._annotations_df) and \
+            self._annotations_df.iloc[last_index + 1]['feature'].item() == Region.INTERGENIC.value:
+            last_index += 1
+
+        # create new intergenic region
+        intergenic_start = self._annotations_df.iloc[first_index]['start'].item()
+        intergenic_end = self._annotations_df.iloc[last_index]['end'].item()
+        new_intergenic = pd.DataFrame({'chrom': chrom,
+                                       'start': intergenic_start,
+                                       'end': intergenic_end,
+                                       'feature': Region.INTERGENIC.value}) #TODO add index?
+
+        # insert new intergenic region instead of muted gene
+        dfs_to_concat = []
+        if(first_index != 0):
+            dfs_to_concat.append(self._annotations_df.iloc[:first_index - 1])
+        dfs_to_concat.append(new_intergenic)
+        if(last_index + 1 != len(self._annotations_df)):
+            dfs_to_concat.append(self._annotations_df.iloc[last_index + 1:])
+        self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
+
 
     def handle_insertion(self, chrom, index, insertion_len):
         # TODO implement - elongate sequence and shift downstream genes, including current (if not intergenic region)
