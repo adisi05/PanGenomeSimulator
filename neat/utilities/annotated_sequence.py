@@ -5,9 +5,9 @@ import numpy as np
 import pybedtools
 import pandas as pd
 
-from neat.utilities.common_data_structues import Region
+from neat.utilities.common_data_structues import Region, Strand
 
-#TODO check it's working, especially now with CDS..
+
 def to_annotations_df(args, working_dir):
     # Process bed/gff file
     annotations_df = None
@@ -21,8 +21,22 @@ def to_annotations_df(args, working_dir):
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
     return annotations_df
 
-#TODO??? -> annotations_df['track_len'] = annotations_df.end - annotations_df.start + 1
 def seperate_cds_genes_intergenics(annotations_file, working_dir):
+    # GENE_ID = 'gene_id'
+    # def extract_gene_id(attributes: str):
+    #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
+
+    def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, int):
+        gene_ids = gene_elements_df.index[
+            (gene_elements_df['start'] <= start) & (end <= gene_elements_df['end'])].tolist()
+        if len(gene_ids) < 1:
+            return 0, Strand.UNKNOWN.value
+        if len(gene_ids) > 1:
+            # We assume genes from different strands don't overlap, but if it happens nonetheless - ignore
+            return 0, Strand.UNKNOWN.value
+        strand = Strand(gene_elements_df.iloc[gene_ids[0]]['strand'])
+        return gene_ids[0] + 1, strand.value # indecies in pandas are 0-based
+
     if working_dir:
         os.chdir(working_dir)
     #TODO just for debug. Remove later
@@ -33,14 +47,14 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
     if annotations_file is not None:
         try:
             annotations = pybedtools.example_bedtool(annotations_file)
-            chroms_annotaions = []
+            all_chroms_annotaions = []
             for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
                 cds_elements = annotations.filter(lambda x: x.fields[2] == 'CDS' and x.chrom == chrom.chrom)
                 cds_elements = cds_elements.sort()
                 cds_elements = cds_elements.merge()
                 cds_elements_df = cds_elements.to_dataframe()
                 cds_elements_df['region'] = Region.CDS.value
-                cds_elements_df = cds_elements_df.loc[:,['region','start','end']]
+                del cds_elements_df['chrom']
                 cds_elements_df = cds_elements_df.drop_duplicates()
 
                 gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
@@ -50,7 +64,7 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 non_coding_gene_elements = non_coding_gene_elements.merge()
                 non_coding_gene_elements_df = non_coding_gene_elements.to_dataframe()
                 non_coding_gene_elements_df['region'] = Region.NON_CODING_GENE.value
-                non_coding_gene_elements_df = non_coding_gene_elements_df.loc[:,['region','start','end']]
+                del non_coding_gene_elements_df['chrom']
                 non_coding_gene_elements_df = non_coding_gene_elements_df.drop_duplicates()
 
                 all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
@@ -60,7 +74,7 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 intergenic_elements = intergenic_elements.merge()
                 intergenic_elements_df = intergenic_elements.to_dataframe()
                 intergenic_elements_df['region'] = Region.INTERGENIC.value
-                intergenic_elements_df = intergenic_elements_df.loc[:,['region','start','end']]
+                del intergenic_elements_df['chrom']
                 intergenic_elements_df = intergenic_elements_df.drop_duplicates()
 
                 cds_genes_intergenics = pd.concat([cds_elements_df, non_coding_gene_elements_df, intergenic_elements_df], ignore_index=True)
@@ -71,9 +85,16 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 
                 # cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
-                chroms_annotaions.append(cds_genes_intergenics)
-            #TODO remove index column
-            all_chroms_annotaions = pd.concat(chroms_annotaions)
+                gene_elements_df = gene_elements.to_dataframe()
+                gene_elements_df['start'] -= 1 # this correction is because of some bug in pybedtools
+                cds_genes_intergenics[['gene','strand']] = cds_genes_intergenics.apply(
+                    lambda x: assign_gene(x['start'], x['end'], gene_elements_df), axis=1, result_type='expand')
+
+
+
+                all_chroms_annotaions.append(cds_genes_intergenics)
+            #TODO remove index column - can I use the start column as the index?
+            all_chroms_annotaions = pd.concat(all_chroms_annotaions)
             all_chroms_annotaions.to_csv('all_chroms_annotaions.csv')
             return all_chroms_annotaions
         except IOError:
@@ -126,11 +147,11 @@ class AnnotatedSequence:
     def get_regions(self):
         return self._relevant_regions
 
-    def get_region_by_position(self, pos) -> Region:
+    def get_region_by_position(self, pos) -> (Region, Strand): #TODO return strand as int
         if not self._annotations_df:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(pos)
-        return annotation.iloc[0]['region'].item()
+        return annotation.iloc[0]['region'].item(), Strand(annotation.iloc[0]['strand'].item())
 
     # def get_annotation_start_end(self, pos) -> (int, int):
     #     annotation, _ = self._get_annotation_by_position(pos)
@@ -272,7 +293,7 @@ class AnnotatedSequence:
             counts_per_region[region] += region_end - region_start
         return counts_per_region
 
-    def get_mask_in_window_of_region(self, relevant_region, start, end) -> dict[Region, np.array]:
+    def get_mask_in_window_of_region(self, relevant_region, start, end) -> dict:
         # if cache is valid and contains the region - return it
         if start == self._cached_start and end == self._cached_end and relevant_region in self._cached_mask_in_window_per_region:
             return self._cached_mask_in_window_per_region[relevant_region]
@@ -301,3 +322,5 @@ if __name__ == "__main__":
     file = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3'
     dir = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
     seperate_cds_genes_intergenics(file, dir)
+
+    #ID=gene:AT1G01100;Name=RPP1A;biotype=protein_coding;description=60S acidic ribosomal protein P1-1 [Source:UniProtKB/Swiss-Prot%3BAcc:Q8LCW9];gene_id=AT1G01100;logic_name=araport11

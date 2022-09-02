@@ -7,7 +7,7 @@ import numpy as np
 from Bio.Seq import MutableSeq
 from dataclasses import dataclass
 from probability import DiscreteDistribution, poisson_list
-from neat.utilities.common_data_structues import Region, MutType
+from neat.utilities.common_data_structues import Region, MutType, Strand
 from neat.utilities.annotated_sequence import AnnotatedSequence
 
 """
@@ -498,7 +498,7 @@ class ChromosomeProcessor:
         :param inserted_mutation:
         :return: True if annotation has changed somehow, False otherwise
         """
-        region = self.annotated_seq.get_region_by_position(inserted_mutation.position)
+        region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False # current behaviour is not to check for start/stop codon in these regions.
@@ -507,7 +507,7 @@ class ChromosomeProcessor:
             start, end = self.annotated_seq.get_encapsulating_trinuc_positions(inserted_mutation.position)
             # assuming sequence has been mutated already!
             codon = self.chromosome_sequence[start:end]
-            if is_stop_codon(codon):
+            if is_stop_codon(codon, strand):
                 self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
                 return True
             return False
@@ -521,7 +521,7 @@ class ChromosomeProcessor:
         self.annotated_seq.handle_insertion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_region_by_position(inserted_mutation.position)
+        region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False
@@ -537,7 +537,7 @@ class ChromosomeProcessor:
                 for i in range(added_codons):
                     # assuming sequence has been mutated already!
                     codon = self.chromosome_sequence[first_codon_start + (3 * i):first_codon_end + (3 * i)]
-                    if is_stop_codon(codon):
+                    if is_stop_codon(codon, strand):
                         return True
             return False
 
@@ -567,7 +567,7 @@ class ChromosomeProcessor:
         self.annotated_seq.handle_deletion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
-        region = self.annotated_seq.get_region_by_position(inserted_mutation.position)
+        region, _ = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False
@@ -580,15 +580,21 @@ class ChromosomeProcessor:
                 start, end = self.annotated_seq.get_encapsulating_trinuc_positions(inserted_mutation.position)
                 # assuming sequence has been mutated already!
                 codon = self.chromosome_sequence[start:end]
-                if is_stop_codon(codon):
+                if is_stop_codon(codon, strand):
                     return True
             return False
 
         else:
             raise Exception("unknown annotation")
 
-def is_stop_codon(codon : str) -> bool:
-    return codon in ['TAG','TAA','TGA']
+def is_stop_codon(codon : str, strand: int) -> bool:
+    if strand == Strand.FORWARD:
+        return codon in ['TAG', 'TAA', 'TGA']
+
+    if strand == Strand.REVERSE:
+        return codon in ['CTA', 'TTA', 'TCA']
+
+    return False
 
 # TODO use self.annotated_seq.get_regions()?
 # parse mutation model pickle file
