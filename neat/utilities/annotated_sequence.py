@@ -28,7 +28,9 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 
     def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, int):
         gene_ids = gene_elements_df.index[
-            (gene_elements_df['start'] <= start) & (end <= gene_elements_df['end'])].tolist()
+            (gene_elements_df['start'] - 1 <= start) & (end <= gene_elements_df['end'])].tolist()
+        # gene_elements_df['start'] - 1 correction is because of some bug in pybedtools
+
         if len(gene_ids) < 1:
             return 0, Strand.UNKNOWN.value
         if len(gene_ids) > 1:
@@ -86,11 +88,10 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 # cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
                 gene_elements_df = gene_elements.to_dataframe()
-                gene_elements_df['start'] -= 1 # this correction is because of some bug in pybedtools
                 cds_genes_intergenics[['gene','strand']] = cds_genes_intergenics.apply(
                     lambda x: assign_gene(x['start'], x['end'], gene_elements_df), axis=1, result_type='expand')
 
-
+                # add_reading_frames_test(cds_genes_intergenics, str(chrom.chrom))
 
                 all_chroms_annotaions.append(cds_genes_intergenics)
             #TODO remove index column - can I use the start column as the index?
@@ -99,6 +100,31 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
             return all_chroms_annotaions
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
+
+
+# TODO for test. remove later
+# def add_reading_frames_test(annotations_df, chromosome):
+#     if annotations_df is None or annotations_df.empty:
+#         return
+#
+#     for gene in annotations_df.gene.unique():
+#         if gene == 0:
+#             continue # intergenic region
+#
+#         cds_annotations = annotations_df[(annotations_df['gene'] == gene) &
+#                                             (annotations_df['region'] == Region.CDS.value)]
+#         cds_total_len = cds_annotations['end'].sum()-cds_annotations['start'].sum()
+#         if cds_total_len % 3 != 0:
+#             #TODO raise Exception?
+#             print(f'Total length of CDS elements in gene {gene} in chromosome {chromosome} '
+#                             f'cannot be divided by 3')
+#         reading_offset = 0
+#         for _, annotation in cds_annotations.iterrows():
+#             annotation['reading_offset'] = reading_offset
+#             reading_offset += annotation['end'] - annotation['start']
+#             reading_offset = reading_offset % 3
+
+
 
 
 class AnnotatedSequence:
@@ -131,6 +157,8 @@ class AnnotatedSequence:
 
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
+
+        self._add_reading_frames()
 
     def len(self):
         if self._annotations_df is None or self._annotations_df.empty:
@@ -165,11 +193,11 @@ class AnnotatedSequence:
             raise Exception("Trinuc is only relevant for CDS region")
         cds_start = cds.iloc[0]['start'].item()
         cds_end = cds.iloc[0]['end'].item()
-        reading_frame_offset = cds.iloc[0]['reading_frame_offset'].item() + (pos - cds_start)
-        reading_frame_offset = reading_frame_offset % 3
-        first = pos - reading_frame_offset
-        second = pos + 1 - reading_frame_offset
-        third = pos + 2 - reading_frame_offset
+        reading_offset = cds.iloc[0]['reading_offset'].item() + (pos - cds_start)
+        reading_offset = reading_offset % 3
+        first = pos - reading_offset
+        second = pos + 1 - reading_offset
+        third = pos + 2 - reading_offset
 
         if first < cds_start or second < cds_start:
             prev_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
@@ -316,6 +344,27 @@ class AnnotatedSequence:
                     self._cached_mask_in_window_per_region[region], mask * annotation_length)
 
         return self._cached_mask_in_window_per_region[region]
+
+    def _add_reading_frames(self):
+        if self._annotations_df is None or self._annotations_df.empty:
+            return
+
+        for gene in self._annotations_df.gene.unique():
+            if gene == 0:
+                continue  # intergenic region
+
+            cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene) &
+                                             (self._annotations_df['region'] == Region.CDS.value)]
+            cds_total_len = cds_annotations['end'].sum() - cds_annotations['start'].sum()
+            if cds_total_len % 3 != 0:
+                # TODO raise Exception?
+                print(f'Total length of CDS elements in gene {gene} in chromosome {self._chromosome} '
+                      f'cannot be divided by 3')
+            reading_offset = 0
+            for _, annotation in cds_annotations.iterrows():
+                annotation['reading_offset'] = reading_offset
+                reading_offset += annotation['end'] - annotation['start']
+                reading_offset = reading_offset % 3
 
 
 if __name__ == "__main__":
