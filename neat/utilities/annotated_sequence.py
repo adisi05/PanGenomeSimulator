@@ -172,7 +172,7 @@ class AnnotatedSequence:
 
     def get_annotations_in_range(self, start, end) -> pd.DataFrame:
         annotations = self._annotations_df[(start < self._annotations_df['end'] ) &
-                                           (self._annotations_df['start'] <= end)]
+                                           (self._annotations_df['start'] < end)]
         return annotations
 
     def mute_encapsulating_gene(self, pos):
@@ -254,7 +254,7 @@ class AnnotatedSequence:
     def get_nucleotides_counts_per_region(self, start=-1, end=-1):
         start = start if start != -1 else 0
         end = end if end != -1 else self.len()
-        relevant_annotations = self.get_annotations_in_range(start, end - 1)
+        relevant_annotations = self.get_annotations_in_range(start, end)
         counts_per_region = {}
         for _, annotation in relevant_annotations.iterrows():
             region = annotation['region'].item()
@@ -276,7 +276,7 @@ class AnnotatedSequence:
         self._mask_in_window_per_region = {region: np.array([]) for region in  self.get_regions()}
 
         # compute if no cache
-        relevant_annotations = self.get_annotations_in_range(start, end - 1)
+        relevant_annotations = self.get_annotations_in_range(start, end)
         for _, annotation in relevant_annotations.iterrows():
             region = annotation['region'].item()
             annotation_start = max(start, annotation['start'].item())

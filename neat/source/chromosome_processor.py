@@ -546,7 +546,7 @@ class ChromosomeProcessor:
 
     def handle_annotations_after_small_deletion(self, inserted_mutation: Mutation):
         mut_start = inserted_mutation.position
-        mut_end = inserted_mutation.position + len(inserted_mutation.ref_nucl) - 1
+        mut_end = inserted_mutation.position + len(inserted_mutation.ref_nucl)
         involved_annotations = self.annotated_seq.get_annotations_in_range(mut_start, mut_end)
         if len(involved_annotations) > 1:
             raise Exception("currently not supporting large deletions (SVs)")
