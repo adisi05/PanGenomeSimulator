@@ -82,6 +82,8 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 
 class AnnotatedSequence:
     _relevant_regions = []
+    # annotations are 0-based, the length of each is end-start
+    # (meaning end is not included in the annotation positions, it's the position right after)
     _annotations_df = None
     _chromosome = None
 
@@ -108,7 +110,7 @@ class AnnotatedSequence:
         return self._annotations_df.iloc[-1]['end'].item()
 
     def _get_annotation_by_position(self, pos) -> (pd.DataFrame, int):
-        condition = (self._annotations_df['start'] <= pos) & (self._annotations_df['end'] >= pos)
+        condition = (self._annotations_df['start'] <= pos) & (pos < self._annotations_df['end'])
         annotation_indices = self._annotations_df.index[condition].tolist()
         if len(annotation_indices) != 1:
             raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}")
@@ -123,19 +125,19 @@ class AnnotatedSequence:
         annotation, _ = self._get_annotation_by_position(pos)
         return annotation.iloc[0]['region'].item()
 
-    def get_annotation_start_end(self, pos) -> (int, int):
-        annotation, _ = self._get_annotation_by_position(pos)
-
-        return annotation.iloc[0, annotation.columns.get_loc('start')].item(),\
-               annotation.iloc[0, annotation.columns.get_loc('end')].item()
+    # def get_annotation_start_end(self, pos) -> (int, int):
+    #     annotation, _ = self._get_annotation_by_position(pos)
+    #
+    #     return annotation.iloc[0]['start'].item(),\
+    #            annotation.iloc[0]['end'].item()
 
     def get_encapsulating_trinuc_positions(self, pos):
         cds, _ = self._get_annotation_by_position(pos)
         if cds.iloc[0]['region'].item() != Region.CDS.value:
             raise Exception("Trinuc is only relevant for CDS region")
-        cds_start = cds.iloc[0, cds.columns.get_loc('start')].item()
-        cds_end = cds.iloc[0, cds.columns.get_loc('end')].item()
-        reading_frame_offset = cds.iloc[0, cds.columns.get_loc('reading_frame_offset')].item() + (pos - cds_start)
+        cds_start = cds.iloc[0]['start'].item()
+        cds_end = cds.iloc[0]['end'].item()
+        reading_frame_offset = cds.iloc[0]['reading_frame_offset'].item() + (pos - cds_start)
         reading_frame_offset = reading_frame_offset % 3
         first = pos - reading_frame_offset
         second = pos + 1 - reading_frame_offset
@@ -143,23 +145,23 @@ class AnnotatedSequence:
 
         if first < cds_start or second < cds_start:
             prev_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
-                                            (self._annotations_df['end'] < cds_start)]
+                                            (self._annotations_df['end'] <= cds_start)]
             if len(prev_cds.index) != 1:
                 raise Exception(f"Can't determine previous CDS for chromosome {self._chromosome} index {pos}")
-            prev_cds_end = prev_cds.iloc[0, cds.columns.get_loc('end')].item()
+            prev_cds_end = prev_cds.iloc[0]['end'].item()
             if second < cds_start:
-                second = prev_cds_end
-                first =  prev_cds_end - 1
+                second = prev_cds_end - 1
+                first =  prev_cds_end - 2
             elif first < cds_start:
-                first = prev_cds_end
+                first = prev_cds_end - 1
 
-        if cds_end < second or cds_end < third:
+        if cds_end <= second or cds_end <= third:
             next_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
-                                            (self._annotations_df['start'] > pos)]
+                                            (cds_end <= self._annotations_df['start'])]
             if len(next_cds.index) != 1:
                 raise Exception(f"Can't determine next CDS for chromosome {self._chromosome} index {pos}")
-            next_cds_start = prev_cds.iloc[0, cds.columns.get_loc('start')].item()
-            if cds_end < second:
+            next_cds_start = prev_cds.iloc[0]['start'].item()
+            if cds_end <= second:
                 second = next_cds_start
                 third = next_cds_start + 1
             elif cds_end < third:
@@ -169,13 +171,13 @@ class AnnotatedSequence:
 
 
     def get_annotations_in_range(self, start, end) -> pd.DataFrame:
-        annotations = self._annotations_df[(start <= self._annotations_df['end'] ) &
+        annotations = self._annotations_df[(start < self._annotations_df['end'] ) &
                                            (self._annotations_df['start'] <= end)]
         return annotations
 
     def mute_encapsulating_gene(self, pos):
         annotation, annotation_index = self._get_annotation_by_position(pos)
-        gene = annotation.iloc[0, annotation.columns.get_loc('gene')].item()
+        gene = annotation.iloc[0]['gene'].item()
         gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene)].tolist()
         first_index = gene_annotations_indices[0]
         last_index = gene_annotations_indices[-1]
@@ -213,7 +215,6 @@ class AnnotatedSequence:
         if index + 1 != len(self._annotations_df):
             self._annotations_df.iloc[index+1:]['start'] += insertion_len
             self._annotations_df.iloc[index+1:]['end'] += insertion_len
-        # TODO should implement special behaviour to CDS because of framshift?
 
 
     def handle_deletion(self, pos, deletion_len):
@@ -224,7 +225,7 @@ class AnnotatedSequence:
         :return:
         """
         annotation, index = self._get_annotation_by_position(pos)
-        annotation_residue = self._annotations_df.iloc[index]['end'].item() - pos
+        annotation_residue = self._annotations_df.iloc[index]['end'].item() - pos - 1
         deleted_already = min(annotation_residue, deletion_len)
         annotation['end'] = annotation['end'] - deleted_already
         index += 1
@@ -234,7 +235,7 @@ class AnnotatedSequence:
             annotations_to_delete = []
             while deleted_already < deletion_len and index < len(self._annotations_df):
                 annotation_len = self._annotations_df.iloc[index]['end'].item() - \
-                                 self._annotations_df.iloc[index]['start'].item() + 1
+                                 self._annotations_df.iloc[index]['start'].item()
                 if annotation_len <= deletion_len - deleted_already:
                     annotations_to_delete.append(index)
                     deleted_already += annotation_len
@@ -260,8 +261,8 @@ class AnnotatedSequence:
             if region not in counts_per_region:
                 counts_per_region[region] = 0
             region_start = max(start, annotation['start'].item())
-            region_end = min(end - 1, annotation['end'].item())
-            counts_per_region[region] += region_end - region_start + 1
+            region_end = min(end, annotation['end'].item())
+            counts_per_region[region] += region_end - region_start
         return counts_per_region
 
     def get_mask_in_window_of_region(self, relevant_region, start, end):
@@ -279,11 +280,17 @@ class AnnotatedSequence:
         for _, annotation in relevant_annotations.iterrows():
             region = annotation['region'].item()
             annotation_start = max(start, annotation['start'].item())
-            annotation_end = min(end - 1, annotation['end'].item())
-            annotation_length = annotation_end - annotation_start + 1
+            annotation_end = min(end, annotation['end'].item())
+            annotation_length = annotation_end - annotation_start
             for region in  self._mask_in_window_per_region.keys():
                 mask = 1 if region == relevant_region else 0
                 self._mask_in_window_per_region[region] = np.concatenate(
                     self._mask_in_window_per_region[region], mask * annotation_length)
 
         return self._mask_in_window_per_region[region]
+
+
+if __name__ == "__main__":
+    file = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3'
+    dir = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
+    seperate_cds_genes_intergenics(file, dir)
