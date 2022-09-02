@@ -82,10 +82,17 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 
 class AnnotatedSequence:
     _relevant_regions = []
-    # annotations are 0-based, the length of each is end-start
-    # (meaning end is not included in the annotation positions, it's the position right after)
-    _annotations_df = None
     _chromosome = None
+    """
+    annotations are 0-based, the length of each is end-start
+    (meaning end is not included in the annotation positions, it's the position right after)
+    """
+    _annotations_df = None
+
+    """ Cache parameters for recent window """
+    _cached_start = None
+    _cached_end = None
+    _cached_mask_in_window_per_region = None
 
     def __init__(self, annotations_df: pd.DataFrame, chromosome : str):
         self._chromosome = chromosome
@@ -265,15 +272,15 @@ class AnnotatedSequence:
             counts_per_region[region] += region_end - region_start
         return counts_per_region
 
-    def get_mask_in_window_of_region(self, relevant_region, start, end):
+    def get_mask_in_window_of_region(self, relevant_region, start, end) -> dict[Region, np.array]:
         # if cache is valid and contains the region - return it
-        if start == self._recent_start and end == self._recent_end and relevant_region in self._mask_in_window_per_region:
-            return self._mask_in_window_per_region[relevant_region]
+        if start == self._cached_start and end == self._cached_end and relevant_region in self._cached_mask_in_window_per_region:
+            return self._cached_mask_in_window_per_region[relevant_region]
 
         # else - initialize cache
-        self._recent_start = start
-        self._recent_end = end
-        self._mask_in_window_per_region = {region: np.array([]) for region in  self.get_regions()}
+        self._cached_start = start
+        self._cached_end = end
+        self._cached_mask_in_window_per_region = {region: np.array([]) for region in self.get_regions()}
 
         # compute if no cache
         relevant_annotations = self.get_annotations_in_range(start, end)
@@ -282,12 +289,12 @@ class AnnotatedSequence:
             annotation_start = max(start, annotation['start'].item())
             annotation_end = min(end, annotation['end'].item())
             annotation_length = annotation_end - annotation_start
-            for region in  self._mask_in_window_per_region.keys():
+            for region in  self._cached_mask_in_window_per_region.keys():
                 mask = 1 if region == relevant_region else 0
-                self._mask_in_window_per_region[region] = np.concatenate(
-                    self._mask_in_window_per_region[region], mask * annotation_length)
+                self._cached_mask_in_window_per_region[region] = np.concatenate(
+                    self._cached_mask_in_window_per_region[region], mask * annotation_length)
 
-        return self._mask_in_window_per_region[region]
+        return self._cached_mask_in_window_per_region[region]
 
 
 if __name__ == "__main__":
