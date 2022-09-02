@@ -185,7 +185,7 @@ class ChromosomeProcessor:
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.annotated_seq = AnnotatedSequence(annotations_df) #TODO save annotations in an annotated sequence DS
+        self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name)
         self.update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
 
@@ -567,7 +567,7 @@ class ChromosomeProcessor:
         self.annotated_seq.handle_deletion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation) -> bool:
-        region, _ = self.annotated_seq.get_region_by_position(inserted_mutation.position)
+        region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
             return False

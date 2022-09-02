@@ -147,8 +147,11 @@ class AnnotatedSequence:
             self._relevant_regions.append(Region.ALL)
             return
 
-        self._annotations_df = annotations_df[annotations_df['chrom'] == chromosome].copy()
-        del self._annotations_df['chrom']
+        if 'chrom' in annotations_df.columns:
+            self._annotations_df = annotations_df[annotations_df['chrom'] == chromosome].copy()
+            del self._annotations_df['chrom']
+        else:
+            self._annotations_df = annotations_df.copy()
 
         # TODO set 'start' as index? or reset index in some other way???
 

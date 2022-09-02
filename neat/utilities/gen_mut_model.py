@@ -48,15 +48,16 @@ class Stats(Enum):
 class RegionStats:
     def __init__(self, annotations_df = None):
         self._regions_stats = {Region.ALL: self.create_stats_dict()}
-        _annotated_sequence = AnnotatedSequence(None)
+        self._annotated_sequence = {}
         if annotations_df:
             self._regions_stats[Region.CDS] = self.create_stats_dict()
             self._regions_stats[Region.NON_CODING_GENE] = self.create_stats_dict()
             self._regions_stats[Region.INTERGENIC] = self.create_stats_dict()
-            _annotated_sequence = AnnotatedSequence(annotations_df)
+            for chrom in annotations_df.chrom.unique():
+                self._annotated_sequence_per_chrom[chrom] = AnnotatedSequence(annotations_df, chrom)
 
     def get_region(self, chrom, index): #TODO what's up with the chromosome?
-        region, _ = self._annotated_sequence.get_region_by_position(index)
+        region, _ = self._annotated_sequence_per_chrom[chrom].get_region_by_position(index)
         return region
 
     def get_stat_by_region(self, region_name, stat_name):
