@@ -180,12 +180,12 @@ class ChromosomeProcessor:
     Container for reference sequences, applies mutations
     """
 
-    def __init__(self, chromosome_name, chromosome_sequence, annotations_df, mut_models=None, mut_rate=None, dist=None):
+    def __init__(self, chromosome_name, chromosome_sequence, annotations_df, annotations_sorted=False, mut_models=None, mut_rate=None, dist=None):
         self.chromosome_name = chromosome_name
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name)
+        self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted)
         self.update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
 

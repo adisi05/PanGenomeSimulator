@@ -81,7 +81,6 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
 
                 cds_genes_intergenics = pd.concat([cds_elements_df, non_coding_gene_elements_df, intergenic_elements_df], ignore_index=True)
                 cds_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
-                cds_genes_intergenics = cds_genes_intergenics.reset_index(drop=True)
                 cds_genes_intergenics.insert(0,'chrom', str(chrom.chrom))
                 cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
@@ -94,8 +93,7 @@ def seperate_cds_genes_intergenics(annotations_file, working_dir):
                 # add_reading_frames_test(cds_genes_intergenics, str(chrom.chrom))
 
                 all_chroms_annotaions.append(cds_genes_intergenics)
-            #TODO remove index column - can I use the start column as the index?
-            all_chroms_annotaions = pd.concat(all_chroms_annotaions)
+            all_chroms_annotaions = pd.concat(all_chroms_annotaions).reset_index(drop=True)
             all_chroms_annotaions.to_csv('all_chroms_annotaions.csv')
             return all_chroms_annotaions
         except IOError:
@@ -141,7 +139,7 @@ class AnnotatedSequence:
     _cached_end = None
     _cached_mask_in_window_per_region = None
 
-    def __init__(self, annotations_df: pd.DataFrame, chromosome : str):
+    def __init__(self, annotations_df: pd.DataFrame, chromosome : str, is_sorted : bool =False):
         self._chromosome = chromosome
         if annotations_df is None or annotations_df.empty:
             self._relevant_regions.append(Region.ALL)
@@ -150,10 +148,14 @@ class AnnotatedSequence:
         if 'chrom' in annotations_df.columns:
             self._annotations_df = annotations_df[annotations_df['chrom'] == chromosome].copy()
             del self._annotations_df['chrom']
+            self._annotations_df.reset_index(drop=True, inplace=True)
         else:
             self._annotations_df = annotations_df.copy()
 
-        # TODO set 'start' as index? or reset index in some other way???
+        if not is_sorted:
+            self._annotations_df.sort_values('start', inplace=True)
+            self._annotations_df.reset_index(drop=True, inplace=True)
+
 
         relevant_region_names = self._annotations_df['region'].unique()
         self._relevant_regions = [Region(name) for name in relevant_region_names]
@@ -178,7 +180,7 @@ class AnnotatedSequence:
     def get_regions(self):
         return self._relevant_regions
 
-    def get_region_by_position(self, pos) -> (Region, Strand): #TODO return strand as int
+    def get_region_by_position(self, pos) -> (Region, Strand):
         if not self._annotations_df:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(pos)
@@ -218,7 +220,7 @@ class AnnotatedSequence:
             next_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]
             if len(next_cds.index) != 1:
-                raise Exception(f"Can't determine next CDS for chromosome {self._chromosome} index {pos}")
+                raise Exception(f"Can't determine next CDS for chromosome {self._chromosome} position {pos}")
             next_cds_start = prev_cds.iloc[0]['start'].item()
             if cds_end <= second:
                 second = next_cds_start
@@ -256,12 +258,13 @@ class AnnotatedSequence:
         intergenic_end = self._annotations_df.iloc[last_index]['end'].item()
         new_intergenic = pd.DataFrame({'start': intergenic_start,
                                        'end': intergenic_end,
-                                       'region': Region.INTERGENIC.value}) #TODO add index?
+                                       'region': Region.INTERGENIC.value},
+                                      index=[first_index])
 
         # insert new intergenic region instead of muted gene
         dfs_to_concat = []
         if(first_index != 0):
-            dfs_to_concat.append(self._annotations_df.iloc[:first_index - 1])
+            dfs_to_concat.append(self._annotations_df.iloc[:first_index])
         dfs_to_concat.append(new_intergenic)
         if(last_index + 1 != len(self._annotations_df)):
             dfs_to_concat.append(self._annotations_df.iloc[last_index + 1:])

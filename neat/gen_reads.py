@@ -247,7 +247,7 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, c
     current_chrom_given_valid_variants = prune_invalid_variants(chrom, variants_from_vcf, index_params["ref_index"],
                                                      chrom_sequence)
     chrom_annotations_df = annotations_df[annotations_df['chrom']==chrom]
-    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, mut_model=mutation_params["mut_model"], mut_rate = mutation_params["mut_rate"], dist = mutation_params["dist"])
+    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True, mut_model=mutation_params["mut_model"], mut_rate = mutation_params["mut_rate"], dist = mutation_params["dist"])
 
     #TODO add large random structural variants
 
