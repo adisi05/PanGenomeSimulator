@@ -9,9 +9,9 @@ import time
 import os
 import pandas as pd
 
-from neat.source.bam_file_writer import BamFileWriter
+# from neat.source.bam_file_writer import BamFileWriter
 from neat.source.fasta_file_writer import FastaFileWriter
-from neat.source.fastq_file_writer import FastqFileWriter
+# from neat.source.fastq_file_writer import FastqFileWriter
 from neat.source.vcf_file_writer import VcfFileWriter
 from neat.source.vcf_func import parse_vcf
 
@@ -213,7 +213,7 @@ def get_output_filenames(prefix, name):
     res.extend(FastaFileWriter.get_output_filenames(prefix, name))
     res.extend(FastqFileWriter.get_output_filenames(prefix, name))
     res.extend(VcfFileWriter.get_output_filenames(prefix, name))
-    res.extend(BamFileWriter.get_output_filenames(prefix, name))
+    # res.extend(BamFileWriter.get_output_filenames(prefix, name))
     return res
 
 

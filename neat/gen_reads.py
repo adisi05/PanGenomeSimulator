@@ -22,7 +22,7 @@ import time
 import os
 import pandas as pd
 
-from neat.source.fastq_file_writer import FastqFileWriter
+# from neat.source.fastq_file_writer import FastqFileWriter
 from source.chromosome_processor import ChromosomeProcessor, parse_input_mutation_model
 from source.fasta_file_writer import FastaFileWriter
 from source.input_checking import check_file_open, is_in_range

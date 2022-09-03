@@ -3,7 +3,7 @@ import numpy as np
 from dendropy import Taxon
 import ete3
 
-from neat.source.SequenceContainer import SequenceContainer, parse_input_mutation_model
+# from neat.source.SequenceContainer import SequenceContainer, parse_input_mutation_model
 
 
 def test_dendropy_params(newick_file,fasta_file):
