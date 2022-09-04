@@ -1,5 +1,6 @@
 import os
 from os.path import exists
+from typing import Optional
 
 import numpy as np
 import pybedtools
@@ -14,14 +15,14 @@ def to_annotations_df(args, working_dir):
     if args.b:
         print('Processing bed/gff file...')
         try:
-            annotations_df = seperate_cds_genes_intergenics(args.b, working_dir)
+            annotations_df = separate_cds_genes_intergenics(args.b, working_dir)
             annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
             # TODO validate chromosome length are same as in reference
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
     return annotations_df
 
-def seperate_cds_genes_intergenics(annotations_file, working_dir):
+def separate_cds_genes_intergenics(annotations_file, working_dir):
     # GENE_ID = 'gene_id'
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
@@ -177,7 +178,7 @@ class AnnotatedSequence:
             raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}")
         return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
 
-    def get_regions(self):
+    def get_regions(self) -> list[Region]:
         return self._relevant_regions
 
     def get_region_by_position(self, pos) -> (Region, Strand):
@@ -186,16 +187,37 @@ class AnnotatedSequence:
         annotation, _ = self._get_annotation_by_position(pos)
         return annotation.iloc[0]['region'].item(), Strand(annotation.iloc[0]['strand'].item())
 
-    # def get_annotation_start_end(self, pos) -> (int, int):
-    #     annotation, _ = self._get_annotation_by_position(pos)
-    #
-    #     return annotation.iloc[0]['start'].item(),\
-    #            annotation.iloc[0]['end'].item()
+    def get_annotation_start_end(self, pos) -> (int, int):
+        annotation, _ = self._get_annotation_by_position(pos)
 
-    def get_encapsulating_trinuc_positions(self, pos):
+        return annotation.iloc[0]['start'].item(),\
+               annotation.iloc[0]['end'].item()
+
+    def get_last_coding_position_of_encapsulating_gene(self, pos) -> (Optional[int], Strand):
+        annotation, annotation_index = self._get_annotation_by_position(pos)
+
+        gene = annotation.iloc[0]['gene'].item()
+        if not gene or gene == 0:
+            raise Exception("Coding positions are only relevant for genes")
+
+        strand = Strand(annotation.iloc[0]['strand'].item())
+        if strand == Strand.UNKNOWN:
+            return None, strand
+
+        gene_cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene) &
+                                                    (self._annotations_df['region'] == Region.CDS.value)]
+
+        if strand == Strand.FORWARD:
+            last_cds = gene_cds_annotations[-1]
+            return last_cds['end'].item() - 1, strand
+        else:
+            last_cds = gene_cds_annotations[0]
+            return last_cds['start'].item(), strand
+
+    def get_encapsulating_codon_positions(self, pos) -> (int, int, int):
         cds, _ = self._get_annotation_by_position(pos)
         if cds.iloc[0]['region'].item() != Region.CDS.value:
-            raise Exception("Trinuc is only relevant for CDS region")
+            raise Exception("Codon is only relevant for CDS region")
         cds_start = cds.iloc[0]['start'].item()
         cds_end = cds.iloc[0]['end'].item()
         reading_offset = cds.iloc[0]['reading_offset'].item() + (pos - cds_start)
@@ -221,7 +243,7 @@ class AnnotatedSequence:
                                             (cds_end <= self._annotations_df['start'])]
             if len(next_cds.index) != 1:
                 raise Exception(f"Can't determine next CDS for chromosome {self._chromosome} position {pos}")
-            next_cds_start = prev_cds.iloc[0]['start'].item()
+            next_cds_start = next_cds.iloc[0]['start'].item()
             if cds_end <= second:
                 second = next_cds_start
                 third = next_cds_start + 1
@@ -236,7 +258,7 @@ class AnnotatedSequence:
                                            (self._annotations_df['start'] < end)]
         return annotations
 
-    def mute_encapsulating_gene(self, pos):
+    def mute_encapsulating_gene(self, pos) -> None:
         annotation, annotation_index = self._get_annotation_by_position(pos)
         gene = annotation.iloc[0]['gene'].item()
         gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene)].tolist()
@@ -271,7 +293,7 @@ class AnnotatedSequence:
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
 
-    def handle_insertion(self, pos, insertion_len):
+    def handle_insertion(self, pos, insertion_len) -> None:
         _, index = self._get_annotation_by_position(pos)
         self._annotations_df.iloc[index]['end'] += insertion_len
         if index + 1 != len(self._annotations_df):
@@ -279,7 +301,7 @@ class AnnotatedSequence:
             self._annotations_df.iloc[index+1:]['end'] += insertion_len
 
 
-    def handle_deletion(self, pos, deletion_len):
+    def handle_deletion(self, pos, deletion_len) -> None:
         """
         Delete right after pos, sequence at the length deletion_len
         :param start:
@@ -292,28 +314,28 @@ class AnnotatedSequence:
         annotation['end'] = annotation['end'] - deleted_already
         index += 1
 
+        annotations_to_delete = []
         # deletion involves more than one annotation
-        if deleted_already < deletion_len:
-            annotations_to_delete = []
-            while deleted_already < deletion_len and index < len(self._annotations_df):
-                annotation_len = self._annotations_df.iloc[index]['end'].item() - \
-                                 self._annotations_df.iloc[index]['start'].item()
-                if annotation_len <= deletion_len - deleted_already:
-                    annotations_to_delete.append(index)
-                    deleted_already += annotation_len
-                else:
-                    self._annotations_df.iloc[index]['start'] = pos + 1
-                    self._annotations_df.iloc[index]['end'] = (pos + annotation_len) - (deletion_len - deleted_already)
-                    deleted_already = deletion_len
-                index += 1
+        while deleted_already < deletion_len and index < len(self._annotations_df):
+            annotation_len = self._annotations_df.iloc[index]['end'].item() - \
+                             self._annotations_df.iloc[index]['start'].item()
+            if annotation_len <= deletion_len - deleted_already:
+                annotations_to_delete.append(index)
+                deleted_already += annotation_len
+            else:
+                self._annotations_df.iloc[index]['start'] = pos + 1
+                self._annotations_df.iloc[index]['end'] = (pos + annotation_len) - (deletion_len - deleted_already)
+                deleted_already = deletion_len
+            index += 1
 
         if index != len(self._annotations_df):
             self._annotations_df.iloc[index:]['start'] -= deletion_len
             self._annotations_df.iloc[index:]['end'] -= deletion_len
 
-        self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
+        if len(annotations_to_delete):
+            self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
 
-    def get_nucleotides_counts_per_region(self, start=-1, end=-1):
+    def get_nucleotides_counts_per_region(self, start=-1, end=-1) -> dict:
         start = start if start != -1 else 0
         end = end if end != -1 else self.len()
         relevant_annotations = self.get_annotations_in_range(start, end)
@@ -340,18 +362,17 @@ class AnnotatedSequence:
         # compute if no cache
         relevant_annotations = self.get_annotations_in_range(start, end)
         for _, annotation in relevant_annotations.iterrows():
-            region = annotation['region'].item()
             annotation_start = max(start, annotation['start'].item())
             annotation_end = min(end, annotation['end'].item())
             annotation_length = annotation_end - annotation_start
-            for region in  self._cached_mask_in_window_per_region.keys():
+            for region in self._cached_mask_in_window_per_region.keys():
                 mask = 1 if region == relevant_region else 0
                 self._cached_mask_in_window_per_region[region] = np.concatenate(
                     self._cached_mask_in_window_per_region[region], mask * annotation_length)
 
-        return self._cached_mask_in_window_per_region[region]
+        return self._cached_mask_in_window_per_region[relevant_region]
 
-    def _add_reading_frames(self):
+    def _add_reading_frames(self): #TODO move to creation of dataframe?
         if self._annotations_df is None or self._annotations_df.empty:
             return
 
@@ -376,6 +397,6 @@ class AnnotatedSequence:
 if __name__ == "__main__":
     file = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3'
     dir = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
-    seperate_cds_genes_intergenics(file, dir)
+    separate_cds_genes_intergenics(file, dir)
 
     #ID=gene:AT1G01100;Name=RPP1A;biotype=protein_coding;description=60S acidic ribosomal protein P1-1 [Source:UniProtKB/Swiss-Prot%3BAcc:Q8LCW9];gene_id=AT1G01100;logic_name=araport11
