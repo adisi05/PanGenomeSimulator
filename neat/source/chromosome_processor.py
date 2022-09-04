@@ -516,7 +516,7 @@ class ChromosomeProcessor:
             is_stop = is_stop_codon(codon, strand)
             is_last_codon = self.is_last_coding_position(start, end)
             if  (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
-                self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
+                self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
                 return True
             return False
         else:
@@ -524,7 +524,7 @@ class ChromosomeProcessor:
 
     def handle_annotations_after_small_insertion(self, inserted_mutation: Mutation):
         if self.should_mute_gene_after_small_insertion(inserted_mutation):
-            self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
+            self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
         self.annotated_seq.handle_insertion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
@@ -570,7 +570,7 @@ class ChromosomeProcessor:
             #     ...
 
         if self.should_mute_gene_after_small_deletion(inserted_mutation):
-            self.annotated_seq.mute_encapsulating_gene(inserted_mutation.position)
+            self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
         self.annotated_seq.handle_deletion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation : Mutation) -> bool:

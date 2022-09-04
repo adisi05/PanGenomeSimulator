@@ -27,19 +27,6 @@ def separate_cds_genes_intergenics(annotations_file, working_dir):
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
 
-    def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, int):
-        gene_ids = gene_elements_df.index[
-            (gene_elements_df['start'] - 1 <= start) & (end <= gene_elements_df['end'])].tolist()
-        # gene_elements_df['start'] - 1 correction is because of some bug in pybedtools
-
-        if len(gene_ids) < 1:
-            return 0, Strand.UNKNOWN.value
-        if len(gene_ids) > 1:
-            # We assume genes from different strands don't overlap, but if it happens nonetheless - ignore
-            return 0, Strand.UNKNOWN.value
-        strand = Strand(gene_elements_df.iloc[gene_ids[0]]['strand'])
-        return gene_ids[0] + 1, strand.value # indecies in pandas are 0-based
-
     if working_dir:
         os.chdir(working_dir)
     #TODO just for debug. Remove later
@@ -99,6 +86,19 @@ def separate_cds_genes_intergenics(annotations_file, working_dir):
             return all_chroms_annotaions
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
+
+def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, int):
+    gene_ids = gene_elements_df.index[
+        (gene_elements_df['start'] - 1 <= start) & (end <= gene_elements_df['end'])].tolist()
+    # gene_elements_df['start'] - 1 correction is because of some bug in pybedtools
+
+    if len(gene_ids) < 1:
+        return 0, Strand.UNKNOWN.value
+    if len(gene_ids) > 1:
+        # We assume genes from different strands don't overlap, but if it happens nonetheless - ignore
+        return 0, Strand.UNKNOWN.value
+    strand = Strand(gene_elements_df.iloc[gene_ids[0]]['strand'])
+    return gene_ids[0] + 1, strand.value # indices in pandas are 0-based
 
 
 # TODO for test. remove later
@@ -164,7 +164,8 @@ class AnnotatedSequence:
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
 
-        self._add_reading_frames()
+        self._update_reading_frames()
+        self._discard_genes_without_strand()
 
     def len(self):
         if self._annotations_df is None or self._annotations_df.empty:
@@ -258,10 +259,13 @@ class AnnotatedSequence:
                                            (self._annotations_df['start'] < end)]
         return annotations
 
-    def mute_encapsulating_gene(self, pos) -> None:
-        annotation, annotation_index = self._get_annotation_by_position(pos)
-        gene = annotation.iloc[0]['gene'].item()
-        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene)].tolist()
+    def mute_gene(self, position_on_gene : int = -1, gene_id : int = 0) -> None:
+        if 0 <= position_on_gene < self.len():
+            annotation, annotation_index = self._get_annotation_by_position(position_on_gene)
+            gene_id = annotation.iloc[0]['gene'].item()
+        if gene_id == 0:
+            return
+        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene_id)].tolist()
         first_index = gene_annotations_indices[0]
         last_index = gene_annotations_indices[-1]
 
@@ -285,10 +289,10 @@ class AnnotatedSequence:
 
         # insert new intergenic region instead of muted gene
         dfs_to_concat = []
-        if(first_index != 0):
+        if first_index != 0:
             dfs_to_concat.append(self._annotations_df.iloc[:first_index])
         dfs_to_concat.append(new_intergenic)
-        if(last_index + 1 != len(self._annotations_df)):
+        if last_index + 1 != len(self._annotations_df):
             dfs_to_concat.append(self._annotations_df.iloc[last_index + 1:])
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
@@ -304,14 +308,11 @@ class AnnotatedSequence:
     def handle_deletion(self, pos, deletion_len) -> None:
         """
         Delete right after pos, sequence at the length deletion_len
-        :param start:
-        :param end:
-        :return:
         """
         annotation, index = self._get_annotation_by_position(pos)
         annotation_residue = self._annotations_df.iloc[index]['end'].item() - pos - 1
         deleted_already = min(annotation_residue, deletion_len)
-        annotation['end'] = annotation['end'] - deleted_already
+        annotation['end'] -= deleted_already
         index += 1
 
         annotations_to_delete = []
@@ -341,7 +342,7 @@ class AnnotatedSequence:
         relevant_annotations = self.get_annotations_in_range(start, end)
         counts_per_region = {}
         for _, annotation in relevant_annotations.iterrows():
-            region = annotation['region'].item()
+            region = Region(annotation['region'].item())
             if region not in counts_per_region:
                 counts_per_region[region] = 0
             region_start = max(start, annotation['start'].item())
@@ -372,31 +373,47 @@ class AnnotatedSequence:
 
         return self._cached_mask_in_window_per_region[relevant_region]
 
-    def _add_reading_frames(self): #TODO move to creation of dataframe?
+    def _update_reading_frames(self):
         if self._annotations_df is None or self._annotations_df.empty:
             return
 
-        for gene in self._annotations_df.gene.unique():
-            if gene == 0:
+        gene_ids = self._annotations_df.gene.unique()
+        for gene_id in gene_ids:
+            if gene_id == 0:
                 continue  # intergenic region
 
-            cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene) &
+            cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id) &
                                              (self._annotations_df['region'] == Region.CDS.value)]
             cds_total_len = cds_annotations['end'].sum() - cds_annotations['start'].sum()
-            if cds_total_len % 3 != 0:
+
+            if cds_total_len % 3 == 0:
+                reading_offset = 0
+                for _, annotation in cds_annotations.iterrows():
+                    annotation['reading_offset'] = reading_offset
+                    reading_offset += annotation['end'].item() - annotation['start'].item()
+                    reading_offset = reading_offset % 3
+
+            else:
                 # TODO raise Exception?
-                print(f'Total length of CDS elements in gene {gene} in chromosome {self._chromosome} '
+                print(f'Total length of CDS elements in gene {gene_id} in chromosome {self._chromosome} '
                       f'cannot be divided by 3')
-            reading_offset = 0
-            for _, annotation in cds_annotations.iterrows():
-                annotation['reading_offset'] = reading_offset
-                reading_offset += annotation['end'] - annotation['start']
-                reading_offset = reading_offset % 3
+                self.mute_gene(gene_id=gene_id)
+
+    def _discard_genes_without_strand(self):
+        gene_ids = self._annotations_df.gene.unique()
+        for gene_id in gene_ids:
+            if gene_id == 0:
+                continue  # intergenic region
+
+            gene_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id)]
+            strand = Strand(gene_annotations.iloc[0]['strand'].item())
+            if strand == Strand.UNKNOWN:
+                self.mute_gene(gene_id=gene_id)
 
 
 if __name__ == "__main__":
-    file = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3'
-    dir = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
-    separate_cds_genes_intergenics(file, dir)
+    filename = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3'
+    dirname = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
+    separate_cds_genes_intergenics(filename, dirname)
 
     #ID=gene:AT1G01100;Name=RPP1A;biotype=protein_coding;description=60S acidic ribosomal protein P1-1 [Source:UniProtKB/Swiss-Prot%3BAcc:Q8LCW9];gene_id=AT1G01100;logic_name=araport11
