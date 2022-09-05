@@ -93,7 +93,6 @@ def extract_params(args):
         "accession": args.name,
         "out_prefix": args.o + '_' + args.name,
         "parent_prefix": args.o + '_' + args.parent_name if args.parent_name else None,
-        "save_bam": args.bam,
         "save_vcf": args.vcf,
         "no_fastq": args.no_fastq or args.internal,  # TODO maybe convert to save-fastq?
     }
@@ -127,10 +126,7 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     # check_file_open(input_params["input_vcf"], 'ERROR: could not open input VCF, {}'.format(input_params["input_vcf"]), required=False)
     check_file_open(input_params["input_bed"], 'ERROR: could not open input BED, {}'.format(input_params["input_bed"]),
                     required=False)
-    # if user specified no fastq, not fasta only, and no bam and no vcf, then print error and exit.
-    if output_params["no_fastq"] and not output_params["save_bam"] and not output_params["save_vcf"]:
-        print('\nERROR: No files would be written.\n')
-        sys.exit(1)
+    # TODO check mut bed file, and vcf?
     if (sequencing_params["fragment_size"] is None and sequencing_params["fragment_std"] is not None) or (
             sequencing_params["fragment_size"] is not None and sequencing_params["fragment_std"] is None):
         print('\nERROR: --pe argument takes 2 space-separated arguments.\n')
