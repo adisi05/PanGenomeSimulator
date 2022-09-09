@@ -184,10 +184,10 @@ class AnnotatedSequence:
         return self._relevant_regions
 
     def get_region_by_position(self, pos) -> (Region, Strand):
-        if not self._annotations_df:
+        if self._annotations_df is None or self._annotations_df.empty:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(pos)
-        return annotation.iloc[0]['region'].item(), Strand(annotation.iloc[0]['strand'].item())
+        return annotation.iloc[0]['region'], Strand(annotation.iloc[0]['strand'])
 
     def get_annotation_start_end(self, pos) -> (int, int):
         annotation, _ = self._get_annotation_by_position(pos)
@@ -359,18 +359,21 @@ class AnnotatedSequence:
         # else - initialize cache
         self._cached_start = start
         self._cached_end = end
-        self._cached_mask_in_window_per_region = {region: np.array([]) for region in self.get_regions()}
+        self._cached_mask_in_window_per_region = {region: [] for region in self.get_regions()}
 
         # compute if no cache
         relevant_annotations = self.get_annotations_in_range(start, end)
         for _, annotation in relevant_annotations.iterrows():
-            annotation_start = max(start, annotation['start'].item())
-            annotation_end = min(end, annotation['end'].item())
+            annotation_start = max(start, annotation['start'])
+            annotation_end = min(end, annotation['end'])
             annotation_length = annotation_end - annotation_start
             for region in self._cached_mask_in_window_per_region.keys():
                 mask = 1 if region == relevant_region else 0
-                self._cached_mask_in_window_per_region[region] = np.concatenate(
-                    self._cached_mask_in_window_per_region[region], mask * annotation_length)
+                if len(self._cached_mask_in_window_per_region[region]) > 0:
+                    self._cached_mask_in_window_per_region[region] = np.concatenate(
+                        [self._cached_mask_in_window_per_region[region], np.full(annotation_length, mask)])
+                else:
+                    self._cached_mask_in_window_per_region[region] = np.full(annotation_length, mask)
 
         return self._cached_mask_in_window_per_region[relevant_region]
 

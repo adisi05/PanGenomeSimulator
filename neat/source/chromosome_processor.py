@@ -231,7 +231,7 @@ class ChromosomeProcessor:
                 self.model_per_region[region][6].append(
                     [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
                      DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-            self.model_per_region[region][-1].append([m for m in data[9]])
+            self.model_per_region[region].append([m for m in data[9]])
 
 
     def get_window_mutations(self) -> RandomMutationPool: #NOTE: window can be also a whole non-N region or the entire chromosome
@@ -242,9 +242,9 @@ class ChromosomeProcessor:
     def get_planned_snps_and_indels_in_window_per_region(self) -> (dict, dict):
         indel_poisson_per_region = self.init_poisson(indels=True)
         snp_poisson_per_region = self.init_poisson(indels=False)
-        indels_to_add_window_per_region = {region: [n.sample() for n in indel_poisson_per_region[region]]
+        indels_to_add_window_per_region = {region: indel_poisson_per_region[region].sample()
                                                 for region in self.annotated_seq.get_regions()}
-        snps_to_add_window_per_region = {region: [n.sample() for n in snp_poisson_per_region[region]]
+        snps_to_add_window_per_region = {region: snp_poisson_per_region[region].sample()
                                               for region in self.annotated_seq.get_regions()}
         return indels_to_add_window_per_region, snps_to_add_window_per_region
 
@@ -265,7 +265,7 @@ class ChromosomeProcessor:
                 trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
                     self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
             self.trinuc_bias_per_region[region] = \
-                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[0+1:window_seq_len-1],
+                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region][0+1:window_seq_len-1],
                                      range(0+1,window_seq_len-1))
 
     def init_poisson(self, indels=True):
@@ -275,7 +275,7 @@ class ChromosomeProcessor:
                                                                                              self.window_unit.end)
         for region in self.annotated_seq.get_regions():
             param = self.model_per_region[region][2] if indels else (1. - self.model_per_region[region][2])
-            list_per_region[region].append(nucleotides_counts_per_region[region] * param * self.model_per_region[region][2])
+            list_per_region[region] = nucleotides_counts_per_region[region] * param * self.model_per_region[region][2]
             k_range = range(int(nucleotides_counts_per_region[region] * MAX_MUTFRAC))
             poisson_per_region[region] = poisson_list(k_range, list_per_region[region])
             # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
@@ -454,7 +454,7 @@ class ChromosomeProcessor:
         ref_end = ref_start + len(mutation.ref_nucl)
         window_shift = mutation.get_offset_change()
 
-        if mutation[1] != str(self.chromosome_sequence[ref_start:ref_end]):
+        if mutation.ref_nucl != str(self.chromosome_sequence[ref_start:ref_end]):
             print('\nError: Something went wrong!\n', mutation, [ref_start, ref_end],
                   str(self.chromosome_sequence[ref_start:ref_end]), '\n')
             sys.exit(1)

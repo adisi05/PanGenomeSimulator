@@ -246,7 +246,7 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, s
     # write all output variants for this reference
     #TODO write inserted_mutations - write_vcf?
 
-    print("Simulating chromosome {} took {} seconds.".format(index_params["ref_index"][chrom][0], int(time.time() - t_start)))
+    print(f"Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.")
 
 
 def get_input_variants_from_vcf(input_params):
