@@ -50,7 +50,7 @@ def simulate(args):
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
-    for chrom in range(1, len(index_params["ref_index"]) + 1):
+    for chrom in index_params["ref_list"]:
         simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df)
 
     # TODO translocation feature
@@ -149,7 +149,7 @@ def process_input_params(input_params):
     # # parse input variants, if present
     # load_input_variants(input_params, ploids)
     # parse input targeted regions, if present
-    load_input_regions(input_params, index_params["ref_list"])
+    # load_input_regions(input_params, index_params["ref_list"])
     # parse discard bed similarly
     return index_params
 
@@ -169,8 +169,8 @@ def index_reference(input_params):
     # ref_index2 = SeqIO.index(reference, 'fasta')
     index_params = {
         "ref_index": ref_index,
-        "indices_by_ref_name": {ref_index[n][0]: n for n in range(len(ref_index))},
-        "ref_list": [n[0] for n in ref_index],
+        "indices_by_ref_name": {chrom[0]: chrom for chrom in ref_index},  # TODO chrom[1:] ?
+        "ref_list": [chrom[0] for chrom in ref_index],
         "line_width": line_width
     }
     end = time.time()
@@ -178,40 +178,40 @@ def index_reference(input_params):
     return index_params
 
 
-def load_input_regions(input_params, ref_list):
-    print("Loading input regions from BED file:", input_params["input_bed"])
-    start = time.time()
-    # TODO convert bed to pandas dataframe
-    input_params["input_regions"] = {}
-    if input_params["input_bed"] is not None:
-        try:
-            with open(input_params["input_bed"], 'r') as f:
-                for line in f:
-                    [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-                    if my_chr not in input_params["input_regions"]:
-                        input_params["input_regions"][my_chr] = [-1]
-                    input_params["input_regions"][my_chr].extend([int(pos1), int(pos2)])
-        except IOError:
-            print("\nProblem reading input target BED file.\n")
-            sys.exit(1)
-
-        # some validation
-        n_in_bed_only = 0
-        n_in_ref_only = 0
-        for k in ref_list:
-            if k not in input_params["input_regions"]:
-                n_in_ref_only += 1
-        for k in input_params["input_regions"].keys():
-            if k not in ref_list:
-                n_in_bed_only += 1
-                del input_params["input_regions"][k]
-        if n_in_ref_only > 0:
-            print('Warning: Reference contains sequences not found in targeted regions BED file.')
-        if n_in_bed_only > 0:
-            print(
-                'Warning: Targeted regions BED file contains sequence names not found in reference (regions ignored).')
-    end = time.time()
-    print("Loading input regions took {} seconds.".format(int(end - start)))
+# def load_input_regions(input_params, ref_list):
+#     print("Loading input regions from BED file:", input_params["input_bed"])
+#     start = time.time()
+#     # TODO convert bed to pandas dataframe
+#     input_params["input_regions"] = {}
+#     if input_params["input_bed"] is not None:
+#         try:
+#             with open(input_params["input_bed"], 'r') as f:
+#                 for line in f:
+#                     [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
+#                     if my_chr not in input_params["input_regions"]:
+#                         input_params["input_regions"][my_chr] = [-1]
+#                     input_params["input_regions"][my_chr].extend([int(pos1), int(pos2)])
+#         except IOError:
+#             print("\nProblem reading input target BED file.\n")
+#             sys.exit(1)
+#
+#         # some validation
+#         n_in_bed_only = 0
+#         n_in_ref_only = 0
+#         for k in ref_list:
+#             if k not in input_params["input_regions"]:
+#                 n_in_ref_only += 1
+#         for k in input_params["input_regions"].keys():
+#             if k not in ref_list:
+#                 n_in_bed_only += 1
+#                 del input_params["input_regions"][k]
+#         if n_in_ref_only > 0:
+#             print('Warning: Reference contains sequences not found in targeted regions BED file.')
+#         if n_in_bed_only > 0:
+#             print(
+#                 'Warning: Targeted regions BED file contains sequence names not found in reference (regions ignored).')
+#     end = time.time()
+#     print("Loading input regions took {} seconds.".format(int(end - start)))
 
 
 def load_mutation_model(mutation_params):
@@ -225,7 +225,7 @@ def load_mutation_model(mutation_params):
 def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df):
 
     # read in reference sequence and notate blocks of Ns
-    chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params["ref_index"][chrom - 1], sequencing_params["n_handling"])
+    chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params['indices_by_ref_name'][chrom], sequencing_params["n_handling"])
 
     variants_from_vcf = get_input_variants_from_vcf(input_params)
     current_chrom_given_valid_variants = prune_invalid_variants(chrom, variants_from_vcf, index_params["ref_index"],
@@ -268,8 +268,8 @@ def prune_invalid_variants(chrom, input_variants, ref_index, chrom_sequence):
                     - any alt allele contains anything other than allowed characters"""
     valid_variants_from_vcf_indexes = []
     n_skipped = [0, 0, 0]
-    if (not input_variants.empty) and (ref_index[chrom-1][0] in input_variants.chrom.unique()):
-        for index, variant in input_variants[input_variants.chrom == ref_index[chrom-1][0]].iterrows():
+    if (not input_variants.empty) and (chrom in input_variants.chrom.unique()):
+        for index, variant in input_variants[input_variants.chrom == chrom].iterrows():
             span = (variant.pos, variant.pos + len(variant.allele))
             r_seq = str(chrom_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
             # Checks if there are any invalid nucleotides in the vcf items
@@ -291,7 +291,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, chrom_sequence):
             valid_variants_from_vcf_indexes.append(index)
 
         print('found', len(valid_variants_from_vcf_indexes), 'valid variants for ' +
-              ref_index[chrom-1][0] + ' in input VCF...')
+              chrom + ' in input VCF...')
         if any(n_skipped):
             print(sum(n_skipped), 'variants skipped...')
             print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')

@@ -272,12 +272,12 @@ class AnnotatedSequence:
 
         # melt with previous intergenic region if exists
         if first_index != 0 and \
-            self._annotations_df.iloc[first_index - 1]['region'].item() == Region.INTERGENIC.value:
+            self._annotations_df.iloc[first_index - 1]['region'] == Region.INTERGENIC.value:
             first_index -= 1
 
         # melt with next intergenic region if exists
         if last_index + 1 != len(self._annotations_df) and \
-            self._annotations_df.iloc[last_index + 1]['region'].item() == Region.INTERGENIC.value:
+            self._annotations_df.iloc[last_index + 1]['region'] == Region.INTERGENIC.value:
             last_index += 1
 
         # create new intergenic region
@@ -343,11 +343,11 @@ class AnnotatedSequence:
         relevant_annotations = self.get_annotations_in_range(start, end)
         counts_per_region = {}
         for _, annotation in relevant_annotations.iterrows():
-            region = Region(annotation['region'].item())
+            region = Region(annotation['region'])
             if region not in counts_per_region:
                 counts_per_region[region] = 0
-            region_start = max(start, annotation['start'].item())
-            region_end = min(end, annotation['end'].item())
+            region_start = max(start, annotation['start'])
+            region_end = min(end, annotation['end'])
             counts_per_region[region] += region_end - region_start
         return counts_per_region
 
@@ -391,7 +391,7 @@ class AnnotatedSequence:
                 reading_offset = 0
                 for _, annotation in cds_annotations.iterrows():
                     annotation['reading_offset'] = reading_offset
-                    reading_offset += annotation['end'].item() - annotation['start'].item()
+                    reading_offset += annotation['end'] - annotation['start']
                     reading_offset = reading_offset % 3
 
             else:
@@ -406,8 +406,10 @@ class AnnotatedSequence:
             if gene_id == 0:
                 continue  # intergenic region
 
-            gene_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id)]
-            strand = Strand(gene_annotations.iloc[0]['strand'].item())
+            gene_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id)].reset_index(drop=True)
+            if gene_annotations is None or gene_annotations.empty:
+                continue
+            strand = Strand(gene_annotations.iloc[0]['strand'])
             if strand == Strand.UNKNOWN:
                 self.mute_gene(gene_id=gene_id)
 
