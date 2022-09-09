@@ -1,11 +1,12 @@
 import time
 import os
+from typing import List
 
 
 class FastqFileWriter:
 
     @staticmethod
-    def get_output_filenames(prefix, name) -> list[str]:
+    def get_output_filenames(prefix, name) -> List[str]:
         return [prefix + "_" + name + "_read.fq",
                 prefix + "_" + name + "_read.aln",
                 prefix + "_" + name + "_read1.fq",

@@ -82,7 +82,7 @@ def main(raw_args=None):
     # parse input variants, if present
     if args.v:
         gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        all_input_variants = load_input_variants(args.v, args.p)  # input_vcf = args.v
+        all_input_variants = load_input_variants(args.v)  # input_vcf = args.v
     else:
         all_input_variants = pd.DataFrame(columns=['dummy'])
 

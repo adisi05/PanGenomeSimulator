@@ -1,6 +1,6 @@
 import os
 from os.path import exists
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 import pybedtools
@@ -179,7 +179,7 @@ class AnnotatedSequence:
             raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}")
         return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
 
-    def get_regions(self) -> list[Region]:
+    def get_regions(self) -> List[Region]:
         return self._relevant_regions
 
     def get_region_by_position(self, pos) -> (Region, Strand):

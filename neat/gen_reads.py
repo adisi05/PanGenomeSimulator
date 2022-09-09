@@ -22,7 +22,7 @@ import time
 import os
 import pandas as pd
 
-# from neat.source.fastq_file_writer import FastqFileWriter
+from neat.source.fastq_file_writer import FastqFileWriter
 from source.chromosome_processor import ChromosomeProcessor, parse_input_mutation_model
 from source.fasta_file_writer import FastaFileWriter
 from source.input_checking import check_file_open, is_in_range
@@ -47,24 +47,32 @@ def simulate(args):
     load_mutation_model(mutation_params)
     annotations_df = to_annotations_df(mutation_params["mut_bed"])
 
-    # initialize output writers
-    fasta_file_writer, vcf_file_writer = intialize_reads_writers(index_params,input_params, output_params, sequencing_params)
-
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
     for chrom in range(len(index_params["ref_index"])):
-        simulate_chrom(input_params, output_params, mutation_params, index_params, vcf_file_writer, chrom, annotations_df)
+        simulate_chrom(input_params, output_params, mutation_params, index_params, chrom, annotations_df)
 
     # TODO translocation feature
 
-    # close output files
+    write_output(index_params, input_params, output_params, sequencing_params)
+
+
+def write_output(index_params, input_params, output_params, sequencing_params):
+    # FASTA
+    fasta_file_writer = FastaFileWriter(output_params["out_prefix"], index_params["line_width"])
+
+    # FASTQ
     if not output_params["no_fastq"]:
         FastqFileWriter.generate_reads(fasta_file_writer.get_file(), sequencing_params)
+
+    # VCF
     if output_params["save_vcf"]:
+        vcf_header = [input_params["reference"]]
+        vcf_file_writer = VcfFileWriter(output_params["out_prefix"], output_params["parent_prefix"],
+                                        output_params["accession"], vcf_header)
         vcf_file_writer.close_file(add_parent_variants=True)
 
-    # TODO write mut_bed
 
 def parse_args(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = extract_params(args)
@@ -94,27 +102,20 @@ def extract_params(args):
         "out_prefix": args.o + '_' + args.name,
         "parent_prefix": args.o + '_' + args.parent_name if args.parent_name else None,
         "save_vcf": args.vcf,
-        "no_fastq": args.no_fastq or args.internal,  # TODO maybe convert to save-fastq?
+        "no_fastq": args.no_fastq or args.internal
     }
     general_params = {
         "rng_seed": args.rng,
         "debug": args.d
     }
     (fragment_size, fragment_std) = args.pe
+    paired_end = (fragment_size and fragment_std) or args.pe_model
     sequencing_params = {
         "read_len": args.R,
         "coverage": args.c,
-        "se_model": args.e,
-        "se_rate": None if args.E == -1 else args.E,
-        "off_target_scalar": args.to,
-        "off_target_discard": args.discard_offtarget,
-        "force_coverage": args.force_coverage,
-        "rescale_qual": args.rescale_qual,
-        "n_max_qual": args.N,
         "fragment_size": fragment_size,
         "fragment_std": fragment_std,
-        "fraglen_model": args.pe_model,
-        "gc_bias_model": args.gc_model
+        "paired_end": paired_end
     }
     return general_params, input_params, output_params, mutation_params, sequencing_params
 
@@ -136,12 +137,6 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     random.seed(general_params["rng_seed"])
     is_in_range(sequencing_params["read_len"], 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
     is_in_range(sequencing_params["coverage"], 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
-    is_in_range(sequencing_params["off_target_scalar"], 0, 1, 'Error: -to must be between 0 and 1')
-    if sequencing_params["se_rate"] != None:
-        is_in_range(sequencing_params["se_rate"], 0, 0.3, 'Error: -E must be between 0 and 0.3')
-    if sequencing_params["n_max_qual"] != -1:
-        is_in_range(sequencing_params["n_max_qual"], 1, 40, 'Error: -N must be between 1 and 40')
-
 
 def process_input_params(input_params):
     index_params = index_reference(input_params)
@@ -219,19 +214,6 @@ def load_mutation_model(mutation_params):
         mutation_params["mut_rate"] = None
     if mutation_params["mut_rate"] != -1 and mutation_params["mut_rate"] is not None:
         is_in_range(mutation_params["mut_rate"], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
-
-def intialize_reads_writers(index_params, input_params, output_params):
-    fasta_file_writer = FastaFileWriter(output_params["out_prefix"], output_params["ploids"],
-                                        index_params["line_width"])
-    output_params["no_reads"] = output_params["no_fastq"]
-
-    vcf_file_writer = None
-    if output_params["save_vcf"]:
-        vcf_header = [input_params["reference"]]
-        vcf_file_writer = VcfFileWriter(output_params["out_prefix"], output_params["parent_prefix"],
-                                        output_params["accession"], vcf_header)
-
-    return fasta_file_writer, vcf_file_writer
 
 
 def simulate_chrom(input_params, output_params, mutation_params, index_params, chrom, annotations_df):

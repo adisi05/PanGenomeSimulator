@@ -7,7 +7,7 @@ import numpy as np
 from Bio.Seq import MutableSeq
 from dataclasses import dataclass
 
-from pyparsing import Optional
+from typing import Optional, List
 
 from probability import DiscreteDistribution, poisson_list
 from neat.utilities.common_data_structues import Region, MutType, Strand
@@ -463,7 +463,7 @@ class ChromosomeProcessor:
                                        self.chromosome_sequence[ref_end:]
         return window_shift
 
-    def prepare_mutations_to_vcf(self, inserted_mutations : list[Mutation], mutations_already_inserted):
+    def prepare_mutations_to_vcf(self, inserted_mutations : List[Mutation], mutations_already_inserted):
         inserted_mutations.sort()
         vcf_mutations = []
         mutations_affected_offset = 0
