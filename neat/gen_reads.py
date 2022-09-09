@@ -91,9 +91,11 @@ def extract_params(args):
         "input_bed": args.tr,
         "discard_bed": args.dr
     }
+    mut_model = args.m
+    mut_model = mut_model.replace('"', '').replace("'","")
     mutation_params = {
         "mut_bed": args.Mb,
-        "mut_model": args.m,
+        "mut_model": mut_model,
         "mut_rate": args.M,
         "dist": args.dist
     }

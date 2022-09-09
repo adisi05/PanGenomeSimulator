@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from typing import Optional, List
 
+from neat.utilities.gen_mut_model import Stats
 from probability import DiscreteDistribution, poisson_list
 from neat.utilities.common_data_structues import Region, MutType, Strand
 from neat.utilities.annotated_sequence import AnnotatedSequence
@@ -625,11 +626,15 @@ def parse_input_mutation_model(model=None, which_default=1):
 
     if model is not None:
         pickle_dict = pickle.load(open(model, "rb"))
-        for region in Region:
-            out_model[region][0] = pickle_dict[f'{region.value}.AVG_MUT_RATE']
-            out_model[region][2] = 1. - pickle_dict[f'{region.value}.SNP_FREQ']
+        region_list = list(Region)
+        region_list.extend(None)
+        for region in region_list:
+            region_key = region if region != '' else Region.ALL
 
-            ins_list = pickle_dict[f'{region.value}.INDEL_FREQ']
+            out_model[region_key][0] = pickle_dict[pickel_key(region, Stats.AVG_MUT_RATE)]
+            out_model[region_key][2] = 1. - pickle_dict[pickel_key(region, Stats.SNP_FREQ)]
+
+            ins_list = pickle_dict[pickel_key(region, Stats.INDEL_FREQ)]
             if len(ins_list):
                 ins_count = sum([ins_list[k] for k in ins_list.keys() if k >= 1])
                 del_count = sum([ins_list[k] for k in ins_list.keys() if k <= -1])
@@ -644,34 +649,37 @@ def parse_input_mutation_model(model=None, which_default=1):
                 ins_weight = [1.0]
                 del_vals = [1]
                 del_weight = [1.0]
-            out_model[region][3] = ins_count / float(ins_count + del_count)
-            out_model[region][4] = ins_vals
-            out_model[region][5] = ins_weight
-            out_model[region][6] = del_vals
-            out_model[region][7] = del_weight
+            out_model[region_key][3] = ins_count / float(ins_count + del_count)
+            out_model[region_key][4] = ins_vals
+            out_model[region_key][5] = ins_weight
+            out_model[region_key][6] = del_vals
+            out_model[region_key][7] = del_weight
 
-            trinuc_trans_prob = pickle_dict[f'{region.value}.TRINUC_TRANS_PROBS']
+            trinuc_trans_prob = pickle_dict[pickel_key(region, Stats.TRINUC_TRANS_PROBS)]
             for k in sorted(trinuc_trans_prob.keys()):
                 my_ind = TRI_IND[k[0][0] + k[0][2]]
                 (k1, k2) = (NUC_IND[k[0][1]], NUC_IND[k[1][1]])
-                out_model[region][8][my_ind][k1][k2] = trinuc_trans_prob[k]
-            for i in range(len(out_model[region][8])):
-                for j in range(len(out_model[region][8][i])):
-                    for l in range(len(out_model[region][8][i][j])):
+                out_model[region_key][8][my_ind][k1][k2] = trinuc_trans_prob[k]
+            for i in range(len(out_model[region_key][8])):
+                for j in range(len(out_model[region_key][8][i])):
+                    for l in range(len(out_model[region_key][8][i][j])):
                         # if trinuc not present in input mutation model, assign it uniform probability
-                        if float(sum(out_model[region][8][i][j])) < 1e-12:
-                            out_model[region][8][i][j] = [0.25, 0.25, 0.25, 0.25]
+                        if float(sum(out_model[region_key][8][i][j])) < 1e-12:
+                            out_model[region_key][8][i][j] = [0.25, 0.25, 0.25, 0.25]
                         else:
-                            out_model[region][8][i][j][l] /= float(sum(out_model[region][8][i][j]))
+                            out_model[region_key][8][i][j][l] /= float(sum(out_model[region][8][i][j]))
 
-            trinuc_mut_prob = pickle_dict[f'{region.value}.TRINUC_MUT_PROB']
+            trinuc_mut_prob = pickle_dict[pickel_key(region, Stats.TRINUC_MUT_PROB)]
             which_have_we_seen = {n: False for n in ALL_TRI}
             trinuc_mean = np.mean(list(trinuc_mut_prob.values()))
             for trinuc in trinuc_mut_prob.keys():
-                out_model[region][9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
+                out_model[region_key][9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
                 which_have_we_seen[trinuc] = True
             for trinuc in which_have_we_seen.keys():
                 if not which_have_we_seen[trinuc]:
-                    out_model[region][9][ALL_IND[trinuc]] = trinuc_mean
+                    out_model[region_key][9][ALL_IND[trinuc]] = trinuc_mean
 
     return out_model
+
+def pickel_key(region : Region, stats : Stats) -> str:
+    return f'{region.value}.{stats.value}' if region else stats.value

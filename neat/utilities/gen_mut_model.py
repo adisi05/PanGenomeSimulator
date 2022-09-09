@@ -44,11 +44,14 @@ class Stats(Enum):
     AVG_INDEL_FREQ = 'AVG_INDEL_FREQ'
     INDEL_FREQ = 'INDEL_FREQ'
     AVG_MUT_RATE = 'AVG_MUT_RATE'
+    SNP_TRANS_FREQ = 'SNP_TRANS_FREQ'
+    TRINUC_MUT_PROB = 'TRINUC_MUT_PROB'
+    TRINUC_TRANS_PROBS = 'TRINUC_TRANS_PROBS'
 
 class RegionStats:
     def __init__(self, annotations_df = None):
         self._regions_stats = {Region.ALL: self.create_stats_dict()}
-        self._annotated_sequence = {}
+        self._annotated_sequence_per_chrom = {}
         if annotations_df:
             self._regions_stats[Region.CDS] = self.create_stats_dict()
             self._regions_stats[Region.NON_CODING_GENE] = self.create_stats_dict()
@@ -190,6 +193,7 @@ def process_vcf(ref_list, vcf):
         print("Warning! TSV file must follow VCF specifications.")
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print('Processing VCF file...')
+    variants = []
     try:
         variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
         variants[0] = variants[0].map(str)
@@ -197,7 +201,7 @@ def process_vcf(ref_list, vcf):
         print("VCF must be in standard VCF format with tab-separated columns")
     # Narrow chromosomes to those matching the reference
     # This is in part to make sure the names match
-    variant_chroms = variants[0].to_list()
+    variant_chroms = variants[0].to_list() if variants else []
     variant_chroms = list(set(variant_chroms))
     matching_chromosomes = []
     for ref_name in ref_list:
@@ -210,11 +214,12 @@ def process_vcf(ref_list, vcf):
         print("Found no chromosomes in common between VCF and Fasta. Please fix the chromosome names and try again")
         exit(1)
     # Double check that there are matches
+    matching_variants = []
     try:
         matching_variants = variants[variants[0].isin(matching_chromosomes)]
     except ValueError:
         print("Problem matching variants with reference.")
-    if matching_variants.empty:
+    if not matching_variants or matching_variants.empty:
         print("There is no overlap between reference and variant file. This could be a chromosome naming problem")
         exit(1)
     # Rename header in dataframe for processing
@@ -270,10 +275,12 @@ def process_vcf(ref_list, vcf):
 def process_reference(ref):
     # Process reference file
     print('Processing reference...')
+    reference = None
     try:
         reference = SeqIO.to_dict(SeqIO.parse(ref, "fasta"))
     except ValueError:
         print("Problems parsing reference file. Ensure reference is in proper fasta format")
+        exit(1)
     ref_dict = {}
     for key in reference.keys():
         key_split = key.split("|")
