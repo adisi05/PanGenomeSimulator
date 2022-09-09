@@ -50,8 +50,8 @@ def simulate(args):
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
-    for chrom in range(len(index_params["ref_index"])):
-        simulate_chrom(input_params, output_params, mutation_params, index_params, chrom, annotations_df)
+    for chrom in range(1, len(index_params["ref_index"]) + 1):
+        simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df)
 
     # TODO translocation feature
 
@@ -110,14 +110,18 @@ def extract_params(args):
         "rng_seed": args.rng,
         "debug": args.d
     }
+    read_len = args.R
+    coverage = args.c
     (fragment_size, fragment_std) = args.pe
     paired_end = (fragment_size and fragment_std) or args.pe_model
+    n_handling = ('random', fragment_size) if paired_end else ('ignore', read_len)
     sequencing_params = {
-        "read_len": args.R,
-        "coverage": args.c,
+        "read_len": read_len,
+        "coverage": coverage,
         "fragment_size": fragment_size,
         "fragment_std": fragment_std,
-        "paired_end": paired_end
+        "paired_end": paired_end,
+        "n_handling": n_handling
     }
     return general_params, input_params, output_params, mutation_params, sequencing_params
 
@@ -218,16 +222,16 @@ def load_mutation_model(mutation_params):
         is_in_range(mutation_params["mut_rate"], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
 
 
-def simulate_chrom(input_params, output_params, mutation_params, index_params, chrom, annotations_df):
+def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df):
 
     # read in reference sequence and notate blocks of Ns
-    chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params["ref_index"][chrom])
+    chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params["ref_index"][chrom - 1], sequencing_params["n_handling"])
 
     variants_from_vcf = get_input_variants_from_vcf(input_params)
     current_chrom_given_valid_variants = prune_invalid_variants(chrom, variants_from_vcf, index_params["ref_index"],
                                                      chrom_sequence)
     chrom_annotations_df = annotations_df[annotations_df['chrom']==chrom]
-    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True, mut_model=mutation_params["mut_model"], mut_rate = mutation_params["mut_rate"], dist = mutation_params["dist"])
+    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True, mut_models=mutation_params["mut_model"], mut_rate = mutation_params["mut_rate"], dist = mutation_params["dist"])
 
     #TODO add large random structural variants
 
@@ -237,7 +241,7 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, c
     # Applying variants to non-N regions
     for non_n_region in index_params['n_regions']['non_N']:
         start, end = non_n_region
-        inserted_mutations = apply_variants_to_non_n_region(output_params, mutation_params, chrom, current_chrom_given_valid_variants, chromosome_processor, start, end)
+        inserted_mutations = apply_variants_to_non_n_region(current_chrom_given_valid_variants, chromosome_processor, start, end)
 
     # write all output variants for this reference
     #TODO write inserted_mutations - write_vcf?
@@ -264,8 +268,8 @@ def prune_invalid_variants(chrom, input_variants, ref_index, chrom_sequence):
                     - any alt allele contains anything other than allowed characters"""
     valid_variants_from_vcf_indexes = []
     n_skipped = [0, 0, 0]
-    if (not input_variants.empty) and (ref_index[chrom][0] in input_variants.chrom.unique()):
-        for index, variant in input_variants[input_variants.chrom == ref_index[chrom][0]].iterrows():
+    if (not input_variants.empty) and (ref_index[chrom-1][0] in input_variants.chrom.unique()):
+        for index, variant in input_variants[input_variants.chrom == ref_index[chrom-1][0]].iterrows():
             span = (variant.pos, variant.pos + len(variant.allele))
             r_seq = str(chrom_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
             # Checks if there are any invalid nucleotides in the vcf items
@@ -287,7 +291,7 @@ def prune_invalid_variants(chrom, input_variants, ref_index, chrom_sequence):
             valid_variants_from_vcf_indexes.append(index)
 
         print('found', len(valid_variants_from_vcf_indexes), 'valid variants for ' +
-              ref_index[chrom][0] + ' in input VCF...')
+              ref_index[chrom-1][0] + ' in input VCF...')
         if any(n_skipped):
             print(sum(n_skipped), 'variants skipped...')
             print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
@@ -299,14 +303,14 @@ def prune_invalid_variants(chrom, input_variants, ref_index, chrom_sequence):
 
 
 
-def apply_variants_to_non_n_region(output_params, mutation_params, chrom,
-                                   valid_variants_from_vcf, chromosome_processor, start, end):
+def apply_variants_to_non_n_region(valid_variants_from_vcf, chromosome_processor, start, end):
 
     vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
 
     # construct sequence data that we will sample reads from
     inserted_mutations =\
-        insert_given_and_random_mutations(chrom, start, end, chromosome_processor, vars_in_current_window, output_params, mutation_params)
+        insert_given_and_random_mutations(start, end, chromosome_processor, vars_in_current_window)
+
 
     return inserted_mutations
 

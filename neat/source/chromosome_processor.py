@@ -205,7 +205,7 @@ class ChromosomeProcessor:
             self.mut_scalar_per_region = {region: 1.0 for region in self.annotated_seq.get_regions()}
         else:
             self.mut_scalar_per_region = {region: float(self.mut_rescale) //
-                         (self.model_data[region][0] / float(len(self.model_data))) for region in self.annotated_seq.get_regions()}
+                         (self.model_data[region][0] / float(len(self.model_data[region]))) for region in self.annotated_seq.get_regions()}
         if dist:
             self.mut_scalar_per_region = {region: self.mut_scalar_per_region[region] * dist for region in self.annotated_seq.get_regions()}
 
@@ -220,18 +220,18 @@ class ChromosomeProcessor:
         # self.models_per_region[region][5] = distribution of deletion lengths
         # self.models_per_region[region][6] = distribution of trinucleotide SNP transitions
         # self.models_per_region[region][7] = p(trinuc mutates)
-        self.model_per_region = {region: [] for region in self.annotated_seq.get_regions()}
+        self.model_per_region = {}
         for region in self.annotated_seq.get_regions():
-            for n in self.model_data:
-                self.model_per_region[region].append(
-                    [self.mut_scalar_per_region[region] * n[0], n[1], n[2], n[3], DiscreteDistribution(n[5], n[4]),
-                     DiscreteDistribution(n[7], n[6]), []])
-                for m in n[8]:
-                    # noinspection PyTypeChecker
-                    self.model_per_region[region][-1][6].append(
-                        [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
-                         DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-                self.model_per_region[region][-1].append([m for m in n[9]])
+            data = self.model_data[region]
+            self.model_per_region[region] = \
+                [self.mut_scalar_per_region[region] * data[0], data[1], data[2], data[3],
+                 DiscreteDistribution(data[5], data[4]), DiscreteDistribution(data[7], data[6]), []]
+            for m in data[8]:
+                # noinspection PyTypeChecker
+                self.model_per_region[region][6].append(
+                    [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
+                     DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
+            self.model_per_region[region][-1].append([m for m in data[9]])
 
 
     def get_window_mutations(self) -> RandomMutationPool: #NOTE: window can be also a whole non-N region or the entire chromosome
@@ -291,13 +291,13 @@ class ChromosomeProcessor:
         self.window_unit.finalize()
         return vcf_mutations
 
-    def validate_given_mutations_list(self, input_list):
+    def validate_given_mutations_list(self, input_df):
         inserted_mutations = []
-        for elem in input_list:
-            ref_nucl = elem[1]
-            new_nucl = elem[2]
+        for _, row in input_df.iterrows():
+            ref_nucl = row['allele']
+            new_nucl = row['alternatives'][0] # take the first alternative
             mut_type = MutType.SNP if len(ref_nucl) == 1 and len(new_nucl) == 1 else MutType.INDEL
-            mutation = Mutation(elem[0] + self.window_unit.start_offset, ref_nucl, new_nucl, mut_type)
+            mutation = Mutation(row['pos'] + self.window_unit.start_offset, ref_nucl, new_nucl, mut_type)
             if self.validate_given_mutation(mutation):
                 self.window_unit.update_blocklist(mutation)
                 inserted_mutations.append(mutation)
