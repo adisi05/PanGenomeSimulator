@@ -7,7 +7,7 @@ import numpy as np
 from Bio.Seq import MutableSeq
 from dataclasses import dataclass
 
-from typing import Optional, List
+from typing import Optional, List, Union
 
 from neat.utilities.gen_mut_model import Stats
 from probability import DiscreteDistribution, poisson_list
@@ -627,10 +627,12 @@ def parse_input_mutation_model(model=None, which_default=1):
     if model is not None:
         pickle_dict = pickle.load(open(model, "rb"))
         region_list = list(Region)
-        region_list.extend(None)
+        region_list.append('')
         for region in region_list:
-            region_key = region if region != '' else Region.ALL
+            if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:
+                continue
 
+            region_key = region if region != '' else Region.ALL
             out_model[region_key][0] = pickle_dict[pickel_key(region, Stats.AVG_MUT_RATE)]
             out_model[region_key][2] = 1. - pickle_dict[pickel_key(region, Stats.SNP_FREQ)]
 
@@ -667,7 +669,7 @@ def parse_input_mutation_model(model=None, which_default=1):
                         if float(sum(out_model[region_key][8][i][j])) < 1e-12:
                             out_model[region_key][8][i][j] = [0.25, 0.25, 0.25, 0.25]
                         else:
-                            out_model[region_key][8][i][j][l] /= float(sum(out_model[region][8][i][j]))
+                            out_model[region_key][8][i][j][l] /= float(sum(out_model[region_key][8][i][j]))
 
             trinuc_mut_prob = pickle_dict[pickel_key(region, Stats.TRINUC_MUT_PROB)]
             which_have_we_seen = {n: False for n in ALL_TRI}
@@ -681,5 +683,5 @@ def parse_input_mutation_model(model=None, which_default=1):
 
     return out_model
 
-def pickel_key(region : Region, stats : Stats) -> str:
-    return f'{region.value}.{stats.value}' if region else stats.value
+def pickel_key(region : Union[Region,str], stats : Stats) -> str:
+    return f'{region.value}.{stats.value}' if region != '' else stats.value
