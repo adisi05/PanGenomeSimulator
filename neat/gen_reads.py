@@ -45,7 +45,7 @@ def simulate(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
     index_params = process_input_params(input_params)
     load_mutation_model(mutation_params)
-    annotations_df = to_annotations_df(mutation_params["mut_bed"])
+    annotations_df = to_annotations_df(mutation_params["mut_bed"], os.getcwd())
 
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name

@@ -628,11 +628,14 @@ def parse_input_mutation_model(model=None, which_default=1):
         pickle_dict = pickle.load(open(model, "rb"))
         region_list = list(Region)
         region_list.append('')
+        regions_found = []
         for region in region_list:
             if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:
                 continue
 
             region_key = region if region != '' else Region.ALL
+            regions_found.append(region_key)
+
             out_model[region_key][0] = pickle_dict[pickel_key(region, Stats.AVG_MUT_RATE)]
             out_model[region_key][2] = 1. - pickle_dict[pickel_key(region, Stats.SNP_FREQ)]
 
@@ -680,7 +683,8 @@ def parse_input_mutation_model(model=None, which_default=1):
             for trinuc in which_have_we_seen.keys():
                 if not which_have_we_seen[trinuc]:
                     out_model[region_key][9][ALL_IND[trinuc]] = trinuc_mean
-
+        regions_found = [region.value for region in regions_found]
+        print(f'found the next regions in the model: {regions_found}')
     return out_model
 
 def pickel_key(region : Union[Region,str], stats : Stats) -> str:

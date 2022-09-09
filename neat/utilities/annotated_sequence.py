@@ -9,26 +9,26 @@ import pandas as pd
 from neat.utilities.common_data_structues import Region, Strand
 
 
-def to_annotations_df(args, working_dir):
+def to_annotations_df(file_path, output_dir=None):
     # Process bed/gff file
     annotations_df = None
-    if args.b:
+    if file_path:
         print('Processing bed/gff file...')
         try:
-            annotations_df = separate_cds_genes_intergenics(args.b, working_dir)
+            annotations_df = separate_cds_genes_intergenics(file_path, output_dir)
             annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
             # TODO validate chromosome length are same as in reference
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
     return annotations_df
 
-def separate_cds_genes_intergenics(annotations_file, working_dir):
+def separate_cds_genes_intergenics(annotations_file, output_dir=None):
     # GENE_ID = 'gene_id'
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
 
-    if working_dir:
-        os.chdir(working_dir)
+    if output_dir:
+        os.chdir(output_dir)
     #TODO just for debug. Remove later
     if exists('all_chroms_annotaions.csv'):
         all_chroms_annotaions = pd.read_csv('all_chroms_annotaions.csv')
@@ -75,6 +75,7 @@ def separate_cds_genes_intergenics(annotations_file, working_dir):
                 # cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
                 gene_elements_df = gene_elements.to_dataframe()
+                gene_elements_df = gene_elements_df[['strand', 'start', 'end']]
                 cds_genes_intergenics[['gene','strand']] = cds_genes_intergenics.apply(
                     lambda x: assign_gene(x['start'], x['end'], gene_elements_df), axis=1, result_type='expand')
 
