@@ -299,10 +299,10 @@ class AnnotatedSequence:
 
     def handle_insertion(self, pos, insertion_len) -> None:
         _, index = self._get_annotation_by_position(pos)
-        self._annotations_df.iloc[index]['end'] += insertion_len
+        self._annotations_df['end'][index] += insertion_len
         if index + 1 != len(self._annotations_df):
-            self._annotations_df.iloc[index+1:]['start'] += insertion_len
-            self._annotations_df.iloc[index+1:]['end'] += insertion_len
+            self._annotations_df['start'][index+1:] += insertion_len
+            self._annotations_df['end'][index+1:] += insertion_len
 
 
     def handle_deletion(self, pos, deletion_len) -> None:
@@ -324,14 +324,14 @@ class AnnotatedSequence:
                 annotations_to_delete.append(index)
                 deleted_already += annotation_len
             else:
-                self._annotations_df.iloc[index]['start'] = pos + 1
-                self._annotations_df.iloc[index]['end'] = (pos + annotation_len) - (deletion_len - deleted_already)
+                self._annotations_df['start'][index] = pos + 1
+                self._annotations_df['end'][index] = (pos + annotation_len) - (deletion_len - deleted_already)
                 deleted_already = deletion_len
             index += 1
 
         if index != len(self._annotations_df):
-            self._annotations_df.iloc[index:]['start'] -= deletion_len
-            self._annotations_df.iloc[index:]['end'] -= deletion_len
+            self._annotations_df['start'][index:] -= deletion_len
+            self._annotations_df['end'][index:] -= deletion_len
 
         if len(annotations_to_delete):
             self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
