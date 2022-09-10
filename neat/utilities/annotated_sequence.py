@@ -147,12 +147,10 @@ class AnnotatedSequence:
             self._relevant_regions.append(Region.ALL)
             return
 
+        self._annotations_df = annotations_df.copy()
         if 'chrom' in annotations_df.columns:
-            self._annotations_df = annotations_df[annotations_df['chrom'] == chromosome].copy()
-            del self._annotations_df['chrom']
-            self._annotations_df.reset_index(drop=True, inplace=True)
-        else:
-            self._annotations_df = annotations_df.copy()
+            self._annotations_df = self._annotations_df[annotations_df['chrom'] == chromosome]
+        self._annotations_df = self._annotations_df[['start','end','region','gene','strand']]
 
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
@@ -173,7 +171,7 @@ class AnnotatedSequence:
             return None
         return self._annotations_df.iloc[-1]['end'].item()
 
-    def _get_annotation_by_position(self, pos) -> (pd.DataFrame, int):
+    def _get_annotation_by_position(self, pos) -> (pd.Series, int):
         condition = (self._annotations_df['start'] <= pos) & (pos < self._annotations_df['end'])
         annotation_indices = self._annotations_df.index[condition].tolist()
         if len(annotation_indices) != 1:
@@ -187,18 +185,17 @@ class AnnotatedSequence:
         if self._annotations_df is None or self._annotations_df.empty:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(pos)
-        return annotation.iloc[0]['region'], Strand(annotation.iloc[0]['strand'])
+        return annotation['region'], Strand(annotation['strand'])
 
     def get_annotation_start_end(self, pos) -> (int, int):
         annotation, _ = self._get_annotation_by_position(pos)
 
-        return annotation.iloc[0]['start'].item(),\
-               annotation.iloc[0]['end'].item()
+        return annotation['start'], annotation['end']
 
     def get_last_coding_position_of_encapsulating_gene(self, pos) -> (Optional[int], Strand):
         annotation, annotation_index = self._get_annotation_by_position(pos)
 
-        gene = annotation.iloc[0]['gene'].item()
+        gene = annotation['gene']
         if not gene or gene == 0:
             raise Exception("Coding positions are only relevant for genes")
 
@@ -218,11 +215,11 @@ class AnnotatedSequence:
 
     def get_encapsulating_codon_positions(self, pos) -> (int, int, int):
         cds, _ = self._get_annotation_by_position(pos)
-        if cds.iloc[0]['region'].item() != Region.CDS.value:
+        if cds['region']!= Region.CDS.value:
             raise Exception("Codon is only relevant for CDS region")
-        cds_start = cds.iloc[0]['start'].item()
-        cds_end = cds.iloc[0]['end'].item()
-        reading_offset = cds.iloc[0]['reading_offset'].item() + (pos - cds_start)
+        cds_start = cds['start']
+        cds_end = cds['end']
+        reading_offset = cds['reading_offset'] + (pos - cds_start)
         reading_offset = reading_offset % 3
         first = pos - reading_offset
         second = pos + 1 - reading_offset
@@ -263,7 +260,7 @@ class AnnotatedSequence:
     def mute_gene(self, position_on_gene : int = -1, gene_id : int = 0) -> None:
         if 0 <= position_on_gene < self.len():
             annotation, annotation_index = self._get_annotation_by_position(position_on_gene)
-            gene_id = annotation.iloc[0]['gene'].item()
+            gene_id = annotation['gene']
         if gene_id == 0:
             return
         gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene_id)].tolist()
@@ -285,7 +282,9 @@ class AnnotatedSequence:
         intergenic_end = self._annotations_df.iloc[last_index]['end'].item()
         new_intergenic = pd.DataFrame({'start': intergenic_start,
                                        'end': intergenic_end,
-                                       'region': Region.INTERGENIC.value},
+                                       'region': Region.INTERGENIC.value,
+                                       'gene': 0,
+                                       'strand': Strand.UNKNOWN.value},
                                       index=[first_index])
 
         # insert new intergenic region instead of muted gene
@@ -381,6 +380,7 @@ class AnnotatedSequence:
         if self._annotations_df is None or self._annotations_df.empty:
             return
 
+        self._annotations_df['reading_offset'] = np.nan
         gene_ids = self._annotations_df.gene.unique()
         for gene_id in gene_ids:
             if gene_id == 0:
@@ -392,8 +392,8 @@ class AnnotatedSequence:
 
             if cds_total_len % 3 == 0:
                 reading_offset = 0
-                for _, annotation in cds_annotations.iterrows():
-                    annotation['reading_offset'] = reading_offset
+                for idx, annotation in cds_annotations.iterrows():
+                    self._annotations_df['reading_offset'][idx] = reading_offset
                     reading_offset += annotation['end'] - annotation['start']
                     reading_offset = reading_offset % 3
 
