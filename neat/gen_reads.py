@@ -51,20 +51,23 @@ def simulate(args):
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
     for chrom in index_params["ref_list"]:
-        simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df)
+        chromosome_processor = simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df)
+        write_output(index_params, input_params, output_params, sequencing_params, chromosome_processor)
 
     # TODO translocation feature
 
-    write_output(index_params, input_params, output_params, sequencing_params)
+    # TODO close/finalize writer in some way?
 
 
-def write_output(index_params, input_params, output_params, sequencing_params):
+
+def write_output(index_params, input_params, output_params, sequencing_params, chromosome_processor : ChromosomeProcessor):
     # FASTA
     fasta_file_writer = FastaFileWriter(output_params["out_prefix"], index_params["line_width"])
+    fasta_file_writer.write_record(chromosome_processor.chromosome_sequence, chromosome_processor.chromosome_name)
 
     # FASTQ
     if not output_params["no_fastq"]:
-        FastqFileWriter.generate_reads(fasta_file_writer.get_file(), sequencing_params)
+        FastqFileWriter.generate_reads(fasta_file_writer.get_file_name(), sequencing_params)
 
     # VCF
     if output_params["save_vcf"]:
@@ -222,7 +225,7 @@ def load_mutation_model(mutation_params):
         is_in_range(mutation_params["mut_rate"], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
 
 
-def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df):
+def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df) -> ChromosomeProcessor:
 
     # read in reference sequence and notate blocks of Ns
     chrom_sequence, index_params["n_regions"] = read_ref(input_params["reference"], index_params['indices_by_ref_name'][chrom], sequencing_params["n_handling"])
@@ -247,6 +250,8 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, s
     #TODO write inserted_mutations - write_vcf?
 
     print(f"Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.")
+
+    return chromosome_processor
 
 
 def get_input_variants_from_vcf(input_params):
