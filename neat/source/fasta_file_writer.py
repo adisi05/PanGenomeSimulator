@@ -41,6 +41,7 @@ class FastaFileWriter:
         while idx < dna_str_len:
             if self.last_line_len == self.line_width:
                 fasta_file.write('\n')
+                self.last_line_len = 0
             chunk_len = min(self.line_width - self.last_line_len, dna_str_len - idx)
             fasta_file.write(dna_str[idx:idx+chunk_len])
             idx += chunk_len

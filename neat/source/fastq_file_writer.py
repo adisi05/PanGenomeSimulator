@@ -15,9 +15,9 @@ class FastqFileWriter:
                 prefix + "_" + name + "_read2.aln"]
 
     @staticmethod
-    def generate_reads(fasta_files, sequencing_params):
+    def generate_reads(fasta_files : List[str], sequencing_params : dict):
         print(fasta_files)
-        print(sequencing_params)
+        # print(sequencing_params)
         paired = "-p" if sequencing_params['paired_end'] else ""
         fastq_files = [filename[:-len('.fasta')] + "_read" for filename in fasta_files]
         read_length = sequencing_params['read_len']

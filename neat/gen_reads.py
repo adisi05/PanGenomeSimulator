@@ -20,6 +20,8 @@ import sys
 import time
 
 import os
+from typing import List, Dict
+
 import pandas as pd
 
 from neat.source.fastq_file_writer import FastqFileWriter
@@ -50,9 +52,13 @@ def simulate(args):
     # Using pathlib to make this more machine agnostic
     output_params["out_prefix_name"] = pathlib.Path(output_params["out_prefix"]).name
 
+
+    final_chromosomes = {}
     for chrom in index_params["ref_list"]:
         chromosome_processor = simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df)
-        write_output(index_params, input_params, output_params, sequencing_params, chromosome_processor)
+        final_chromosomes[chromosome_processor.chromosome_name] = str(chromosome_processor.chromosome_sequence)
+
+    write_output(index_params, input_params, output_params, sequencing_params, final_chromosomes)
 
     # TODO translocation feature
 
@@ -60,14 +66,17 @@ def simulate(args):
 
 
 
-def write_output(index_params, input_params, output_params, sequencing_params, chromosome_processor : ChromosomeProcessor):
+def write_output(index_params, input_params, output_params, sequencing_params, final_chromosomes : Dict[str,str]):
+
     # FASTA
     fasta_file_writer = FastaFileWriter(output_params["out_prefix"], index_params["line_width"])
-    fasta_file_writer.write_record(chromosome_processor.chromosome_sequence, chromosome_processor.chromosome_name)
+    for name, sequence in final_chromosomes:
+        fasta_file_writer.write_record(sequence, name)
+    fasta_file_writer.finalize()
 
     # FASTQ
     if not output_params["no_fastq"]:
-        FastqFileWriter.generate_reads(fasta_file_writer.get_file_name(), sequencing_params)
+        FastqFileWriter.generate_reads([fasta_file_writer.get_file_name()], sequencing_params)
 
     # VCF
     if output_params["save_vcf"]:
