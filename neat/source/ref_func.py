@@ -11,7 +11,7 @@ OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True} #TODO 16-04
 ALLOWED_NUCL = ['A', 'C', 'G', 'T'] #TODO 16-04-2022
 
 
-def index_ref(reference_path: str) -> list:
+def index_ref(reference_path: str) -> [list, int]:
     """
     Index reference fasta
     :param reference_path: string path to the reference
@@ -133,29 +133,29 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False): #T
     # TODO this seems to randomly replace an N with a base. Is this necessary? How to do this in an immutable seq?
     n_info = {'all': [], 'big': [], 'non_N': []}
     if n_handling[0] == 'random':
-        for region in n_atlas:
-            n_info['all'].extend(region)
-            if region[1] - region[0] <= n_handling[1]:
-                for i in range(region[0], region[1]):
+        for n_region in n_atlas:
+            n_info['all'].extend(n_region)
+            if n_region[1] - n_region[0] <= n_handling[1]:
+                for i in range(n_region[0], n_region[1]):
                     temp = MutableSeq(my_dat)
                     temp[i] = random.choice(ALLOWED_NUCL)
                     my_dat = Seq(temp)
             else:
-                n_info['big'].extend(region)
+                n_info['big'].extend(n_region)
     elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
-        for region in n_atlas:
-            n_info['all'].extend(region)
-            if region[1] - region[0] <= n_handling[1]:
-                for i in range(region[0], region[1]):
+        for n_region in n_atlas:
+            n_info['all'].extend(n_region)
+            if n_region[1] - n_region[0] <= n_handling[1]:
+                for i in range(n_region[0], n_region[1]):
                     temp = MutableSeq(my_dat)
                     temp[i] = n_handling[2]
                     my_dat = Seq(temp)
             else:
-                n_info['big'].extend(region)
+                n_info['big'].extend(n_region)
     elif n_handling[0] == 'ignore':
-        for region in n_atlas:
-            n_info['all'].extend(region)
-            n_info['big'].extend(region)
+        for n_region in n_atlas:
+            n_info['all'].extend(n_region)
+            n_info['big'].extend(n_region)
     else:
         print('\nERROR: UNKNOWN N_HANDLING MODE\n')
         sys.exit(1)
