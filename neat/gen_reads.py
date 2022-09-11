@@ -70,7 +70,7 @@ def write_output(index_params, input_params, output_params, sequencing_params, f
 
     # FASTA
     fasta_file_writer = FastaFileWriter(output_params["out_prefix"], index_params["line_width"])
-    for name, sequence in final_chromosomes:
+    for name, sequence in final_chromosomes.items():
         fasta_file_writer.write_record(sequence, name)
     fasta_file_writer.finalize()
 

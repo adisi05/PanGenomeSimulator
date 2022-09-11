@@ -185,7 +185,7 @@ class AnnotatedSequence:
         if self._annotations_df is None or self._annotations_df.empty:
             return Region.ALL
         annotation, _ = self._get_annotation_by_position(pos)
-        return annotation['region'], Strand(annotation['strand'])
+        return Region(annotation['region']), Strand(annotation['strand'])
 
     def get_annotation_start_end(self, pos) -> (int, int):
         annotation, _ = self._get_annotation_by_position(pos)
