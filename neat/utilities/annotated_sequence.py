@@ -289,7 +289,7 @@ class AnnotatedSequence:
         # insert new intergenic region instead of muted gene
         dfs_to_concat = []
         if first_index != 0:
-            dfs_to_concat.append(self._annotations_df.loc[:first_index])
+            dfs_to_concat.append(self._annotations_df.loc[:first_index - 1])
         dfs_to_concat.append(new_intergenic)
         if last_index + 1 != len(self._annotations_df):
             dfs_to_concat.append(self._annotations_df.loc[last_index + 1:])
