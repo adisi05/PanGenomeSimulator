@@ -322,7 +322,7 @@ def process_snps(snp_df, ref_name, ref_sequence, regions_stats):
                 trinuc_alt = trinuc_to_analyze[0] + snp_df.loc[index, 'ALT'] + trinuc_to_analyze[2]
                 if trinuc_alt not in VALID_TRINUC:
                     continue
-                region, _ = regions_stats.get_region_by_chrom_and_pos(ref_name, row.chr_start)
+                region = regions_stats.get_region_by_chrom_and_pos(ref_name, row.chr_start)
                 update_trinuc_transition_count(trinuc_alt, trinuc_ref, regions_stats, region)
                 update_snp_count(regions_stats, region)
                 update_snp_transition_count(str(row.REF), str(row.ALT), regions_stats, region)
@@ -351,7 +351,7 @@ def process_indels(indel_df, ref_name, regions_stats):
                 len_alt = len(row.ALT)
             if len_ref != len_alt:
                 indel_len = len_alt - len_ref
-                region, _ = regions_stats.get_region_by_chrom_and_pos(ref_name, row.chr_start)
+                region = regions_stats.get_region_by_chrom_and_pos(ref_name, row.chr_start)
                 update_indel_count(indel_len, regions_stats, region)
 
                 my_pop_freq = VCF_DEFAULT_POP_FREQ
