@@ -83,7 +83,8 @@ class RegionStats:
             Stats.INDEL_COUNT: {},
             Stats.TOTAL_REFLEN: [0],
             Stats.COMMON_VARIANTS: [],
-            Stats.HIGH_MUT_REGIONS: []
+            Stats.HIGH_MUT_REGIONS: [],
+            Stats.VDAT_COMMON: {}
         }
 
 #########################################################
@@ -383,14 +384,20 @@ def save_stats_to_file(out_pickle, skip_common, regions_stats):
 def update_vdat_common(ref_name, row, my_pop_freq, regions_stats, region: Region = Region.ALL):
     regions_to_update = {Region.ALL, region}
     for current_region in regions_to_update:
-        regions_stats.get_stat_by_region(current_region, Stats.VDAT_COMMON)[ref_name].append(
-            (row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+        vdat_common_per_chrom = regions_stats.get_stat_by_region(current_region, Stats.VDAT_COMMON)
+        if ref_name not in vdat_common_per_chrom:
+            vdat_common_per_chrom[ref_name] = []
+        vdat_common_per_chrom[ref_name].append((row.chr_start, row.REF, row.REF, row.ALT, my_pop_freq))
+
 
 
 def process_common_variants(ref_dict, ref_name, regions_stats):
     # if we didn't find anything, skip ahead along to the next reference sequence
     for region_name, region_stats in regions_stats.get_all_stats().items():
-        vdat_common = region_stats[Stats.VDAT_COMMON].get(ref_name, default=[])
+        vdat_common_per_chrom = region_stats[Stats.VDAT_COMMON]
+        if ref_name not in vdat_common_per_chrom:
+            vdat_common_per_chrom[ref_name] = []
+        vdat_common = vdat_common_per_chrom[ref_name]
         if not len(vdat_common):
             print('Found no variants for this reference.')
             continue
@@ -439,14 +446,14 @@ def process_common_variants(ref_dict, ref_name, regions_stats):
 
 def compute_probabilities(regions_stats):
     # if for some reason we didn't find any valid input variants AT ALL, exit gracefully...
-    total_var = regions_stats.get_stat_by_region(Region.ALL, Stats.SNP_COUNT) + \
+    total_var = regions_stats.get_stat_by_region(Region.ALL, Stats.SNP_COUNT)[0] + \
                 sum(regions_stats.get_stat_by_region(Region.ALL, Stats.INDEL_COUNT).values())
     if total_var == 0:
         print(
             '\nError: No valid variants were found, model could not be created. (Are you using the correct reference?)\n')
         exit(1)
 
-    for region_name, region_stats in regions_stats.get_all_stats().items():
+    for region, region_stats in regions_stats.get_all_stats().items():
         ###	COMPUTE PROBABILITIES
 
         # frequency that each trinuc mutated into anything else
@@ -478,13 +485,18 @@ def compute_probabilities(regions_stats):
                         region_stats[Stats.SNP_TRANSITION_COUNT][key2] / float(rolling_tot)
 
         # compute average snp and indel frequencies
-        total_var = region_stats[Stats.SNP_COUNT] + sum(region_stats[Stats.INDEL_COUNT].values())
-        region_stats[Stats.SNP_FREQ] = region_stats[Stats.SNP_COUNT] / float(total_var)
-        region_stats[Stats.AVG_INDEL_FREQ] = 1. - region_stats[Stats.SNP_FREQ]
-        region_stats[Stats.INDEL_FREQ] = \
-            {k: (region_stats[Stats.INDEL_COUNT][k] / float(total_var)) / region_stats[Stats.AVG_INDEL_FREQ]
-             for k in region_stats[Stats.INDEL_COUNT].keys()}
-        region_stats[Stats.AVG_MUT_RATE] = total_var / region_stats[Stats.TOTAL_REFLEN]
+        total_var = region_stats[Stats.SNP_COUNT][0] + sum(region_stats[Stats.INDEL_COUNT].values())
+        if total_var != 0:
+            region_stats[Stats.SNP_FREQ] = region_stats[Stats.SNP_COUNT][0] / float(total_var)
+            region_stats[Stats.AVG_INDEL_FREQ] = 1. - region_stats[Stats.SNP_FREQ]
+            region_stats[Stats.INDEL_FREQ] = \
+                {k: (region_stats[Stats.INDEL_COUNT][k] / float(total_var)) / region_stats[Stats.AVG_INDEL_FREQ]
+                 for k in region_stats[Stats.INDEL_COUNT].keys()}
+        else:
+            region_stats[Stats.SNP_FREQ] = 0.
+            region_stats[Stats.AVG_INDEL_FREQ] = 1.
+            region_stats[Stats.INDEL_FREQ] = {}
+        region_stats[Stats.AVG_MUT_RATE] = total_var / region_stats[Stats.TOTAL_REFLEN][0]
 
         #	if values weren't found in data, appropriately append null entries
         print_trinuc_warning = False
@@ -505,7 +517,7 @@ def compute_probabilities(regions_stats):
         #
         #	print some stuff
         #
-        print(f'Probabilities for region {region_name.value}:')
+        print(f'Probabilities for region {region.value}:')
 
         for k in sorted(region_stats[Stats.TRINUC_MUT_PROB].keys()):
             print('p(' + k + ' mutates) =', region_stats[Stats.TRINUC_MUT_PROB][k])
