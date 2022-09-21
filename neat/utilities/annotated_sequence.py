@@ -27,11 +27,12 @@ def separate_cds_genes_intergenics(annotations_file, output_dir=None):
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
 
+    csv_file = 'all_chroms_annotaions.csv'
     if output_dir:
-        os.chdir(output_dir)
+        csv_file = os.path.join(output_dir, csv_file)
     #TODO just for debug. Remove later
-    if exists('all_chroms_annotaions.csv'):
-        all_chroms_annotaions = pd.read_csv('all_chroms_annotaions.csv')
+    if exists(csv_file):
+        all_chroms_annotaions = pd.read_csv(csv_file)
         return all_chroms_annotaions
 
     if annotations_file is not None:
@@ -83,7 +84,7 @@ def separate_cds_genes_intergenics(annotations_file, output_dir=None):
 
                 all_chroms_annotaions.append(cds_genes_intergenics)
             all_chroms_annotaions = pd.concat(all_chroms_annotaions).reset_index(drop=True)
-            all_chroms_annotaions.to_csv('all_chroms_annotaions.csv')
+            all_chroms_annotaions.to_csv(csv_file)
             return all_chroms_annotaions
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
