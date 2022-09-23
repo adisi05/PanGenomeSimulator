@@ -368,17 +368,15 @@ def save_stats_to_file(out_pickle, skip_common, regions_stats):
     out_dict = {}
     for region_name, region_stats in regions_stats.get_all_stats().items():
         prefix = f'{region_name.value}.'
-        out_dict = {
-            f'{prefix}{Stats.AVG_MUT_RATE}': region_stats[Stats.AVG_MUT_RATE],
-            f'{prefix}{Stats.SNP_FREQ}': region_stats[Stats.SNP_FREQ],
-            f'{prefix}{Stats.SNP_TRANS_FREQ}': region_stats[Stats.SNP_TRANS_FREQ],
-            f'{prefix}{Stats.INDEL_FREQ}': region_stats[Stats.INDEL_FREQ],
-            f'{prefix}{Stats.TRINUC_MUT_PROB}': region_stats[Stats.TRINUC_MUT_PROB],
-            f'{prefix}{Stats.TRINUC_TRANS_PROBS}': region_stats[Stats.TRINUC_TRANS_PROBS]
-        }
+        out_dict[f'{prefix}{Stats.AVG_MUT_RATE.value}'] = region_stats[Stats.AVG_MUT_RATE]
+        out_dict[f'{prefix}{Stats.SNP_FREQ.value}'] = region_stats[Stats.SNP_FREQ]
+        out_dict[f'{prefix}{Stats.SNP_TRANS_FREQ.value}'] = region_stats[Stats.SNP_TRANS_FREQ]
+        out_dict[f'{prefix}{Stats.INDEL_FREQ.value}'] = region_stats[Stats.INDEL_FREQ]
+        out_dict[f'{prefix}{Stats.TRINUC_MUT_PROB.value}'] = region_stats[Stats.TRINUC_MUT_PROB]
+        out_dict[f'{prefix}{Stats.TRINUC_TRANS_PROBS.value}'] = region_stats[Stats.TRINUC_TRANS_PROBS]
         if not skip_common:
-            out_dict[f'{prefix}{Stats.COMMON_VARIANTS}'] = region_stats[Stats.COMMON_VARIANTS]
-            out_dict[f'{prefix}{Stats.HIGH_MUT_REGIONS}'] = region_stats[Stats.HIGH_MUT_REGIONS]
+            out_dict[f'{prefix}{Stats.COMMON_VARIANTS.value}'] = region_stats[Stats.COMMON_VARIANTS]
+            out_dict[f'{prefix}{Stats.HIGH_MUT_REGIONS.value}'] = region_stats[Stats.HIGH_MUT_REGIONS]
     pickle.dump(out_dict, open(out_pickle, "wb"))
 
 
