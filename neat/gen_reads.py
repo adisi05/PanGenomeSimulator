@@ -47,7 +47,9 @@ def simulate(args):
     general_params, input_params, output_params, mutation_params, sequencing_params = parse_args(args)
     index_params = index_reference(input_params)
     load_mutation_model(mutation_params)
-    annotations_df = to_annotations_df(mutation_params['mut_bed'], os.getcwd())
+    if not output_params['workdir']:
+        workdir = os.path.dirname(output_params['out_prefix'])
+    annotations_df = to_annotations_df(mutation_params['mut_bed'], workdir)
 
     # Using pathlib to make this more machine agnostic
     output_params['out_prefix_name'] = pathlib.Path(output_params['out_prefix']).name
@@ -116,7 +118,8 @@ def extract_params(args):
         'out_prefix': args.o + '_' + args.name,
         'parent_prefix': args.o + '_' + args.parent_name if args.parent_name else None,
         'save_vcf': args.vcf,
-        'no_fastq': args.no_fastq or args.internal
+        'no_fastq': args.no_fastq or args.internal,
+        'workdir': args.w if args.w else None
     }
     general_params = {
         'rng_seed': args.rng,
@@ -155,7 +158,7 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     random.seed(general_params['rng_seed'])
     is_in_range(sequencing_params['read_len'], 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
     is_in_range(sequencing_params['coverage'], 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
-
+    #TODO check sanity workdir (output_params)
 
 def index_reference(input_params):
     print('Indexing reference started:', input_params['reference'])

@@ -27,10 +27,16 @@ def separate_cds_genes_intergenics(annotations_file, output_dir=None):
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
 
-    csv_file = 'all_chroms_annotaions.csv'
-    if output_dir:
-        csv_file = os.path.join(output_dir, csv_file)
-    #TODO just for debug. Remove later
+    # check if CSV exists
+    csv_file = None
+    _, extension = os.path.splitext(annotations_file)
+    if extension == '.csv':
+        csv_file = annotations_file
+    else:
+        # TODO remove?
+        csv_file = 'all_chroms_annotaions.csv'
+        if output_dir:
+            csv_file = os.path.join(output_dir, csv_file)
     if exists(csv_file):
         all_chroms_annotaions = pd.read_csv(csv_file)
         return all_chroms_annotaions

@@ -44,6 +44,9 @@ def parse_args(raw_args=None):
                         help="below this quality score, replace base-calls with N's")
     parser.add_argument('-v', type=str, required=False, metavar='vcf.file', default=None,
                         help="Input VCF file of variants to include")
+    parser.add_argument('-w', type=str, required=False, metavar='/path/to/working/dir/', default=None,
+                        help="Name of working directory to process annotations. If not given, the directory of the "
+                             "output file wll be taken instead")
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
                         help='Paired-end fragment length mean and std')
     parser.add_argument('--pe-model', type=str, required=False, metavar='<str>', default=None,
