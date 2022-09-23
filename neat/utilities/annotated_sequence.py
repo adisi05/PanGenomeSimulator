@@ -22,29 +22,29 @@ def to_annotations_df(file_path, output_dir=None):
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
     return annotations_df
 
+
 def separate_cds_genes_intergenics(annotations_file, output_dir=None):
     # GENE_ID = 'gene_id'
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
 
     # check if CSV exists
-    csv_file = None
     _, extension = os.path.splitext(annotations_file)
     if extension == '.csv':
         csv_file = annotations_file
     else:
         # TODO remove?
-        csv_file = 'all_chroms_annotaions.csv'
+        csv_file = 'all_chroms_annotations.csv'
         if output_dir:
             csv_file = os.path.join(output_dir, csv_file)
     if exists(csv_file):
-        all_chroms_annotaions = pd.read_csv(csv_file)
-        return all_chroms_annotaions
+        all_chroms_annotations = pd.read_csv(csv_file)
+        return all_chroms_annotations
 
     if annotations_file is not None:
         try:
             annotations = pybedtools.example_bedtool(annotations_file)
-            all_chroms_annotaions = []
+            all_chroms_annotations = []
             for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
                 cds_elements = annotations.filter(lambda x: x.fields[2] == 'CDS' and x.chrom == chrom.chrom)
                 cds_elements = cds_elements.sort()
@@ -74,26 +74,28 @@ def separate_cds_genes_intergenics(annotations_file, output_dir=None):
                 del intergenic_elements_df['chrom']
                 intergenic_elements_df = intergenic_elements_df.drop_duplicates()
 
-                cds_genes_intergenics = pd.concat([cds_elements_df, non_coding_gene_elements_df, intergenic_elements_df], ignore_index=True)
+                cds_genes_intergenics = pd.concat([cds_elements_df, non_coding_gene_elements_df,
+                                                   intergenic_elements_df], ignore_index=True)
                 cds_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
-                cds_genes_intergenics.insert(0,'chrom', str(chrom.chrom))
+                cds_genes_intergenics.insert(0, 'chrom', str(chrom.chrom))
                 cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
                 # cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
 
                 gene_elements_df = gene_elements.to_dataframe()
                 gene_elements_df = gene_elements_df[['strand', 'start', 'end']]
-                cds_genes_intergenics[['gene','strand']] = cds_genes_intergenics.apply(
+                cds_genes_intergenics[['gene', 'strand']] = cds_genes_intergenics.apply(
                     lambda x: assign_gene(x['start'], x['end'], gene_elements_df), axis=1, result_type='expand')
 
                 # add_reading_frames_test(cds_genes_intergenics, str(chrom.chrom))
 
-                all_chroms_annotaions.append(cds_genes_intergenics)
-            all_chroms_annotaions = pd.concat(all_chroms_annotaions).reset_index(drop=True)
-            all_chroms_annotaions.to_csv(csv_file)
-            return all_chroms_annotaions
+                all_chroms_annotations.append(cds_genes_intergenics)
+            all_chroms_annotations = pd.concat(all_chroms_annotations).reset_index(drop=True)
+            all_chroms_annotations.to_csv(csv_file)
+            return all_chroms_annotations
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
+
 
 def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, int):
     gene_ids = gene_elements_df.index[
@@ -106,7 +108,7 @@ def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, i
         # We assume genes from different strands don't overlap, but if it happens nonetheless - ignore
         return 0, Strand.UNKNOWN.value
     strand = Strand(gene_elements_df.loc[gene_ids[0], 'strand'])
-    return gene_ids[0] + 1, strand.value # indices in pandas are 0-based
+    return gene_ids[0] + 1, strand.value  # indices in pandas are 0-based
 
 
 # TODO for test. remove later
@@ -132,8 +134,6 @@ def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, i
 #             reading_offset = reading_offset % 3
 
 
-
-
 class AnnotatedSequence:
     _relevant_regions = []
     _chromosome = None
@@ -148,7 +148,7 @@ class AnnotatedSequence:
     _cached_end = None
     _cached_mask_in_window_per_region = None
 
-    def __init__(self, annotations_df: pd.DataFrame, chromosome : str, is_sorted : bool =False):
+    def __init__(self, annotations_df: pd.DataFrame, chromosome: str, is_sorted: bool = False):
         self._chromosome = chromosome
         if annotations_df is None or annotations_df.empty:
             self._relevant_regions.append(Region.ALL)
@@ -159,9 +159,8 @@ class AnnotatedSequence:
             self._annotations_df = self._annotations_df[annotations_df['chrom'] == chromosome]
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
-        self._annotations_df = self._annotations_df[['start','end','region','gene','strand']]
+        self._annotations_df = self._annotations_df[['start', 'end', 'region', 'gene', 'strand']]
         self._annotations_df.reset_index(drop=True, inplace=True)
-
 
         relevant_region_names = self._annotations_df['region'].unique()
         self._relevant_regions = [Region(name) for name in relevant_region_names]
@@ -198,7 +197,7 @@ class AnnotatedSequence:
 
         return annotation['start'], annotation['end']
 
-    def get_last_coding_position_of_encapsulating_gene(self, pos) -> (Optional[int], Strand):
+    def get_last_coding_position_of_encapsulating_gene(self, pos: int) -> (Optional[int], Strand):
         annotation, annotation_index = self._get_annotation_by_position(pos)
 
         gene = annotation['gene']
@@ -219,9 +218,9 @@ class AnnotatedSequence:
             last_cds = gene_cds_annotations[0]
             return last_cds['start'].item(), strand
 
-    def get_encapsulating_codon_positions(self, pos) -> (int, int, int):
+    def get_encapsulating_codon_positions(self, pos: int) -> (int, int, int):
         cds, _ = self._get_annotation_by_position(pos)
-        if cds['region']!= Region.CDS.value:
+        if cds['region'] != Region.CDS.value:
             raise Exception("Codon is only relevant for CDS region")
         cds_start = cds['start']
         cds_end = cds['end']
@@ -239,7 +238,7 @@ class AnnotatedSequence:
             prev_cds_end = prev_cds.iloc[0]['end'].item()
             if second < cds_start:
                 second = prev_cds_end - 1
-                first =  prev_cds_end - 2
+                first = prev_cds_end - 2
             elif first < cds_start:
                 first = prev_cds_end - 1
 
@@ -257,13 +256,12 @@ class AnnotatedSequence:
 
         return first, second, third
 
-
-    def get_annotations_in_range(self, start, end) -> pd.DataFrame:
-        annotations = self._annotations_df[(start < self._annotations_df['end'] ) &
+    def get_annotations_in_range(self, start: int, end: int) -> pd.DataFrame:
+        annotations = self._annotations_df[(start < self._annotations_df['end']) &
                                            (self._annotations_df['start'] < end)]
         return annotations
 
-    def mute_gene(self, position_on_gene : int = -1, gene_id : int = 0) -> None:
+    def mute_gene(self, position_on_gene: int = -1, gene_id: int = 0) -> None:
         if 0 <= position_on_gene < self.len():
             annotation, annotation_index = self._get_annotation_by_position(position_on_gene)
             gene_id = annotation['gene']
@@ -275,12 +273,12 @@ class AnnotatedSequence:
 
         # melt with previous intergenic region if exists
         if first_index != 0 and \
-            self._annotations_df.loc[first_index - 1, 'region'] == Region.INTERGENIC.value:
+                self._annotations_df.loc[first_index - 1, 'region'] == Region.INTERGENIC.value:
             first_index -= 1
 
         # melt with next intergenic region if exists
         if last_index + 1 != len(self._annotations_df) and \
-            self._annotations_df.loc[last_index + 1, 'region'] == Region.INTERGENIC.value:
+                self._annotations_df.loc[last_index + 1, 'region'] == Region.INTERGENIC.value:
             last_index += 1
 
         # create new intergenic region
@@ -302,16 +300,14 @@ class AnnotatedSequence:
             dfs_to_concat.append(self._annotations_df.loc[last_index + 1:])
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
-
-    def handle_insertion(self, pos, insertion_len) -> None:
+    def handle_insertion(self, pos: int, insertion_len: int) -> None:
         _, index = self._get_annotation_by_position(pos)
         self._annotations_df.loc[index, 'end'] += insertion_len
         if index + 1 != len(self._annotations_df):
             self._annotations_df.loc[index+1:, 'start'] += insertion_len
             self._annotations_df.loc[index+1:, 'end'] += insertion_len
 
-
-    def handle_deletion(self, pos, deletion_len) -> None:
+    def handle_deletion(self, pos: int, deletion_len: int) -> None:
         """
         Delete right after pos, sequence at the length deletion_len
         """
@@ -356,10 +352,11 @@ class AnnotatedSequence:
             counts_per_region[region] += region_end - region_start
         return counts_per_region
 
-    def get_mask_in_window_of_region(self, relevant_region, start, end) -> dict:
+    def get_mask_in_window_of_region(self, relevant_region: Region, start: int, end: int) -> dict:
         # if cache is valid and contains the region - return it
-        if start == self._cached_start and end == self._cached_end and relevant_region in self._cached_mask_in_window_per_region:
-            return self._cached_mask_in_window_per_region[relevant_region]
+        if start == self._cached_start and end == self._cached_end and \
+                relevant_region.value in self._cached_mask_in_window_per_region:
+            return self._cached_mask_in_window_per_region[relevant_region.value]
 
         # else - initialize cache
         self._cached_start = start
@@ -373,14 +370,14 @@ class AnnotatedSequence:
             annotation_end = min(end, annotation['end'])
             annotation_length = annotation_end - annotation_start
             for region in self._cached_mask_in_window_per_region.keys():
-                mask = 1 if region == relevant_region else 0
+                mask = 1 if region == relevant_region.value else 0
                 if len(self._cached_mask_in_window_per_region[region]) > 0:
                     self._cached_mask_in_window_per_region[region] = np.concatenate(
                         [self._cached_mask_in_window_per_region[region], np.full(annotation_length, mask)])
                 else:
                     self._cached_mask_in_window_per_region[region] = np.full(annotation_length, mask)
 
-        return self._cached_mask_in_window_per_region[relevant_region]
+        return self._cached_mask_in_window_per_region[relevant_region.value]
 
     def _update_reading_frames(self):
         if self._annotations_df is None or self._annotations_df.empty:
@@ -393,7 +390,7 @@ class AnnotatedSequence:
                 continue  # intergenic region
 
             cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id) &
-                                             (self._annotations_df['region'] == Region.CDS.value)]
+                                                   (self._annotations_df['region'] == Region.CDS.value)]
             cds_total_len = cds_annotations['end'].sum() - cds_annotations['start'].sum()
 
             if cds_total_len % 3 == 0:
@@ -428,4 +425,5 @@ if __name__ == "__main__":
     dirname = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
     separate_cds_genes_intergenics(filename, dirname)
 
-    #ID=gene:AT1G01100;Name=RPP1A;biotype=protein_coding;description=60S acidic ribosomal protein P1-1 [Source:UniProtKB/Swiss-Prot%3BAcc:Q8LCW9];gene_id=AT1G01100;logic_name=araport11
+    # ID=gene:AT1G01100;Name=RPP1A;biotype=protein_coding;description=60S acidic ribosomal protein P1-1
+    # [Source:UniProtKB/Swiss-Prot%3BAcc:Q8LCW9];gene_id=AT1G01100;logic_name=araport11
