@@ -11,8 +11,8 @@ from Bio import SeqIO
 import pandas as pd
 from enum import Enum
 
-from neat.utilities.common_data_structues import Region
-from neat.utilities.annotated_sequence import AnnotatedSequence, to_annotations_df
+from common_data_structues import Region
+from annotated_sequence import AnnotatedSequence, to_annotations_df
 
 # Some constants we'll need later
 VALID_NUCL = ['A', 'C', 'G', 'T']
@@ -119,12 +119,12 @@ def cluster_list(list_to_cluster: list, delta: float) -> list:
 def main():
 
     args = parse_arguments()
-    (ref, vcf, out_pickle, save_trinuc, skip_common, workdir) = (
-        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.w)
+    (ref, vcf, out_pickle, save_trinuc, skip_common, annotations_file, workdir) = (
+        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.b, args.w)
     if not workdir:
         workdir = os.path.dirname(out_pickle)
 
-    annotations_df = to_annotations_df(args, workdir)
+    annotations_df = to_annotations_df(annotations_file, workdir)
 
     regions_stats = RegionStats(annotations_df)
 

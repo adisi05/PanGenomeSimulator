@@ -6,7 +6,7 @@ import numpy as np
 import pybedtools
 import pandas as pd
 
-from neat.utilities.common_data_structues import Region, Strand
+from common_data_structues import Region, Strand
 
 
 def to_annotations_df(file_path, output_dir=None):
