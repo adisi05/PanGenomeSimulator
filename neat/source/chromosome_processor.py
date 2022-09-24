@@ -149,17 +149,17 @@ class WindowUnit:
         return True
 
 class RandomMutationPool:
-    def __init__(self, indels_per_region : dict, snps_per_region : dict, max_mutations_in_window : int, sv_list : list = []):
+    def __init__(self, indels_per_region: dict, snps_per_region: dict, max_mutations_in_window: int, sv_list: list = []):
         #TODO add SVs
         self.indels_per_region = indels_per_region
         self.snps_per_region = snps_per_region
         self.options = {}
-        for region, count in indels_per_region.items():
+        for region_name, count in indels_per_region.items():
             if count != 0:
-                self.options[(MutType.INDEL, region)] = count
-        for region, count in snps_per_region.items():
+                self.options[(MutType.INDEL, Region(region_name))] = count
+        for region_name, count in snps_per_region.items():
             if count != 0:
-                self.options[(MutType.SNP, region)] = count
+                self.options[(MutType.SNP, Region(region_name))] = count
         self.overall_count = min(max_mutations_in_window, sum(self.options.values()))
 
     def has_next(self) -> bool:
@@ -195,43 +195,43 @@ class ChromosomeProcessor:
 
     def update_mut_models(self, model_data, mut_rate, dist): #TODO figure out: called one time? or a few times, for each window?
         if not model_data:
-            self.model_data = {region: copy.deepcopy(DEFAULT_MODEL_1) for region in self.annotated_seq.get_regions()}
+            self.model_data = {region.value: copy.deepcopy(DEFAULT_MODEL_1) for region in self.annotated_seq.get_regions()}
         else:
             self.model_data = copy.deepcopy(model_data)
 
         # do we need to rescale mutation frequencies?
         self.mut_rescale = mut_rate
         if self.mut_rescale is None:
-            self.mut_scalar_per_region = {region: 1.0 for region in self.annotated_seq.get_regions()}
+            self.mut_scalar_per_region = {region.value: 1.0 for region in self.annotated_seq.get_regions()}
         else:
-            self.mut_scalar_per_region = {region: float(self.mut_rescale) //
-                         (self.model_data[region][0] / float(len(self.model_data[region]))) for region in self.annotated_seq.get_regions()}
+            self.mut_scalar_per_region = {region.value: float(self.mut_rescale) //
+                         (self.model_data[region.value][0] / float(len(self.model_data[region.value]))) for region in self.annotated_seq.get_regions()}
         if dist:
-            self.mut_scalar_per_region = {region: self.mut_scalar_per_region[region] * dist for region in self.annotated_seq.get_regions()}
+            self.mut_scalar_per_region = {region.value: self.mut_scalar_per_region[region.value] * dist for region in self.annotated_seq.get_regions()}
 
 
         # init mutation models
         #
-        # self.models_per_region[region][0] = average mutation rate
-        # self.models_per_region[region][1] = p(mut is homozygous | mutation occurs)
-        # self.models_per_region[region][2] = p(mut is indel | mut occurs)
-        # self.models_per_region[region][3] = p(insertion | indel occurs)
-        # self.models_per_region[region][4] = distribution of insertion lengths
-        # self.models_per_region[region][5] = distribution of deletion lengths
-        # self.models_per_region[region][6] = distribution of trinucleotide SNP transitions
-        # self.models_per_region[region][7] = p(trinuc mutates)
+        # self.models_per_region[region.value][0] = average mutation rate
+        # self.models_per_region[region.value][1] = p(mut is homozygous | mutation occurs)
+        # self.models_per_region[region.value][2] = p(mut is indel | mut occurs)
+        # self.models_per_region[region.value][3] = p(insertion | indel occurs)
+        # self.models_per_region[region.value][4] = distribution of insertion lengths
+        # self.models_per_region[region.value][5] = distribution of deletion lengths
+        # self.models_per_region[region.value][6] = distribution of trinucleotide SNP transitions
+        # self.models_per_region[region.value][7] = p(trinuc mutates)
         self.model_per_region = {}
         for region in self.annotated_seq.get_regions():
-            data = self.model_data[region]
-            self.model_per_region[region] = \
-                [self.mut_scalar_per_region[region] * data[0], data[1], data[2], data[3],
+            data = self.model_data[region.value]
+            self.model_per_region[region.value] = \
+                [self.mut_scalar_per_region[region.value] * data[0], data[1], data[2], data[3],
                  DiscreteDistribution(data[5], data[4]), DiscreteDistribution(data[7], data[6]), []]
             for m in data[8]:
                 # noinspection PyTypeChecker
-                self.model_per_region[region][6].append(
+                self.model_per_region[region.value][6].append(
                     [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
                      DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-            self.model_per_region[region].append([m for m in data[9]])
+            self.model_per_region[region.value].append([m for m in data[9]])
 
 
     def get_window_mutations(self) -> RandomMutationPool: #NOTE: window can be also a whole non-N region or the entire chromosome
@@ -242,9 +242,9 @@ class ChromosomeProcessor:
     def get_planned_snps_and_indels_in_window_per_region(self) -> (dict, dict):
         indel_poisson_per_region = self.init_poisson(indels=True)
         snp_poisson_per_region = self.init_poisson(indels=False)
-        indels_to_add_window_per_region = {region: indel_poisson_per_region[region].sample()
+        indels_to_add_window_per_region = {region.value: indel_poisson_per_region[region.value].sample()
                                                 for region in self.annotated_seq.get_regions()}
-        snps_to_add_window_per_region = {region: snp_poisson_per_region[region].sample()
+        snps_to_add_window_per_region = {region.value: snp_poisson_per_region[region.value].sample()
                                               for region in self.annotated_seq.get_regions()}
         return indels_to_add_window_per_region, snps_to_add_window_per_region
 
@@ -256,16 +256,16 @@ class ChromosomeProcessor:
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
         window_seq_len = self.window_unit.end - self.window_unit.start
-        trinuc_snp_bias_of_window_per_region = {region: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
-        self.trinuc_bias_per_region = {region: None for region in self.annotated_seq.get_regions()}
+        trinuc_snp_bias_of_window_per_region = {region.value: [0. for _ in range(window_seq_len)] for region in self.annotated_seq.get_regions()}
+        self.trinuc_bias_per_region = {region.value: None for region in self.annotated_seq.get_regions()}
         for region in self.annotated_seq.get_regions():
             region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
                                                                           self.window_unit.end)
             for i in range(0+1,window_seq_len-1):
-                trinuc_snp_bias_of_window_per_region[region][i] = region_mask[i] * \
-                    self.model_per_region[region][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
-            self.trinuc_bias_per_region[region] = \
-                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region][0+1:window_seq_len-1],
+                trinuc_snp_bias_of_window_per_region[region.value][i] = region_mask[i] * \
+                    self.model_per_region[region.value][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
+            self.trinuc_bias_per_region[region.value] = \
+                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value][0+1:window_seq_len-1],
                                      range(0+1,window_seq_len-1))
 
     def init_poisson(self, indels=True):
@@ -274,10 +274,10 @@ class ChromosomeProcessor:
         nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.window_unit.start,
                                                                                              self.window_unit.end)
         for region in self.annotated_seq.get_regions():
-            param = self.model_per_region[region][2] if indels else (1. - self.model_per_region[region][2])
-            list_per_region[region] = nucleotides_counts_per_region[region] * param * self.model_per_region[region][2]
-            k_range = range(int(nucleotides_counts_per_region[region] * MAX_MUTFRAC))
-            poisson_per_region[region] = poisson_list(k_range, list_per_region[region])
+            param = self.model_per_region[region.value][2] if indels else (1. - self.model_per_region[region.value][2])
+            list_per_region[region.value] = nucleotides_counts_per_region[region.value] * param * self.model_per_region[region.value][2]
+            k_range = range(int(nucleotides_counts_per_region[region.value] * MAX_MUTFRAC))
+            poisson_per_region[region.value] = poisson_list(k_range, list_per_region[region.value])
             # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
         return poisson_per_region
 
@@ -328,7 +328,7 @@ class ChromosomeProcessor:
         while random_mutations_pool.has_next():
             mut_type, region = random_mutations_pool.get_next()
             # TODO add a check to see if the mutation was really inserted? something like status code?
-            inserted_mutation, window_shift  = self.insert_random_mutation(mut_type, region)
+            inserted_mutation, window_shift = self.insert_random_mutation(mut_type, region)
             if not inserted_mutation:
                 continue
             inserted_mutations.append(inserted_mutation)
@@ -347,7 +347,7 @@ class ChromosomeProcessor:
         self.window_unit.finalize()
         return vcf_mutations
 
-    def insert_random_mutation(self, mut_type : MutType, region : Region) -> (Optional[Mutation], int):
+    def insert_random_mutation(self, mut_type: MutType, region: Region) -> (Optional[Mutation], int):
         window_shift = 0
 
         position = self.find_position_for_mutation(mut_type, region)
@@ -366,7 +366,7 @@ class ChromosomeProcessor:
 
         return inserted_mutation, window_shift
 
-    def find_position_for_mutation(self, mut_type : MutType, region : Region) -> int:
+    def find_position_for_mutation(self, mut_type: MutType, region: Region) -> int:
         # TODO use blocklist?
         region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
                                                                       self.window_unit.end)
@@ -385,7 +385,7 @@ class ChromosomeProcessor:
                 #TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
             else:
-                event_pos = self.trinuc_bias_per_region[region].sample()
+                event_pos = self.trinuc_bias_per_region[region.value].sample()
                 #TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
         return -1
@@ -399,7 +399,7 @@ class ChromosomeProcessor:
         ref_nucl = self.chromosome_sequence[position]
         context = str(self.chromosome_sequence[position - 1]) + str(self.chromosome_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
-        new_nucl = self.model_per_region[region][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
+        new_nucl = self.model_per_region[region.value][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
         snp = Mutation(position, ref_nucl, new_nucl, MutType.SNP)
         # self.blocklist[snp.position] = 2  # TODO use blocklist?
         return snp
@@ -411,8 +411,8 @@ class ChromosomeProcessor:
 
     def get_specific_indel(self, position, region):
         # insertion
-        if random.random() <= self.model_per_region[region][3]:
-            indel_len = self.model_per_region[region][4].sample()
+        if random.random() <= self.model_per_region[region.value][3]:
+            indel_len = self.model_per_region[region.value][4].sample()
             # sequence content of random insertions is uniformly random (change this later, maybe)
             indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
             ref_nucl = self.chromosome_sequence[position]
@@ -420,7 +420,7 @@ class ChromosomeProcessor:
 
         # deletion
         else:
-            indel_len = self.model_per_region[region][5].sample()
+            indel_len = self.model_per_region[region.value][5].sample()
 
             # skip if deletion too close to boundary
             if position + indel_len + 1 >= self.window_unit.end:
@@ -617,9 +617,9 @@ def is_stop_codon(codon : str, strand: int) -> bool:
 # parse mutation model pickle file
 def parse_input_mutation_model(model=None, which_default=1):
     if which_default == 1:
-        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_1] for region in Region}
+        out_model = {region.value: [copy.deepcopy(n) for n in DEFAULT_MODEL_1] for region in Region}
     elif which_default == 2:
-        out_model = {region: [copy.deepcopy(n) for n in DEFAULT_MODEL_2] for region in Region}
+        out_model = {region.value: [copy.deepcopy(n) for n in DEFAULT_MODEL_2] for region in Region}
     else:
         print('\nError: Unknown default mutation model specified\n')
         sys.exit(1)
@@ -628,16 +628,16 @@ def parse_input_mutation_model(model=None, which_default=1):
         pickle_dict = pickle.load(open(model, "rb"))
         region_list = list(Region)
         region_list.append('')
-        regions_found = []
+        region_names_found = []
         for region in region_list:
             if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:
                 continue
 
-            region_key = region if region != '' else Region.ALL
-            regions_found.append(region_key)
+            region_name = region.value if region != '' else Region.ALL.value
+            region_names_found.append(region_name)
 
-            out_model[region_key][0] = pickle_dict[pickel_key(region, Stats.AVG_MUT_RATE)]
-            out_model[region_key][2] = 1. - pickle_dict[pickel_key(region, Stats.SNP_FREQ)]
+            out_model[region_name][0] = pickle_dict[pickel_key(region, Stats.AVG_MUT_RATE)]
+            out_model[region_name][2] = 1. - pickle_dict[pickel_key(region, Stats.SNP_FREQ)]
 
             ins_list = pickle_dict[pickel_key(region, Stats.INDEL_FREQ)]
             if len(ins_list):
@@ -654,37 +654,36 @@ def parse_input_mutation_model(model=None, which_default=1):
                 ins_weight = [1.0]
                 del_vals = [1]
                 del_weight = [1.0]
-            out_model[region_key][3] = ins_count / float(ins_count + del_count)
-            out_model[region_key][4] = ins_vals
-            out_model[region_key][5] = ins_weight
-            out_model[region_key][6] = del_vals
-            out_model[region_key][7] = del_weight
+            out_model[region_name][3] = ins_count / float(ins_count + del_count)
+            out_model[region_name][4] = ins_vals
+            out_model[region_name][5] = ins_weight
+            out_model[region_name][6] = del_vals
+            out_model[region_name][7] = del_weight
 
             trinuc_trans_prob = pickle_dict[pickel_key(region, Stats.TRINUC_TRANS_PROBS)]
             for k in sorted(trinuc_trans_prob.keys()):
                 my_ind = TRI_IND[k[0][0] + k[0][2]]
                 (k1, k2) = (NUC_IND[k[0][1]], NUC_IND[k[1][1]])
-                out_model[region_key][8][my_ind][k1][k2] = trinuc_trans_prob[k]
-            for i in range(len(out_model[region_key][8])):
-                for j in range(len(out_model[region_key][8][i])):
-                    for l in range(len(out_model[region_key][8][i][j])):
+                out_model[region_name][8][my_ind][k1][k2] = trinuc_trans_prob[k]
+            for i in range(len(out_model[region_name][8])):
+                for j in range(len(out_model[region_name][8][i])):
+                    for l in range(len(out_model[region_name][8][i][j])):
                         # if trinuc not present in input mutation model, assign it uniform probability
-                        if float(sum(out_model[region_key][8][i][j])) < 1e-12:
-                            out_model[region_key][8][i][j] = [0.25, 0.25, 0.25, 0.25]
+                        if float(sum(out_model[region_name][8][i][j])) < 1e-12:
+                            out_model[region_name][8][i][j] = [0.25, 0.25, 0.25, 0.25]
                         else:
-                            out_model[region_key][8][i][j][l] /= float(sum(out_model[region_key][8][i][j]))
+                            out_model[region_name][8][i][j][l] /= float(sum(out_model[region_name][8][i][j]))
 
             trinuc_mut_prob = pickle_dict[pickel_key(region, Stats.TRINUC_MUT_PROB)]
             which_have_we_seen = {n: False for n in ALL_TRI}
             trinuc_mean = np.mean(list(trinuc_mut_prob.values()))
             for trinuc in trinuc_mut_prob.keys():
-                out_model[region_key][9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
+                out_model[region_name][9][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
                 which_have_we_seen[trinuc] = True
             for trinuc in which_have_we_seen.keys():
                 if not which_have_we_seen[trinuc]:
-                    out_model[region_key][9][ALL_IND[trinuc]] = trinuc_mean
-        regions_found = [region.value for region in regions_found]
-        print(f'found the next regions in the model: {regions_found}')
+                    out_model[region_name][9][ALL_IND[trinuc]] = trinuc_mean
+        print(f'found the next regions in the model: {region_names_found}')
     return out_model
 
 def pickel_key(region : Union[Region,str], stats : Stats) -> str:

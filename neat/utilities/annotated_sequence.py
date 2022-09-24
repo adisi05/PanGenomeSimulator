@@ -111,29 +111,6 @@ def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, i
     return gene_ids[0] + 1, strand.value  # indices in pandas are 0-based
 
 
-# TODO for test. remove later
-# def add_reading_frames_test(annotations_df, chromosome):
-#     if annotations_df is None or annotations_df.empty:
-#         return
-#
-#     for gene in annotations_df.gene.unique():
-#         if gene == 0:
-#             continue # intergenic region
-#
-#         cds_annotations = annotations_df[(annotations_df['gene'] == gene) &
-#                                             (annotations_df['region'] == Region.CDS.value)]
-#         cds_total_len = cds_annotations['end'].sum()-cds_annotations['start'].sum()
-#         if cds_total_len % 3 != 0:
-#             #TODO raise Exception?
-#             print(f'Total length of CDS elements in gene {gene} in chromosome {chromosome} '
-#                             f'cannot be divided by 3')
-#         reading_offset = 0
-#         for _, annotation in cds_annotations.iterrows():
-#             annotation['reading_offset'] = reading_offset
-#             reading_offset += annotation['end'] - annotation['start']
-#             reading_offset = reading_offset % 3
-
-
 class AnnotatedSequence:
     _relevant_regions = []
     _chromosome = None
@@ -346,10 +323,10 @@ class AnnotatedSequence:
         for _, annotation in relevant_annotations.iterrows():
             region = Region(annotation['region'])
             if region not in counts_per_region:
-                counts_per_region[region] = 0
+                counts_per_region[region.value] = 0
             region_start = max(start, annotation['start'])
             region_end = min(end, annotation['end'])
-            counts_per_region[region] += region_end - region_start
+            counts_per_region[region.value] += region_end - region_start
         return counts_per_region
 
     def get_mask_in_window_of_region(self, relevant_region: Region, start: int, end: int) -> dict:
@@ -361,7 +338,7 @@ class AnnotatedSequence:
         # else - initialize cache
         self._cached_start = start
         self._cached_end = end
-        self._cached_mask_in_window_per_region = {region: [] for region in self.get_regions()}
+        self._cached_mask_in_window_per_region = {region.value: [] for region in self.get_regions()}
 
         # compute if no cache
         relevant_annotations = self.get_annotations_in_range(start, end)
@@ -369,13 +346,13 @@ class AnnotatedSequence:
             annotation_start = max(start, annotation['start'])
             annotation_end = min(end, annotation['end'])
             annotation_length = annotation_end - annotation_start
-            for region in self._cached_mask_in_window_per_region.keys():
-                mask = 1 if region == relevant_region.value else 0
-                if len(self._cached_mask_in_window_per_region[region]) > 0:
-                    self._cached_mask_in_window_per_region[region] = np.concatenate(
-                        [self._cached_mask_in_window_per_region[region], np.full(annotation_length, mask)])
+            for region_name in self._cached_mask_in_window_per_region.keys():
+                mask = 1 if region_name == relevant_region.value else 0
+                if len(self._cached_mask_in_window_per_region[region_name]) > 0:
+                    self._cached_mask_in_window_per_region[region_name] = np.concatenate(
+                        [self._cached_mask_in_window_per_region[region_name], np.full(annotation_length, mask)])
                 else:
-                    self._cached_mask_in_window_per_region[region] = np.full(annotation_length, mask)
+                    self._cached_mask_in_window_per_region[region_name] = np.full(annotation_length, mask)
 
         return self._cached_mask_in_window_per_region[relevant_region.value]
 
