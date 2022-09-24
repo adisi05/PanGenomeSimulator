@@ -140,7 +140,7 @@ class WindowUnit:
 
     def update_blocklist(self, mutation):
         for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):  # TODO continue here
-            self.blocklist[k] = 1 if mutation.mut_type == MutType.INDEL else 2
+            self.blocklist[k] = 1 if mutation.mut_type.value == MutType.INDEL.value else 2
 
     def check_blocklist(self, mutation):
         for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
@@ -156,10 +156,10 @@ class RandomMutationPool:
         self.options = {}
         for region_name, count in indels_per_region.items():
             if count != 0:
-                self.options[(MutType.INDEL, Region(region_name))] = count
+                self.options[(MutType.INDEL.value, region_name)] = count
         for region_name, count in snps_per_region.items():
             if count != 0:
-                self.options[(MutType.SNP, Region(region_name))] = count
+                self.options[(MutType.SNP.value, region_name)] = count
         self.overall_count = min(max_mutations_in_window, sum(self.options.values()))
 
     def has_next(self) -> bool:
@@ -177,7 +177,8 @@ class RandomMutationPool:
         self.options[choice] -= 1
         if self.options[choice] == 0:
             del self.options[choice]
-        return choice
+        mut_type_name, region_name = choice
+        return MutType(mut_type_name), Region(region_name)
 
 class ChromosomeProcessor:
     """
@@ -261,12 +262,12 @@ class ChromosomeProcessor:
         for region in self.annotated_seq.get_regions():
             region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
                                                                           self.window_unit.end)
-            for i in range(0+1,window_seq_len-1):
+            for i in range(0+1, window_seq_len-1):
                 trinuc_snp_bias_of_window_per_region[region.value][i] = region_mask[i] * \
                     self.model_per_region[region.value][7][ALL_IND[str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])]]
             self.trinuc_bias_per_region[region.value] = \
                 DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value][0+1:window_seq_len-1],
-                                     range(0+1,window_seq_len-1))
+                                     range(0+1, window_seq_len-1))
 
     def init_poisson(self, indels=True):
         list_per_region = {}
@@ -355,10 +356,10 @@ class ChromosomeProcessor:
             return None, window_shift
 
         inserted_mutation = None
-        if mut_type == MutType.SNP:
+        if mut_type.value == MutType.SNP.value:
             inserted_mutation = self.insert_snp(position, region)
 
-        elif mut_type == MutType.INDEL:
+        elif mut_type.value == MutType.INDEL.value:
             inserted_mutation, window_shift = self.insert_indel(position, region)
 
         #elif mut_type == MutType.SV:
@@ -373,7 +374,7 @@ class ChromosomeProcessor:
         if 1 not in region_mask:
             return -1  # current annotation doesn't exist in window
         for attempt in range(MAX_ATTEMPTS):
-            if mut_type == MutType.INDEL or IGNORE_TRINUC:
+            if mut_type.value == MutType.INDEL.value or IGNORE_TRINUC:
                 k = self.window_unit.end - self.window_unit.start - 2 # -2 because we don't allow SNP in the window start/end
                 if k < 1:
                     return -1
@@ -483,15 +484,15 @@ class ChromosomeProcessor:
             return False # sequence is not annotated
 
         # SNP
-        if inserted_mutation.mut_type == MutType.SNP:
+        if inserted_mutation.mut_type.value == MutType.SNP.value:
             return self.handle_annotations_after_SNP(inserted_mutation)
         # INDEL - insertion
-        elif inserted_mutation.mut_type == MutType.INDEL \
+        elif inserted_mutation.mut_type.value == MutType.INDEL.value \
                 and len(inserted_mutation.ref_nucl) < len(inserted_mutation.new_nucl):
             self.handle_annotations_after_small_insertion(inserted_mutation)
             return True
         # INDEL - deletion
-        elif inserted_mutation.mut_type == MutType.INDEL \
+        elif inserted_mutation.mut_type.value == MutType.INDEL.value \
                 and len(inserted_mutation.ref_nucl) >= len(inserted_mutation.new_nucl):
             self.handle_annotations_after_small_deletion(inserted_mutation)
             return True
@@ -507,10 +508,10 @@ class ChromosomeProcessor:
         """
         region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
-        if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
+        if region.value == Region.INTERGENIC.value or region.value == Region.NON_CODING_GENE.value:
             return False # current behaviour is not to check for start/stop codon in these regions.
 
-        elif region == Region.CDS:
+        elif region.value == Region.CDS.value:
             start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
             # assuming sequence has been mutated already!
             codon = self.chromosome_sequence[start:end+1]
@@ -531,10 +532,10 @@ class ChromosomeProcessor:
     def should_mute_gene_after_small_insertion(self, inserted_mutation) -> bool:
         region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
-        if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
+        if region.value == Region.INTERGENIC.value or region.value == Region.NON_CODING_GENE.value:
             return False
 
-        elif region == Region.CDS:
+        elif region.value == Region.CDS.value:
             frameshift = (len(inserted_mutation.new_nucl) - 1) % 3 != 0
             if frameshift:
                 return True
@@ -577,10 +578,10 @@ class ChromosomeProcessor:
     def should_mute_gene_after_small_deletion(self, inserted_mutation : Mutation) -> bool:
         region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
-        if region == Region.INTERGENIC or region == Region.NON_CODING_GENE:
+        if region.value == Region.INTERGENIC.value or region.value == Region.NON_CODING_GENE.value:
             return False
 
-        elif region == Region.CDS:
+        elif region.value == Region.CDS.value:
             frameshift = (len(inserted_mutation.ref_nucl) - 1) % 3 != 0
             if frameshift:
                 return True
