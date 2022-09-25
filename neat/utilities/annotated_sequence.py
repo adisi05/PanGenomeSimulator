@@ -203,6 +203,7 @@ class AnnotatedSequence:
             raise Exception("Codon is only relevant for CDS region")
         cds_start = cds['start']
         cds_end = cds['end']
+        gene = cds['gene']
         reading_offset = int(cds['reading_offset']) + (pos - cds_start)
         reading_offset = reading_offset % 3
         first = pos - reading_offset
@@ -210,11 +211,10 @@ class AnnotatedSequence:
         third = pos + 2 - reading_offset
 
         if first < cds_start or second < cds_start:
-            prev_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
+            prev_cds = self._annotations_df[(self._annotations_df['gene'] == gene) &
+                                            (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] <= cds_start)]
-            if len(prev_cds.index) != 1:
-                raise Exception(f"Can't determine previous CDS for chromosome {self._chromosome} index {pos}")
-            prev_cds_end = prev_cds.iloc[0]['end'].item()
+            prev_cds_end = prev_cds.iloc[-1]['end'].item()
             if second < cds_start:
                 second = prev_cds_end - 1
                 first = prev_cds_end - 2
@@ -222,10 +222,9 @@ class AnnotatedSequence:
                 first = prev_cds_end - 1
 
         if cds_end <= second or cds_end <= third:
-            next_cds = self._annotations_df[(self._annotations_df['region'] == Region.CDS.value) &
+            next_cds = self._annotations_df[(self._annotations_df['gene'] == gene) &
+                                            (self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]
-            if len(next_cds.index) != 1:
-                raise Exception(f"Can't determine next CDS for chromosome {self._chromosome} position {pos}")
             next_cds_start = next_cds.iloc[0]['start'].item()
             if cds_end <= second:
                 second = next_cds_start

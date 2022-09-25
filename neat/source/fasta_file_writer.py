@@ -13,7 +13,6 @@ class FastaFileWriter:
         self.line_width = line_width
         self.last_line_len = 0
         self.file_name = '{0}.fasta_temp'.format(out_prefix)
-        print("TEST file_name",self.file_name)
         open(self.file_name, 'w').close()
 
     def write_record(self, sequence, chrom, N_seq_len=0, ignored_ending=0):
