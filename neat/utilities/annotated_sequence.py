@@ -338,23 +338,28 @@ class AnnotatedSequence:
         # else - initialize cache
         self._cached_start = start
         self._cached_end = end
-        self._cached_mask_in_window_per_region = {region.value: [] for region in self.get_regions()}
+        self._cached_mask_in_window_per_region = {}
 
         # compute if no cache
+        self.compute_mask_in_window(start, end)
+
+        return self._cached_mask_in_window_per_region[relevant_region.value]
+
+    def compute_mask_in_window(self, start, end):
         relevant_annotations = self.get_annotations_in_range(start, end)
         for _, annotation in relevant_annotations.iterrows():
             annotation_start = max(start, annotation['start'])
             annotation_end = min(end, annotation['end'])
             annotation_length = annotation_end - annotation_start
-            for region_name in self._cached_mask_in_window_per_region.keys():
-                mask = 1 if region_name == relevant_region.value else 0
-                if len(self._cached_mask_in_window_per_region[region_name]) > 0:
-                    self._cached_mask_in_window_per_region[region_name] = np.concatenate(
-                        [self._cached_mask_in_window_per_region[region_name], np.full(annotation_length, mask)])
+            annotation_region = Region(annotation['region'])
+            for region in self.get_regions():
+                mask = 1 if region.value == annotation_region.value else 0
+                if region.value in self._cached_mask_in_window_per_region:
+                    self._cached_mask_in_window_per_region[region.value] = np.concatenate(
+                        [self._cached_mask_in_window_per_region[region.value],
+                         np.full(annotation_length, mask)])
                 else:
-                    self._cached_mask_in_window_per_region[region_name] = np.full(annotation_length, mask)
-
-        return self._cached_mask_in_window_per_region[relevant_region.value]
+                    self._cached_mask_in_window_per_region[region.value] = np.full(annotation_length, mask)
 
     def _update_reading_frames(self):
         if self._annotations_df is None or self._annotations_df.empty:

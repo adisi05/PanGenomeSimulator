@@ -173,7 +173,7 @@ class RandomMutationPool:
         choice = random.choices([opt[0] for opt in option_with_count_list],
                                 weights=[opt[1] for opt in option_with_count_list],
                                 k=1)[0]
-        self.overall_count -= self.overall_count
+        self.overall_count -= 1
         self.options[choice] -= 1
         if self.options[choice] == 0:
             del self.options[choice]
