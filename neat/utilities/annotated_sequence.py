@@ -17,6 +17,8 @@ def to_annotations_df(file_path, output_dir=None):
         try:
             annotations_df = separate_cds_genes_intergenics(file_path, output_dir)
             annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
+            annotations_df[['start', 'end']] = annotations_df[['start', 'end']].astype(int)
+
             # TODO validate chromosome length are same as in reference
         except ValueError:
             print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
@@ -181,18 +183,18 @@ class AnnotatedSequence:
         if not gene or gene == 0:
             raise Exception("Coding positions are only relevant for genes")
 
-        strand = Strand(annotation.iloc[0]['strand'])
-        if strand == Strand.UNKNOWN:
+        strand = Strand(annotation['strand'])
+        if strand.value == Strand.UNKNOWN.value:
             return None, strand
 
         gene_cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene) &
                                                     (self._annotations_df['region'] == Region.CDS.value)]
 
-        if strand == Strand.FORWARD:
-            last_cds = gene_cds_annotations[-1]
+        if strand.value == Strand.FORWARD.value:
+            last_cds = gene_cds_annotations.iloc[-1]
             return last_cds['end'].item() - 1, strand
         else:
-            last_cds = gene_cds_annotations[0]
+            last_cds = gene_cds_annotations.iloc[0]
             return last_cds['start'].item(), strand
 
     def get_encapsulating_codon_positions(self, pos: int) -> (int, int, int):
@@ -201,7 +203,7 @@ class AnnotatedSequence:
             raise Exception("Codon is only relevant for CDS region")
         cds_start = cds['start']
         cds_end = cds['end']
-        reading_offset = cds['reading_offset'] + (pos - cds_start)
+        reading_offset = int(cds['reading_offset']) + (pos - cds_start)
         reading_offset = reading_offset % 3
         first = pos - reading_offset
         second = pos + 1 - reading_offset
@@ -398,7 +400,7 @@ class AnnotatedSequence:
             if gene_annotations is None or gene_annotations.empty:
                 continue
             strand = Strand(gene_annotations.iloc[0]['strand'])
-            if strand == Strand.UNKNOWN:
+            if strand.value == Strand.UNKNOWN.value:
                 self.mute_gene(gene_id=gene_id)
 
 
