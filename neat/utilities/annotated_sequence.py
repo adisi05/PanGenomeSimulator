@@ -289,10 +289,10 @@ class AnnotatedSequence:
         """
         Delete right after pos, sequence at the length deletion_len
         """
-        annotation, index = self._get_annotation_by_position(pos)
+        _, index = self._get_annotation_by_position(pos)
         annotation_residue = self._annotations_df.loc[index, 'end'].item() - pos - 1
         deleted_already = min(annotation_residue, deletion_len)
-        annotation['end'] -= deleted_already
+        self._annotations_df.loc[index, 'end'] -= deleted_already
         index += 1
 
         annotations_to_delete = []
