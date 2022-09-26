@@ -25,7 +25,7 @@ def to_annotations_df(file_path, output_dir=None):
     return annotations_df
 
 
-def separate_cds_genes_intergenics(annotations_file, output_dir=None):
+def separate_cds_genes_intergenics(annotations_file: str, output_dir: str = None):
     # GENE_ID = 'gene_id'
     # def extract_gene_id(attributes: str):
     #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
@@ -316,15 +316,13 @@ class AnnotatedSequence:
         if len(annotations_to_delete):
             self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
 
-    def get_nucleotides_counts_per_region(self, start=-1, end=-1) -> dict:
+    def get_nucleotides_counts_per_region(self, start: int = -1, end: int = -1) -> dict:
         start = start if start != -1 else 0
         end = end if end != -1 else self.len()
         relevant_annotations = self.get_annotations_in_range(start, end)
-        counts_per_region = {}
+        counts_per_region = {region.value: 0 for region in self.get_regions()}
         for _, annotation in relevant_annotations.iterrows():
             region = Region(annotation['region'])
-            if region not in counts_per_region:
-                counts_per_region[region.value] = 0
             region_start = max(start, annotation['start'])
             region_end = min(end, annotation['end'])
             counts_per_region[region.value] += region_end - region_start
@@ -346,7 +344,7 @@ class AnnotatedSequence:
 
         return self._cached_mask_in_window_per_region[relevant_region.value]
 
-    def compute_mask_in_window(self, start, end):
+    def compute_mask_in_window(self, start: int, end: int):
         relevant_annotations = self.get_annotations_in_range(start, end)
         for _, annotation in relevant_annotations.iterrows():
             annotation_start = max(start, annotation['start'])

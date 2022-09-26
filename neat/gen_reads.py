@@ -20,7 +20,7 @@ import sys
 import time
 
 import os
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 
 import pandas as pd
 
@@ -54,10 +54,10 @@ def simulate(args):
     # Using pathlib to make this more machine agnostic
     output_params['out_prefix_name'] = pathlib.Path(output_params['out_prefix']).name
 
-
     final_chromosomes = {}
     for chrom in index_params['indices_by_ref_name'].keys():
-        chromosome_processor = simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df)
+        chromosome_processor = simulate_chrom(input_params, output_params, mutation_params, index_params,
+                                              sequencing_params, chrom, annotations_df)
         final_chromosomes[chromosome_processor.chromosome_name] = str(chromosome_processor.chromosome_sequence)
 
     write_output(index_params, input_params, output_params, sequencing_params, final_chromosomes)
@@ -67,9 +67,7 @@ def simulate(args):
     # TODO close/finalize writer in some way?
 
 
-
-def write_output(index_params, input_params, output_params, sequencing_params, final_chromosomes : Dict[str,str]):
-
+def write_output(index_params, input_params, output_params, sequencing_params, final_chromosomes: Dict[str, str]):
     # FASTA
     fasta_file_writer = FastaFileWriter(output_params['out_prefix'], index_params['line_width'])
     for name, sequence in final_chromosomes.items():
@@ -99,14 +97,11 @@ def parse_args(args):
 def extract_params(args):
     input_params = {
         'reference': args.r,
-        # 'input_vcf': args.v,
         'input_variants': args.input_variants,
-        'input_variants_path': args.input_variants_path,
-        'input_bed': args.tr,
-        'discard_bed': args.dr
+        'input_variants_path': args.input_variants_path
     }
     mut_model = args.m
-    mut_model = mut_model.replace('"', '').replace("'","")
+    # mut_model = mut_model.replace('"', '').replace("'","")
     mutation_params = {
         'mut_bed': args.Mb,
         'mut_model': mut_model,
@@ -145,9 +140,8 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     # Check that files are real, if provided
     check_file_open(input_params['reference'], 'ERROR: could not open reference, {}'.format(input_params['reference']),
                     required=True)
-    # check_file_open(input_params['input_vcf'], 'ERROR: could not open input VCF, {}'.format(input_params['input_vcf']), required=False)
-    check_file_open(input_params['input_bed'], 'ERROR: could not open input BED, {}'.format(input_params['input_bed']),
-                    required=False)
+    # check_file_open(input_params['input_bed'], 'ERROR: could not open input BED, {}'.format(input_params['input_bed']),
+    #                 required=False)
     # TODO check mut bed file, and vcf?
     if (sequencing_params['fragment_size'] is None and sequencing_params['fragment_std'] is not None) or (
             sequencing_params['fragment_size'] is not None and sequencing_params['fragment_std'] is None):
@@ -158,7 +152,8 @@ def params_sanity_check(input_params, output_params, general_params, sequencing_
     random.seed(general_params['rng_seed'])
     is_in_range(sequencing_params['read_len'], 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
     is_in_range(sequencing_params['coverage'], 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
-    #TODO check sanity workdir (output_params)
+    # TODO check sanity workdir (output_params)
+
 
 def index_reference(input_params):
     print('Indexing reference started:', input_params['reference'])
@@ -179,42 +174,6 @@ def index_reference(input_params):
     return index_params
 
 
-# def load_input_regions(input_params, ref_list):
-#     print('Loading input regions from BED file:', input_params['input_bed'])
-#     start = time.time()
-#     # TODO convert bed to pandas dataframe
-#     input_params['input_regions'] = {}
-#     if input_params['input_bed'] is not None:
-#         try:
-#             with open(input_params['input_bed'], 'r') as f:
-#                 for line in f:
-#                     [my_chr, pos1, pos2] = line.strip().split('\t')[:3]
-#                     if my_chr not in input_params['input_regions']:
-#                         input_params['input_regions'][my_chr] = [-1]
-#                     input_params['input_regions'][my_chr].extend([int(pos1), int(pos2)])
-#         except IOError:
-#             print('\nProblem reading input target BED file.\n')
-#             sys.exit(1)
-#
-#         # some validation
-#         n_in_bed_only = 0
-#         n_in_ref_only = 0
-#         for k in ref_list:
-#             if k not in input_params['input_regions']:
-#                 n_in_ref_only += 1
-#         for k in input_params['input_regions'].keys():
-#             if k not in ref_list:
-#                 n_in_bed_only += 1
-#                 del input_params['input_regions'][k]
-#         if n_in_ref_only > 0:
-#             print('Warning: Reference contains sequences not found in targeted regions BED file.')
-#         if n_in_bed_only > 0:
-#             print(
-#                 'Warning: Targeted regions BED file contains sequence names not found in reference (regions ignored).')
-#     end = time.time()
-#     print('Loading input regions took {} seconds.'.format(int(end - start)))
-
-
 def load_mutation_model(mutation_params):
     mutation_params['mut_model'] = parse_input_mutation_model(mutation_params['mut_model'], 1)
     if mutation_params['mut_rate'] < 0.:
@@ -223,17 +182,21 @@ def load_mutation_model(mutation_params):
         is_in_range(mutation_params['mut_rate'], 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
 
 
-def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom, annotations_df) -> ChromosomeProcessor:
-
+def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom,
+                   annotations_df: pd.DataFrame) -> ChromosomeProcessor:
     # read in reference sequence and notate blocks of Ns
-    chrom_sequence, index_params['n_regions'] = read_ref(input_params['reference'], index_params['indices_by_ref_name'][chrom], sequencing_params['n_handling'])
+    chrom_sequence, index_params['n_regions'] = read_ref(input_params['reference'],
+                                                         index_params['indices_by_ref_name'][chrom],
+                                                         sequencing_params['n_handling'])
 
     variants_from_vcf = get_input_variants_from_vcf(input_params)
     current_chrom_given_valid_variants = prune_invalid_variants(chrom, variants_from_vcf, chrom_sequence)
-    chrom_annotations_df = annotations_df[annotations_df['chrom']==chrom]
-    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True, mut_models=mutation_params['mut_model'], mut_rate = mutation_params['mut_rate'], dist = mutation_params['dist'])
+    chrom_annotations_df = annotations_df[annotations_df['chrom'] == chrom]
+    chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True,
+                                               mut_models=mutation_params['mut_model'],
+                                               mut_rate=mutation_params['mut_rate'], dist=mutation_params['dist'])
 
-    #TODO add large random structural variants
+    # TODO add large random structural variants
 
     print('--------------------------------')
     print('Simulating chromosome {} of sequence started...'.format(chrom))
@@ -241,18 +204,19 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, s
     # Applying variants to non-N regions
     for non_n_region in index_params['n_regions']['non_N']:
         start, end = non_n_region
-        inserted_mutations = apply_variants_to_non_n_region(current_chrom_given_valid_variants, chromosome_processor, start, end)
+        inserted_mutations = apply_variants_to_non_n_region(current_chrom_given_valid_variants, chromosome_processor,
+                                                            start, end)
 
     # write all output variants for this reference
-    #TODO write inserted_mutations - write_vcf?
+    # TODO write inserted_mutations - write_vcf?
 
     print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
     return chromosome_processor
 
 
-def get_input_variants_from_vcf(input_params):
-    if input_params['input_variants'] is None:
+def get_input_variants_from_vcf(input_params: Optional[pd.DataFrame]) -> pd.DataFrame:
+    if input_params['input_variants'] is None: # or input_params['input_variants'].empty:
         variants_from_vcf = pd.read_csv(input_params['input_variants_path'])
         variants_from_vcf[['chrom', 'allele']] = variants_from_vcf[['chrom', 'allele']].astype(str)
         variants_from_vcf['pos'] = variants_from_vcf['pos'].astype(int)
@@ -261,7 +225,7 @@ def get_input_variants_from_vcf(input_params):
     return input_params['input_variants']
 
 
-def prune_invalid_variants(chrom, input_variants, chrom_sequence):
+def prune_invalid_variants(chrom, input_variants: pd.DataFrame, chrom_sequence) -> pd.DataFrame:
     print('Pruning relevant variants from input VCF...')
     start = time.time()
     """Prune invalid input variants, e.g variants that:
@@ -304,20 +268,18 @@ def prune_invalid_variants(chrom, input_variants, chrom_sequence):
     return input_variants.loc[valid_variants_from_vcf_indexes, 'pos':].reset_index(drop=True)
 
 
-
-def apply_variants_to_non_n_region(valid_variants_from_vcf, chromosome_processor, start, end):
-
+def apply_variants_to_non_n_region(valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeProcessor,
+                                   start: int, end: int):
     vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
 
     # construct sequence data that we will sample reads from
-    inserted_mutations =\
+    inserted_mutations = \
         insert_given_and_random_mutations(start, end, chromosome_processor, vars_in_current_window)
-
 
     return inserted_mutations
 
 
-def get_vars_in_window(start, end, valid_variants_from_vcf):
+def get_vars_in_window(start: int, end: int, valid_variants_from_vcf: pd.DataFrame) -> pd.DataFrame:
     vars_in_window_indexes = []
 
     for i, variant in valid_variants_from_vcf.iterrows():
@@ -331,8 +293,8 @@ def get_vars_in_window(start, end, valid_variants_from_vcf):
     return vars_in_window
 
 
-
-def insert_given_and_random_mutations(start, end, chromosome_processor, vars_in_current_window):
+def insert_given_and_random_mutations(start: int, end: int, chromosome_processor: ChromosomeProcessor,
+                                      vars_in_current_window: pd.DataFrame) -> List[Tuple]:
     given_mutations_inserted = chromosome_processor.insert_given_mutations(vars_in_current_window, start=start, end=end)
     random_mutations_inserted = chromosome_processor.generate_random_mutations(start, end)
     return given_mutations_inserted + random_mutations_inserted
@@ -354,6 +316,6 @@ def write_vcf(vcf_file_writer, inserted_mutations, chrom):
 
 
 # TODO return to use? because of N seq
-def write_fasta(fasta_file_writer, chrom, overlap_with_next, sequences, N_seq_len=0):
+def write_fasta(fasta_file_writer, chrom, overlap_with_next, sequences, n_seq_len: int = 0):
     haploid_sequences = sequences.sequences if sequences else None
-    fasta_file_writer.write_record(haploid_sequences, chrom, N_seq_len, overlap_with_next)
+    fasta_file_writer.write_record(haploid_sequences, chrom, n_seq_len, overlap_with_next)
