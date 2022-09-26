@@ -193,6 +193,10 @@ class RandomMutationPool:
         if self.options[choice] == 0:
             del self.options[choice]
         mut_type_name, region_name = choice
+
+        if self.debug:
+            print(f"Remained mutations count within window: {self.overall_count}")
+
         return MutType(mut_type_name), Region(region_name)
 
 
@@ -263,7 +267,7 @@ class ChromosomeProcessor:
         max_mutations_in_window = round(
             MAX_MUTFRAC * (self.window_unit.end - self.window_unit.start))  # TODO rethink it
         return RandomMutationPool(indels_to_add_window_per_region, snps_to_add_window_per_region,
-                                  max_mutations_in_window, self.debug)
+                                  max_mutations_in_window, debug=self.debug)
 
     def get_planned_snps_and_indels_in_window_per_region(self) -> (dict, dict):
         indel_poisson_per_region = self.init_poisson(type_is_indel=True)
@@ -372,7 +376,6 @@ class ChromosomeProcessor:
             annotation_changed = self.handle_annotations_after_mutated_sequence(inserted_mutation)
             # if at least one has changed - sample mutations again
             if annotation_changed or window_shift != 0:
-                random_mutations_pool = self.get_window_mutations()
                 if not IGNORE_TRINUC:
                     self._update_trinuc_bias_of_window()
 
