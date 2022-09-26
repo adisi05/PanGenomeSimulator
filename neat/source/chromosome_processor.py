@@ -157,7 +157,7 @@ class WindowUnit:
 
 class RandomMutationPool:
     def __init__(self, indels_per_region: dict, snps_per_region: dict, max_mutations_in_window: int,
-                 sv_list: list = []):
+                 sv_list: list = [], debug: bool = False):
         # TODO add SVs
         self.indels_per_region = indels_per_region
         self.snps_per_region = snps_per_region
@@ -169,6 +169,13 @@ class RandomMutationPool:
             if count != 0:
                 self.options[(MutType.SNP.value, region_name)] = count
         self.overall_count = min(max_mutations_in_window, sum(self.options.values()))
+        self.debug = debug
+
+        if self.debug:
+            print(f"Created random mutations pool")
+            print(f"Overall planned random mutations within window: {self.overall_count}")
+            print(f"Mutations distribution: {list(self.options.items())}")
+
 
     def has_next(self) -> bool:
         return self.overall_count > 0
@@ -195,7 +202,7 @@ class ChromosomeProcessor:
     """
 
     def __init__(self, chromosome_name: str, chromosome_sequence: Seq, annotations_df: pd.DataFrame,
-                 annotations_sorted: bool = False, mut_models=None, mut_rate=None, dist=None):
+                 annotations_sorted: bool = False, mut_models=None, mut_rate=None, dist=None, debug: bool = False):
         self.chromosome_name = chromosome_name
         self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
@@ -203,6 +210,7 @@ class ChromosomeProcessor:
         self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted)
         self._update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
+        self.debug = debug
 
     def _update_mut_models(self, model_data: dict, mut_rate, dist):
         # TODO figure out: called one time? or a few times, for each window?
@@ -255,7 +263,7 @@ class ChromosomeProcessor:
         max_mutations_in_window = round(
             MAX_MUTFRAC * (self.window_unit.end - self.window_unit.start))  # TODO rethink it
         return RandomMutationPool(indels_to_add_window_per_region, snps_to_add_window_per_region,
-                                  max_mutations_in_window)
+                                  max_mutations_in_window, self.debug)
 
     def get_planned_snps_and_indels_in_window_per_region(self) -> (dict, dict):
         indel_poisson_per_region = self.init_poisson(type_is_indel=True)
@@ -490,6 +498,9 @@ class ChromosomeProcessor:
             # alter reference sequence
             self.chromosome_sequence = self.chromosome_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
                                        self.chromosome_sequence[ref_end:]
+
+        print(f"Inserted mutation of type {mutation.mut_type.value} at position {mutation.position}. "
+              f"Window shift is {window_shift}")
         return window_shift
 
     def prepare_mutations_to_vcf(self, inserted_mutations: List[Mutation], mutations_already_inserted: bool) -> List[Tuple]:

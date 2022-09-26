@@ -57,7 +57,7 @@ def simulate(args):
     final_chromosomes = {}
     for chrom in index_params['indices_by_ref_name'].keys():
         chromosome_processor = simulate_chrom(input_params, output_params, mutation_params, index_params,
-                                              sequencing_params, chrom, annotations_df)
+                                              sequencing_params, chrom, annotations_df, general_params['debug'])
         final_chromosomes[chromosome_processor.chromosome_name] = str(chromosome_processor.chromosome_sequence)
 
     write_output(index_params, input_params, output_params, sequencing_params, final_chromosomes)
@@ -183,7 +183,7 @@ def load_mutation_model(mutation_params):
 
 
 def simulate_chrom(input_params, output_params, mutation_params, index_params, sequencing_params, chrom,
-                   annotations_df: pd.DataFrame) -> ChromosomeProcessor:
+                   annotations_df: pd.DataFrame, debug: bool = False) -> ChromosomeProcessor:
     # read in reference sequence and notate blocks of Ns
     chrom_sequence, index_params['n_regions'] = read_ref(input_params['reference'],
                                                          index_params['indices_by_ref_name'][chrom],
@@ -194,7 +194,7 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, s
     chrom_annotations_df = annotations_df[annotations_df['chrom'] == chrom]
     chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True,
                                                mut_models=mutation_params['mut_model'],
-                                               mut_rate=mutation_params['mut_rate'], dist=mutation_params['dist'])
+                                               mut_rate=mutation_params['mut_rate'], dist=mutation_params['dist'], debug=debug)
 
     # TODO add large random structural variants
 
@@ -204,8 +204,8 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, s
     # Applying variants to non-N regions
     for non_n_region in index_params['n_regions']['non_N']:
         start, end = non_n_region
-        inserted_mutations = apply_variants_to_non_n_region(current_chrom_given_valid_variants, chromosome_processor,
-                                                            start, end)
+        inserted_mutations = apply_variants_to_window(current_chrom_given_valid_variants, chromosome_processor,
+                                                      start, end, debug)
 
     # write all output variants for this reference
     # TODO write inserted_mutations - write_vcf?
@@ -216,7 +216,7 @@ def simulate_chrom(input_params, output_params, mutation_params, index_params, s
 
 
 def get_input_variants_from_vcf(input_params: Optional[pd.DataFrame]) -> pd.DataFrame:
-    if input_params['input_variants'] is None: # or input_params['input_variants'].empty:
+    if input_params['input_variants'] is None:
         variants_from_vcf = pd.read_csv(input_params['input_variants_path'])
         variants_from_vcf[['chrom', 'allele']] = variants_from_vcf[['chrom', 'allele']].astype(str)
         variants_from_vcf['pos'] = variants_from_vcf['pos'].astype(int)
@@ -268,8 +268,10 @@ def prune_invalid_variants(chrom, input_variants: pd.DataFrame, chrom_sequence) 
     return input_variants.loc[valid_variants_from_vcf_indexes, 'pos':].reset_index(drop=True)
 
 
-def apply_variants_to_non_n_region(valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeProcessor,
-                                   start: int, end: int):
+def apply_variants_to_window(valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeProcessor,
+                             start: int, end: int, debug: bool = False):
+    if debug:
+        print(f"Current window: start={start}, end={end}")
     vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
 
     # construct sequence data that we will sample reads from
