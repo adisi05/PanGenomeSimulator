@@ -21,7 +21,8 @@ import pandas as pd
 Constants needed for analysis
 """
 MAX_ATTEMPTS = 100  # max attempts to insert a mutation into a valid position
-MAX_MUTFRAC = 0.3  # TODO rethink it!!! the maximum percentage of a window/sequence that can contain mutations
+MAX_MUTFRAC = 0.3
+# TODO rethink: 1. Do we need it? 2. Do we want to change the scalar? 3. Do we want to make one for each region?
 
 NUCL = ['A', 'C', 'G', 'T']
 TRI_IND = {'AA': 0, 'AC': 1, 'AG': 2, 'AT': 3, 'CA': 4, 'CC': 5, 'CG': 6, 'CT': 7,
@@ -264,8 +265,7 @@ class ChromosomeProcessor:
         # NOTE: window can be also a whole non-N region or the entire chromosome
         indels_to_add_window_per_region, snps_to_add_window_per_region = \
             self.get_planned_snps_and_indels_in_window_per_region()
-        max_mutations_in_window = round(
-            MAX_MUTFRAC * (self.window_unit.end - self.window_unit.start))  # TODO rethink it
+        max_mutations_in_window = round(MAX_MUTFRAC * (self.window_unit.end - self.window_unit.start))
         return RandomMutationPool(indels_to_add_window_per_region, snps_to_add_window_per_region,
                                   max_mutations_in_window, debug=self.debug)
 
@@ -314,6 +314,9 @@ class ChromosomeProcessor:
                     1. - self.model_per_region[region.value][2])
             list_per_region[region.value] = \
                 nucleotides_counts_per_region[region.value] * param * self.model_per_region[region.value][2]
+            # TODO rethink
+            # k_range = range(int(nucleotides_counts_per_region[region.value] * self.model_per_region[region.value][0]))
+            # k_range = range(int(self.seq_len * MAX_MUTFRAC))
             k_range = range(int(nucleotides_counts_per_region[region.value] * MAX_MUTFRAC))
             poisson_per_region[region.value] = poisson_list(k_range, list_per_region[region.value])
             # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
