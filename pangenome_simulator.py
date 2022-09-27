@@ -48,6 +48,8 @@ def parse_args(raw_args=None):
     parser.add_argument('-w', type=str, required=False, metavar='/path/to/working/dir/', default=None,
                         help="Name of working directory to process annotations. If not given, the directory of the "
                              "output file wll be taken instead")
+    parser.add_argument('-ws', type=int, required=False, metavar='<int>', default=1000,
+                        help='Window size of simulation. Choose an integer number larger than 10')
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
                         help='Paired-end fragment length mean and std')
     parser.add_argument('--pe-model', type=str, required=False, metavar='<str>', default=None,

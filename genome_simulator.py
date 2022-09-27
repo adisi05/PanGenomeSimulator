@@ -36,8 +36,9 @@ from utilities.annotated_sequence import to_annotations_df
 Some constants needed for analysis
 """
 
-# target window size for read sampling. How many times bigger than read/frag length
-WINDOW_TARGET_SCALE = 100
+# Default window size for simulation
+DEFAULT_WINDOW_SIZE = 1000
+MIN_WINDOW_SIZE = 10
 
 # allowed nucleotides
 ALLOWED_NUCL = ['A', 'C', 'G', 'T']
@@ -47,9 +48,6 @@ class GenomeSimulator:
     def __init__(self, args):
         self._extract_args(args)
         self._params_sanity_check()
-
-        # If coverage val for a given window/position is below this value, consider it effectively zero.
-        self._sequencing_low_cov_thresh = 50
 
         # Use pathlib to make this more machine agnostic
         self._output_prefix_name = pathlib.Path(self._output_prefix).name
@@ -89,6 +87,7 @@ class GenomeSimulator:
             or args.pe_model
         self._sequencing_n_handling = ('random', self._sequencing_fragment_size) if self._sequencing_paired_end \
             else ('ignore', self._sequencing_read_len)
+        self._window_size = args.ws if args.ws > MIN_WINDOW_SIZE else DEFAULT_WINDOW_SIZE
 
     def _params_sanity_check(self):
         # Check that files are real, if provided
@@ -162,22 +161,38 @@ class GenomeSimulator:
         print('Simulating chromosome {} of sequence started...'.format(chrom))
         t_start = time.time()
         for non_n_region in n_regions['non_N']:
-            start, end = non_n_region
-            inserted_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor, start, end)
+            windows_list = self._break_to_windows(non_n_region[0], non_n_region[1])
+            for window in windows_list:
+                start, end = window
+                inserted_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor, start, end)
         print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
         return chromosome_processor, inserted_mutations
 
+    def _break_to_windows(self, start: int, end: int) -> List[Tuple[int, int]]:
+        remained_length = end - start
+        windows_list = [(start, end)]
+        while remained_length > 1.01 * self._window_size and remained_length > self._window_size + MIN_WINDOW_SIZE:
+            prev_start, prev_end = windows_list.pop()
+            next_end = prev_end
+            next_start = prev_start + self._window_size
+            prev_end = next_start
+            windows_list.append((prev_start, prev_end))
+            windows_list.append((next_start, next_end))
+            remained_length = next_end - next_start
+        return windows_list
+
     def _simulate_window(self, valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeSimulator,
                          start: int, end: int):
+
+        chromosome_processor.next_window(start=start, end=end)
         if self._debug:
             print(f"Current window: start={start}, end={end}")
 
         vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
-        given_mutations_inserted = chromosome_processor.insert_given_mutations(vars_in_current_window, start=start,
-                                                                               end=end)
+        given_mutations_inserted = chromosome_processor.insert_given_mutations(vars_in_current_window)
 
-        random_mutations_inserted = chromosome_processor.generate_random_mutations(start, end)
+        random_mutations_inserted = chromosome_processor.generate_random_mutations()
 
         # TODO return random_mutations_inserted only?
         return given_mutations_inserted + random_mutations_inserted

@@ -108,7 +108,7 @@ class Mutation:
 
 
 class WindowUnit:
-    start_offset: int = 0
+    windows_start_offset: int = 0
     start: int = 0
     end: int = 0
     original_end: int = 0
@@ -119,31 +119,22 @@ class WindowUnit:
     # blocklist[pos] = 3		invalid position for various processing reasons
     blocklist: dict  # TODO re-consider !!!
 
-    def initialize(self, start=-1, end=-1, final_start_end=False):
+    def next_window(self, new_start: int = -1, new_end: int = -1):
         # TODO sanity check about start, end. Maybe consider N regions?
-        self.original_end = end
         self.blocklist = {}  # np.zeros(end-start, dtype='<i4')
-        return self.update(start=start, end=end, final_start_end=final_start_end)
+        if new_start < 0 or new_end < 0 or not (self.end <= new_start < new_end):
+            raise Exception(f'Illegal window positions. Start and end should be positive integers. '
+                            f'The new window should come after the previous one and not overlap with it. '
+                            f'Got the next values: start={new_start}, end={new_end}, '
+                            f'while the previous values are: start={self.start}, end={self.end}')
+        self.windows_start_offset += (self.end - self.original_end)
+        self.start = new_start
+        self.end = new_end
+        self.original_end = new_end
 
-    def update(self, start=-1, end=-1, final_start_end=False, end_shift=0):
+    def adjust_window(self, end_shift=0):
         # TODO sanity check about start, end. Maybe consider N regions?
-        changed = False
-        if start != -1 and end != -1:
-            if not final_start_end:
-                start += self.start_offset
-                end += self.start_offset
-            if self.start != start or self.end != end:
-                self.start = start
-                self.end = end
-                changed = True
-        elif end_shift != 0:
-            self.end += end_shift
-            changed = True
-        return changed
-
-    def finalize(self):
-        self.start_offset += (self.end - self.original_end)
-        # TODO add the feature to calculate the "bite" from the next window to come?
+        self.end += end_shift
 
     def update_blocklist(self, mutation):
         for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):  # TODO continue here
@@ -298,8 +289,8 @@ class ChromosomeSimulator:
                 trinuc_snp_bias_of_window_per_region[region.value][i] = \
                     region_mask[i] * self.model_per_region[region.value][7][ALL_IND[codon]]
             self.trinuc_bias_per_region[region.value] = \
-                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value][0 + 1:window_seq_len - 1],
-                                     range(0 + 1, window_seq_len - 1))
+                DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value], range(window_seq_len))
+            # from initialization, the probability of the first and the last element is 0
         end = time.time()
         if self.debug:
             print(f"Updating window trinuc bias took {int(end - start)} seconds.")
@@ -322,16 +313,12 @@ class ChromosomeSimulator:
             # TODO validate this. How does this distribution work? should we really multiply by MAX_MUTFRAC?
         return poisson_per_region
 
-    def insert_given_mutations(self, vars_in_current_window, start: int = -1, end: int = -1,
-                               final_start_end: bool = False) -> List[Tuple]:  # , use_sequence_offset=True, offset=0):
-        self.window_unit.initialize(start=start, end=end, final_start_end=final_start_end)
-
+    def insert_given_mutations(self, vars_in_current_window) -> List[Tuple]:
         mutations_to_insert = self.validate_given_mutations_list(vars_in_current_window)
 
         # TODO actually insert mutations!!!
         #  consider current_offset and self.window_unit.update(end_shift=mutation.get_offset_change())
         vcf_mutations = self.prepare_mutations_to_vcf(mutations_to_insert, mutations_already_inserted=False)
-        self.window_unit.finalize()
         return vcf_mutations
 
     def validate_given_mutations_list(self, input_df: pd.DataFrame):
@@ -340,7 +327,7 @@ class ChromosomeSimulator:
             ref_nucl = row['allele']
             new_nucl = row['alternatives'][0]  # take the first alternative
             mut_type = MutType.SNP if len(ref_nucl) == 1 and len(new_nucl) == 1 else MutType.INDEL
-            mutation = Mutation(row['pos'] + self.window_unit.start_offset, ref_nucl, new_nucl, mut_type)
+            mutation = Mutation(row['pos'] + self.window_unit.windows_start_offset, ref_nucl, new_nucl, mut_type)
             if self.validate_given_mutation(mutation):
                 self.window_unit.update_blocklist(mutation)
                 inserted_mutations.append(mutation)
@@ -362,8 +349,10 @@ class ChromosomeSimulator:
             return False
         return self.window_unit.check_blocklist(mutation)
 
-    def generate_random_mutations(self, start: int, end: int) -> List[Tuple]:
-        self.window_unit.initialize(start=start, end=end)
+    def next_window(self, start: int, end: int):
+        self.window_unit.next_window(start, end)
+
+    def generate_random_mutations(self) -> List[Tuple]:
         random_mutations_pool = self.get_window_mutations()
         if not IGNORE_TRINUC:
             self._update_trinuc_bias_of_window()
@@ -380,7 +369,7 @@ class ChromosomeSimulator:
             inserted_mutations.append(inserted_mutation)
             # check window
             if window_shift != 0:
-                self.window_unit.update(end_shift=window_shift)
+                self.window_unit.adjust_window(end_shift=window_shift)
             # check annotations
             annotation_changed = self.handle_annotations_after_mutated_sequence(inserted_mutation)
             # if at least one has changed - sample mutations again
@@ -389,7 +378,6 @@ class ChromosomeSimulator:
                     self._update_trinuc_bias_of_window()
 
         vcf_mutations = self.prepare_mutations_to_vcf(inserted_mutations, mutations_already_inserted=True)
-        self.window_unit.finalize()
         return vcf_mutations
 
     def insert_random_mutation(self, mut_type: MutType, region: Region) -> (Optional[Mutation], int):
@@ -424,14 +412,14 @@ class ChromosomeSimulator:
                 if k < 1:
                     return -1
                 event_pos = random.choices(
-                    range(self.window_unit.start + 1, self.window_unit.end - 1),
-                    weights=region_mask[self.window_unit.start + 1:self.window_unit.end - 1],
-                    k=1)[0]
+                    range(self.window_unit.start + 1, self.window_unit.end - 1), weights=region_mask[1:-1], k=1)[0]
                 # https://pynative.com/python-weighted-random-choices-with-probability/
                 # TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
             else:
-                event_pos = self.trinuc_bias_per_region[region.value].sample()
+                event_pos = self.window_unit.start + self.trinuc_bias_per_region[region.value].sample()
+                if event_pos <= self.window_unit.start or self.window_unit.end -1 <= event_pos:
+                    continue
                 # TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
         return -1
@@ -521,7 +509,7 @@ class ChromosomeSimulator:
         vcf_mutations = []
         mutations_affected_offset = 0
         for mutation in inserted_mutations:
-            vcf_position = mutation.position - self.window_unit.start_offset
+            vcf_position = mutation.position - self.window_unit.windows_start_offset
             if mutations_already_inserted:
                 vcf_position -= mutations_affected_offset
                 mutations_affected_offset += mutation.get_offset_change()
