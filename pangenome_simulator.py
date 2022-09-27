@@ -96,7 +96,7 @@ def main(raw_args=None):
         print("Generating sequence started")
         start = time.time()
         genome_simulator = GenomeSimulator(args)
-        genome_simulator.simulate(args)
+        genome_simulator.simulate()
         end = time.time()
         print("Done. Generating sequence took {} seconds.".format(int(end - start)))
         return
@@ -183,7 +183,7 @@ def generate_for_node(args):
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
     genome_simulator = GenomeSimulator(args)
-    genome_simulator.simulate(args)
+    genome_simulator.simulate()
     end = time.time()
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 

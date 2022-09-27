@@ -123,7 +123,7 @@ class GenomeSimulator:
         ref_index, line_width = index_ref(self._input_reference)
         # TODO check if this index can work, maybe it's faster
         # ref_index2 = SeqIO.index(reference, 'fasta')
-        self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index},  # TODO chrom[1:] ?
+        self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index}  # TODO chrom[1:] ?
         self._output_line_width = line_width
         end = time.time()
         print('Indexing reference took {} seconds.'.format(int(end - start)))
@@ -147,7 +147,7 @@ class GenomeSimulator:
 
         self._write_output(final_chromosomes, inserted_mutations)
 
-    def _simulate_chrom(self, chrom) -> ChromosomeProcessor:
+    def _simulate_chrom(self, chrom) -> Tuple[ChromosomeProcessor, List[Tuple]]:
         # read in reference sequence and notate blocks of Ns
         chrom_sequence, n_regions = read_ref(self._input_reference, self._indices_by_ref_name[chrom],
                                              self._sequencing_n_handling)
@@ -163,8 +163,7 @@ class GenomeSimulator:
         t_start = time.time()
         for non_n_region in n_regions['non_N']:
             start, end = non_n_region
-            inserted_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor,
-                                                       start, end, debug=self._debug)
+            inserted_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor, start, end)
         print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
         return chromosome_processor, inserted_mutations
@@ -192,7 +191,9 @@ class GenomeSimulator:
 
         # FASTQ
         if not self._output_no_fastq:
-            FastqFileWriter.generate_reads([fasta_file_writer.get_file_name()])
+            FastqFileWriter.generate_reads([fasta_file_writer.get_file_name()], self._sequencing_paired_end,
+                                           self._sequencing_read_len, self._sequencing_coverage,
+                                           self._sequencing_fragment_size, self._sequencing_fragment_std)
 
         # VCF
         if self._output_vcf:
