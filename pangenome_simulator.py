@@ -8,12 +8,12 @@ import time
 import os
 import pandas as pd
 
-from neat.genome_simulator import GenomeSimulator
-from neat.source.fasta_file_writer import FastaFileWriter
-from neat.source.fastq_file_writer import FastqFileWriter
-from neat.source.input_checking import check_file_open
-from neat.source.vcf_file_writer import VcfFileWriter
-from neat.source.vcf_func import parse_vcf
+from genome_simulator import GenomeSimulator
+from writers.fasta_file_writer import FastaFileWriter
+from writers.fastq_file_writer import FastqFileWriter
+from utilities.input_checking import check_file_open
+from writers.vcf_file_writer import VcfFileWriter
+from utilities.vcf_func import parse_vcf
 
 
 def parse_args(raw_args=None):
