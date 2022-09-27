@@ -3,14 +3,15 @@ import copy
 import multiprocessing
 from itertools import repeat
 
-from neat import gen_reads
 import ete3
 import time
 import os
 import pandas as pd
 
+from neat.genome_simulator import GenomeSimulator
 from neat.source.fasta_file_writer import FastaFileWriter
 from neat.source.fastq_file_writer import FastqFileWriter
+from neat.source.input_checking import check_file_open
 from neat.source.vcf_file_writer import VcfFileWriter
 from neat.source.vcf_func import parse_vcf
 
@@ -84,7 +85,7 @@ def main(raw_args=None):
 
     # parse input variants, if present
     if args.v:
-        gen_reads.check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
+        check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
         all_input_variants = load_input_variants(args.v)  # input_vcf = args.v
     else:
         all_input_variants = pd.DataFrame(columns=['dummy'])
@@ -94,7 +95,8 @@ def main(raw_args=None):
         args.input_variants = all_input_variants
         print("Generating sequence started")
         start = time.time()
-        gen_reads.simulate(args)
+        genome_simulator = GenomeSimulator(args)
+        genome_simulator.simulate(args)
         end = time.time()
         print("Done. Generating sequence took {} seconds.".format(int(end - start)))
         return
@@ -180,7 +182,8 @@ def generate_for_node(args):
     print("TEST inside generate_for_node, args.r=", args.r)
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
-    gen_reads.simulate(args)
+    genome_simulator = GenomeSimulator(args)
+    genome_simulator.simulate(args)
     end = time.time()
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 

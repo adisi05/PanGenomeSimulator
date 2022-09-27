@@ -1,4 +1,5 @@
 import os
+import time
 from os.path import exists
 from typing import Optional, List
 
@@ -127,7 +128,8 @@ class AnnotatedSequence:
     _cached_end = None
     _cached_mask_in_window_per_region = None
 
-    def __init__(self, annotations_df: pd.DataFrame, chromosome: str, is_sorted: bool = False):
+    def __init__(self, annotations_df: pd.DataFrame, chromosome: str, is_sorted: bool = False, debug: bool = False):
+        self.debug = debug
         self._chromosome = chromosome
         if annotations_df is None or annotations_df.empty:
             self._relevant_regions.append(Region.ALL)
@@ -245,6 +247,11 @@ class AnnotatedSequence:
             gene_id = annotation['gene']
         if gene_id == 0:
             return
+
+        if self.debug:
+            print(f"Trying to mute gene {gene_id}")
+            start = time.time()
+
         gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene_id)].tolist()
         first_index = gene_annotations_indices[0]
         last_index = gene_annotations_indices[-1]
@@ -277,6 +284,10 @@ class AnnotatedSequence:
         if last_index + 1 != len(self._annotations_df):
             dfs_to_concat.append(self._annotations_df.loc[last_index + 1:])
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
+
+        if self.debug:
+            end = time.time()
+            print(f"Gene muting took {int(end - start)} seconds.")
 
     def handle_insertion(self, pos: int, insertion_len: int) -> None:
         _, index = self._get_annotation_by_position(pos)

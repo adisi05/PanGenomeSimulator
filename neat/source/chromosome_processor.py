@@ -2,6 +2,7 @@ import copy
 import pickle
 import random
 import sys
+import time
 from dataclasses import dataclass
 from typing import Optional, List, Union, Tuple
 
@@ -15,7 +16,6 @@ from neat.utilities.gen_mut_model import Stats
 from probability import DiscreteDistribution, poisson_list
 
 import pandas as pd
-
 
 """
 Constants needed for analysis
@@ -176,7 +176,6 @@ class RandomMutationPool:
             print(f"Overall planned random mutations within window: {self.overall_count}")
             print(f"Mutations distribution: {list(self.options.items())}")
 
-
     def has_next(self) -> bool:
         return self.overall_count > 0
 
@@ -207,14 +206,15 @@ class ChromosomeProcessor:
 
     def __init__(self, chromosome_name: str, chromosome_sequence: Seq, annotations_df: pd.DataFrame,
                  annotations_sorted: bool = False, mut_models=None, mut_rate=None, dist=None, debug: bool = False):
-        self.chromosome_name = chromosome_name
-        self.chromosome_sequence = MutableSeq(str(chromosome_sequence))
+        self.debug = debug
+        self.chrom_name = chromosome_name
+        self.chrom_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
-        self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted)
+        self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted,
+                                               debug=self.debug)
         self._update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
-        self.debug = debug
 
     def _update_mut_models(self, model_data: dict, mut_rate, dist):
         # TODO figure out: called one time? or a few times, for each window?
@@ -284,6 +284,8 @@ class ChromosomeProcessor:
         #
         # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
         #       at positions affected by indels. At the moment I'm going to consider this negligible.
+
+        start = time.time()
         window_seq_len = self.window_unit.end - self.window_unit.start
         trinuc_snp_bias_of_window_per_region = {region.value: [0. for _ in range(window_seq_len)] for region in
                                                 self.annotated_seq.get_regions()}
@@ -292,12 +294,15 @@ class ChromosomeProcessor:
             region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
                                                                           self.window_unit.end)
             for i in range(0 + 1, window_seq_len - 1):
-                codon = str(self.chromosome_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])
+                codon = str(self.chrom_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])
                 trinuc_snp_bias_of_window_per_region[region.value][i] = \
                     region_mask[i] * self.model_per_region[region.value][7][ALL_IND[codon]]
             self.trinuc_bias_per_region[region.value] = \
                 DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value][0 + 1:window_seq_len - 1],
                                      range(0 + 1, window_seq_len - 1))
+        end = time.time()
+        if self.debug:
+            print(f"Updating window trinuc bias took {int(end - start)} seconds.")
 
     def init_poisson(self, type_is_indel: bool = True):
         list_per_region = {}
@@ -305,7 +310,8 @@ class ChromosomeProcessor:
         nucleotides_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.window_unit.start,
                                                                                              self.window_unit.end)
         for region in self.annotated_seq.get_regions():
-            param = self.model_per_region[region.value][2] if type_is_indel else (1. - self.model_per_region[region.value][2])
+            param = self.model_per_region[region.value][2] if type_is_indel else (
+                    1. - self.model_per_region[region.value][2])
             list_per_region[region.value] = \
                 nucleotides_counts_per_region[region.value] * param * self.model_per_region[region.value][2]
             k_range = range(int(nucleotides_counts_per_region[region.value] * MAX_MUTFRAC))
@@ -433,8 +439,8 @@ class ChromosomeProcessor:
         return snp
 
     def get_specific_snp(self, position: int, region: Region):
-        ref_nucl = self.chromosome_sequence[position]
-        context = str(self.chromosome_sequence[position - 1]) + str(self.chromosome_sequence[position + 1])
+        ref_nucl = self.chrom_sequence[position]
+        context = str(self.chrom_sequence[position - 1]) + str(self.chrom_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
         new_nucl = self.model_per_region[region.value][6][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
         snp = Mutation(position, ref_nucl, new_nucl, MutType.SNP)
@@ -452,7 +458,7 @@ class ChromosomeProcessor:
             indel_len = self.model_per_region[region.value][4].sample()
             # sequence content of random insertions is uniformly random (change this later, maybe)
             indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
-            ref_nucl = self.chromosome_sequence[position]
+            ref_nucl = self.chrom_sequence[position]
             indel = Mutation(position, ref_nucl, ref_nucl + indel_seq, MutType.INDEL)
 
         # deletion
@@ -476,10 +482,10 @@ class ChromosomeProcessor:
                 raise Exception("deletion length is less than 0, program error")
 
             if indel_len == 1:
-                indel_seq = self.chromosome_sequence[position + 1]
+                indel_seq = self.chrom_sequence[position + 1]
             else:
-                indel_seq = str(self.chromosome_sequence[position + 1:position + indel_len + 1])
-            ref_nucl = self.chromosome_sequence[position]
+                indel_seq = str(self.chrom_sequence[position + 1:position + indel_len + 1])
+            ref_nucl = self.chrom_sequence[position]
             indel = Mutation(position, ref_nucl + indel_seq, ref_nucl, MutType.INDEL)
 
         # TODO use blocklist?
@@ -493,20 +499,21 @@ class ChromosomeProcessor:
         ref_end = ref_start + len(mutation.ref_nucl)
         window_shift = mutation.get_offset_change()
 
-        if mutation.ref_nucl != str(self.chromosome_sequence[ref_start:ref_end]):
+        if mutation.ref_nucl != str(self.chrom_sequence[ref_start:ref_end]):
             print('\nError: Something went wrong!\n', mutation, [ref_start, ref_end],
-                  str(self.chromosome_sequence[ref_start:ref_end]), '\n')
+                  str(self.chrom_sequence[ref_start:ref_end]), '\n')
             sys.exit(1)
         else:
             # alter reference sequence
-            self.chromosome_sequence = self.chromosome_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
-                                       self.chromosome_sequence[ref_end:]
+            self.chrom_sequence = self.chrom_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
+                                  self.chrom_sequence[ref_end:]
 
         print(f"Inserted mutation of type {mutation.mut_type.value} at position {mutation.position}. "
               f"Window shift is {window_shift}")
         return window_shift
 
-    def prepare_mutations_to_vcf(self, inserted_mutations: List[Mutation], mutations_already_inserted: bool) -> List[Tuple]:
+    def prepare_mutations_to_vcf(self, inserted_mutations: List[Mutation], mutations_already_inserted: bool) -> List[
+        Tuple]:
         inserted_mutations.sort()
         vcf_mutations = []
         mutations_affected_offset = 0
@@ -555,7 +562,7 @@ class ChromosomeProcessor:
         elif region.value == Region.CDS.value:
             start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
             # assuming sequence has been mutated already!
-            codon = self.chromosome_sequence[start:end + 1]
+            codon = self.chrom_sequence[start:end + 1]
             is_stop = is_stop_codon(codon, strand)
             is_last_codon = self.is_last_coding_position(start, end)
             if (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
@@ -586,7 +593,7 @@ class ChromosomeProcessor:
                 added_codons = int((len(inserted_mutation.new_nucl) - 1) / 3)
                 for i in range(added_codons):
                     # assuming sequence has been mutated already!
-                    codon = self.chromosome_sequence[first_codon_start + (3 * i): first_codon_end + 1 + (3 * i)]
+                    codon = self.chrom_sequence[first_codon_start + (3 * i): first_codon_end + 1 + (3 * i)]
                     if is_stop_codon(codon, strand):
                         return True
             return False
@@ -629,7 +636,7 @@ class ChromosomeProcessor:
             else:
                 start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
                 # assuming sequence has been mutated already!
-                codon = self.chromosome_sequence[start:end + 1]
+                codon = self.chrom_sequence[start:end + 1]
                 is_stop = is_stop_codon(codon, strand)
                 is_last_codon = self.is_last_coding_position(start, end)
                 if (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
@@ -646,14 +653,19 @@ class ChromosomeProcessor:
         return is_last_codon
 
 
-def is_stop_codon(codon: str, strand: Strand) -> bool:
+def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:
+    stop = False
+
     if strand.value == Strand.FORWARD.value:
-        return codon in ['TAG', 'TAA', 'TGA']
+        stop = codon in ['TAG', 'TAA', 'TGA']
 
     if strand.value == Strand.REVERSE.value:
-        return codon in ['CTA', 'TTA', 'TCA']
+        stop = codon in ['CTA', 'TTA', 'TCA']
 
-    return False
+    if debug:
+        print("Encountered stop codon")
+
+    return stop
 
 
 # TODO use self.annotated_seq.get_regions()?
@@ -673,7 +685,7 @@ def parse_input_mutation_model(model_file: str = None, which_default: int = 1):
         region_list.append('')
         region_names_found = []
         for region in region_list:
-            if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:
+            if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:  # checking that the current region exists
                 continue
 
             region_name = region.value if region != '' else Region.ALL.value
