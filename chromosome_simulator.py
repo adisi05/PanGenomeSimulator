@@ -421,7 +421,7 @@ class ChromosomeSimulator:
                 return event_pos
             else:
                 event_pos = self.window_unit.start + self.trinuc_bias_per_region[region.value].sample()
-                if event_pos <= self.window_unit.start or self.window_unit.end -1 <= event_pos:
+                if event_pos <= self.window_unit.start or self.window_unit.end - 1 <= event_pos:
                     continue
                 # TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
@@ -460,23 +460,27 @@ class ChromosomeSimulator:
             indel_len = self.model_per_region[region.value][5].sample()
 
             # skip if deletion too close to boundary
-            if position + indel_len + 1 >= self.window_unit.end:
+            if position + indel_len >= self.window_unit.end:
                 # TODO mind that by using self.window_unit.end,
                 #  and not self.seq_len + self.sequence_offset + current_offset,
                 #  we don't allow deletions to take a "bite" form the next window.
                 #  - should we allow that?
-                indel_len = self.window_unit.end - 2 - position
+                indel_len = self.window_unit.end - 1 - position
 
             # forbid deletion to crossing the boundary of annotation!
             _, annotation_end = self.annotated_seq.get_annotation_start_end(position)
-            if position + indel_len > annotation_end:
-                indel_len = annotation_end - position
-            if indel_len < 1:
-                # shoudn't occure
-                raise Exception("deletion length is less than 0, program error")
+            if position + indel_len >= annotation_end:
+                indel_len = annotation_end - 1 - position
 
-            if indel_len == 1:
-                indel_seq = self.chrom_sequence[position + 1]
+            if indel_len < 0:
+                # shouldn't occure
+                indel_len = 0
+                if self.debug:
+                    print(f"Deletion length is less than 0, changing to 0. "
+                          f"This is a program error, and need further investigation")
+
+            if indel_len == 0:
+                indel_seq = ''
             else:
                 indel_seq = str(self.chrom_sequence[position + 1:position + indel_len + 1])
             ref_nucl = self.chrom_sequence[position]
