@@ -513,10 +513,8 @@ def compute_probabilities(regions_stats):
         print('total variants processed:', total_var)
 
 
-def update_trinuc_ref_count(sub_seq, regions_stats, region: Region = Region.ALL, update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+def update_trinuc_ref_count(sub_seq, regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
+    regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for trinuc in VALID_TRINUC:
         for current_region in regions_to_update:
             if trinuc not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT):
@@ -534,24 +532,17 @@ def update_total_reflen(chrom_sequences_dict, chrom_name, regions_stats, annotat
         for i, annotation in chrom_annotations.iterrows():
             sub_seq = chrom_sequences_dict[chrom_name][annotation['start']: annotation['end']].seq
             reflen_annotation = len(sub_seq) - sub_seq.count('N')
-            update_total_reflen_for_region(reflen_annotation, regions_stats, Region(annotation['region']),
-                                           update_all=False)
+            update_total_reflen_for_region(reflen_annotation, regions_stats, Region(annotation['region']))
 
 
-def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region: Region = Region.ALL,
-                                   update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region: Region = Region.ALL):
     total_reflen_region = regions_stats.get_stat_by_region(region, Stats.TOTAL_REFLEN)
     total_reflen_region[0] += total_reflen_region_chrom
 
 
 def update_trinuc_transition_count(trinuc_ref, trinuc_alt, regions_stats, region: Region = Region.ALL,
-                                   update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+                                   also_update_all: bool = True):
+    regions_to_update = {region, Region.ALL} if also_update_all else {region}
     key = (trinuc_ref, trinuc_alt)
     for current_region in regions_to_update:
         if key not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT):
@@ -559,10 +550,8 @@ def update_trinuc_transition_count(trinuc_ref, trinuc_alt, regions_stats, region
         regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT)[key] += 1
 
 
-def update_snp_transition_count(ref, alt, regions_stats, region: Region = Region.ALL, update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+def update_snp_transition_count(ref, alt, regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
+    regions_to_update = {region, Region.ALL} if also_update_all else {region}
     key2 = (ref, alt)
     for current_region in regions_to_update:
         if key2 not in regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT):
@@ -570,18 +559,14 @@ def update_snp_transition_count(ref, alt, regions_stats, region: Region = Region
         regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] += 1
 
 
-def update_snp_count(regions_stats, region: Region = Region.ALL, update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+def update_snp_count(regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
+    regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for current_region in regions_to_update:
         regions_stats.get_stat_by_region(current_region, Stats.SNP_COUNT)[0] += 1
 
 
-def update_indel_count(indel_len, regions_stats, region: Region = Region.ALL, update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+def update_indel_count(indel_len, regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
+    regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for current_region in regions_to_update:
         if indel_len not in regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT):
             regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] = 0
@@ -589,10 +574,8 @@ def update_indel_count(indel_len, regions_stats, region: Region = Region.ALL, up
 
 
 def update_vdat_common(chrom_name, variant, pop_freq, regions_stats, region: Region = Region.ALL,
-                       update_all: bool = True):
-    regions_to_update = {region}
-    if update_all:
-        regions_to_update.add(Region.ALL)
+                       also_update_all: bool = True):
+    regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for current_region in regions_to_update:
         vdat_common_per_chrom = regions_stats.get_stat_by_region(current_region, Stats.VDAT_COMMON)
         if chrom_name not in vdat_common_per_chrom:
