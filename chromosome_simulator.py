@@ -11,7 +11,8 @@ from Bio import Seq
 from Bio.Seq import MutableSeq
 
 from utilities.annotated_sequence import AnnotatedSequence
-from utilities.common_data_structues import Region, MutType, Strand
+from utilities.common_data_structues import Region, MutType, Strand, STOP_CODONS_FORWARD_STRAND, \
+    STOP_CODONS_REVERSE_STRAND
 from mutation_model import Stats
 from utilities.probability import DiscreteDistribution, poisson_list
 
@@ -655,10 +656,10 @@ def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:
     stop = False
 
     if strand.value == Strand.FORWARD.value:
-        stop = codon in ['TAG', 'TAA', 'TGA']
+        stop = codon in STOP_CODONS_FORWARD_STRAND
 
     if strand.value == Strand.REVERSE.value:
-        stop = codon in ['CTA', 'TTA', 'TCA']
+        stop = codon in STOP_CODONS_REVERSE_STRAND
 
     if debug:
         print("Encountered stop codon")

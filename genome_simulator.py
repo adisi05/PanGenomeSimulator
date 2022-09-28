@@ -30,7 +30,7 @@ from writers.fasta_file_writer import FastaFileWriter
 from utilities.input_checking import check_file_open, is_in_range
 from utilities.ref_func import index_ref, read_ref
 from writers.vcf_file_writer import VcfFileWriter
-from utilities.annotated_sequence import to_annotations_df
+from utilities.genome_annotations import read_annotations_csv
 
 """
 Some constants needed for analysis
@@ -55,7 +55,7 @@ class GenomeSimulator:
         # Load annotations dataframe
         if not self._workdir:
             self._workdir = os.path.dirname(self._output_prefix)
-        self._annotations_df = to_annotations_df(self._annotations_file, self._workdir)
+        self._annotations_df = read_annotations_csv(self._annotations_file, self._workdir)
 
         self._load_mutation_model()
 

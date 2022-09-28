@@ -1,117 +1,10 @@
-import os
 import time
-from os.path import exists
 from typing import Optional, List
 
 import numpy as np
-import pybedtools
 import pandas as pd
 
 from common_data_structues import Region, Strand
-
-
-def to_annotations_df(file_path, output_dir=None):
-    # Process bed/gff file
-    annotations_df = None
-    if file_path:
-        print('Processing bed/gff file...')
-        try:
-            annotations_df = separate_cds_genes_intergenics(file_path, output_dir)
-            annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
-            annotations_df[['start', 'end']] = annotations_df[['start', 'end']].astype(int)
-
-            # TODO validate chromosome length are same as in reference
-        except ValueError:
-            print('Problem parsing bed file. Ensure bed file is tab separated, standard bed format')
-    return annotations_df
-
-
-def separate_cds_genes_intergenics(annotations_file: str, output_dir: str = None):
-    # GENE_ID = 'gene_id'
-    # def extract_gene_id(attributes: str):
-    #     return next(filter(lambda x: x.startswith(GENE_ID), attributes.split(';')), None).split('=')[1]
-
-    # check if CSV exists
-    _, extension = os.path.splitext(annotations_file)
-    if extension == '.csv':
-        csv_file = annotations_file
-    else:
-        # TODO remove?
-        csv_file = 'all_chroms_annotations.csv'
-        if output_dir:
-            csv_file = os.path.join(output_dir, csv_file)
-    if exists(csv_file):
-        all_chroms_annotations = pd.read_csv(csv_file)
-        return all_chroms_annotations
-
-    if annotations_file is not None:
-        try:
-            annotations = pybedtools.example_bedtool(annotations_file)
-            all_chroms_annotations = []
-            for chrom in annotations.filter(lambda x: x.fields[2] == 'chromosome'):
-                cds_elements = annotations.filter(lambda x: x.fields[2] == 'CDS' and x.chrom == chrom.chrom)
-                cds_elements = cds_elements.sort()
-                cds_elements = cds_elements.merge()
-                cds_elements_df = cds_elements.to_dataframe()
-                cds_elements_df['region'] = Region.CDS.value
-                del cds_elements_df['chrom']
-                cds_elements_df = cds_elements_df.drop_duplicates()
-
-                gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene' and x.chrom == chrom.chrom)
-                gene_elements = gene_elements.sort()
-                non_coding_gene_elements = gene_elements.subtract(cds_elements)
-                non_coding_gene_elements = non_coding_gene_elements.sort()
-                non_coding_gene_elements = non_coding_gene_elements.merge()
-                non_coding_gene_elements_df = non_coding_gene_elements.to_dataframe()
-                non_coding_gene_elements_df['region'] = Region.NON_CODING_GENE.value
-                del non_coding_gene_elements_df['chrom']
-                non_coding_gene_elements_df = non_coding_gene_elements_df.drop_duplicates()
-
-                all_elements = annotations.filter(lambda x: x.chrom == chrom.chrom)
-                all_elements = all_elements.sort()
-                intergenic_elements = all_elements.subtract(gene_elements).subtract(cds_elements)
-                intergenic_elements = intergenic_elements.sort()
-                intergenic_elements = intergenic_elements.merge()
-                intergenic_elements_df = intergenic_elements.to_dataframe()
-                intergenic_elements_df['region'] = Region.INTERGENIC.value
-                del intergenic_elements_df['chrom']
-                intergenic_elements_df = intergenic_elements_df.drop_duplicates()
-
-                cds_genes_intergenics = pd.concat([cds_elements_df, non_coding_gene_elements_df,
-                                                   intergenic_elements_df], ignore_index=True)
-                cds_genes_intergenics.sort_values(by=['start', 'end'], inplace=True)
-                cds_genes_intergenics.insert(0, 'chrom', str(chrom.chrom))
-                cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
-
-                # cds_genes_intergenics[['chrom', 'region']] = cds_genes_intergenics[['chrom', 'region']].astype(str)
-
-                gene_elements_df = gene_elements.to_dataframe()
-                gene_elements_df = gene_elements_df[['strand', 'start', 'end']]
-                cds_genes_intergenics[['gene', 'strand']] = cds_genes_intergenics.apply(
-                    lambda x: assign_gene(x['start'], x['end'], gene_elements_df), axis=1, result_type='expand')
-
-                # add_reading_frames_test(cds_genes_intergenics, str(chrom.chrom))
-
-                all_chroms_annotations.append(cds_genes_intergenics)
-            all_chroms_annotations = pd.concat(all_chroms_annotations).reset_index(drop=True)
-            all_chroms_annotations.to_csv(csv_file)
-            return all_chroms_annotations
-        except IOError:
-            print("\nProblem reading annotation (BED/GFF) file.\n")
-
-
-def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, int):
-    gene_ids = gene_elements_df.index[
-        (gene_elements_df['start'] - 1 <= start) & (end <= gene_elements_df['end'])].tolist()
-    # gene_elements_df['start'] - 1 correction is because of some bug in pybedtools
-
-    if len(gene_ids) < 1:
-        return 0, Strand.UNKNOWN.value
-    if len(gene_ids) > 1:
-        # We assume genes from different strands don't overlap, but if it happens nonetheless - ignore
-        return 0, Strand.UNKNOWN.value
-    strand = Strand(gene_elements_df.loc[gene_ids[0], 'strand'])
-    return gene_ids[0] + 1, strand.value  # indices in pandas are 0-based
 
 
 class AnnotatedSequence:
@@ -293,8 +186,8 @@ class AnnotatedSequence:
         _, index = self._get_annotation_by_position(pos)
         self._annotations_df.loc[index, 'end'] += insertion_len
         if index + 1 != len(self._annotations_df):
-            self._annotations_df.loc[index+1:, 'start'] += insertion_len
-            self._annotations_df.loc[index+1:, 'end'] += insertion_len
+            self._annotations_df.loc[index + 1:, 'start'] += insertion_len
+            self._annotations_df.loc[index + 1:, 'end'] += insertion_len
 
     def handle_deletion(self, pos: int, deletion_len: int) -> None:
         """
@@ -410,12 +303,3 @@ class AnnotatedSequence:
             strand = Strand(gene_annotations.iloc[0]['strand'])
             if strand.value == Strand.UNKNOWN.value:
                 self.mute_gene(gene_id=gene_id)
-
-
-if __name__ == "__main__":
-    filename = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3'
-    dirname = '/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis'
-    separate_cds_genes_intergenics(filename, dirname)
-
-    # ID=gene:AT1G01100;Name=RPP1A;biotype=protein_coding;description=60S acidic ribosomal protein P1-1
-    # [Source:UniProtKB/Swiss-Prot%3BAcc:Q8LCW9];gene_id=AT1G01100;logic_name=araport11
