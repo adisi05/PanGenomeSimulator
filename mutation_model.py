@@ -55,7 +55,7 @@ class Stats(Enum):
     TRINUC_TRANS_PROBS = 'TRINUC_TRANS_PROBS'
 
 
-class RegionStats:
+class RegionsStats:
     def __init__(self, annotations_df=None):
         self._regions_stats = {Region.ALL.value: self.create_stats_dict()}
         self._annotated_sequence_per_chrom = {}
@@ -117,7 +117,7 @@ def main():
         workdir = os.path.dirname(out_pickle)
     annotations_df = read_annotations_csv(annotations_file, workdir)
 
-    regions_stats = RegionStats(annotations_df)
+    regions_stats = RegionsStats(annotations_df)
 
     process_trinuc_counts(chrom_sequences_dict, matching_chromosomes, annotations_df, regions_stats)
 
@@ -160,12 +160,12 @@ def parse_arguments():
     return args
 
 
-def process_reference(ref):
+def process_reference(ref_filename: str) -> (dict, list):
     # Process reference file
     print('Processing reference...')
     reference = None
     try:
-        reference = SeqIO.to_dict(SeqIO.parse(ref, "fasta"))
+        reference = SeqIO.to_dict(SeqIO.parse(ref_filename, "fasta"))
     except ValueError:
         print("Problems parsing reference file. Ensure reference is in proper fasta format")
         exit(1)
@@ -177,15 +177,15 @@ def process_reference(ref):
     return chrom_sequences_dict, chrom_names
 
 
-def process_vcf(chrom_list, vcf):
+def process_vcf(chrom_list: list, vcf_filename: str) -> (list, list, pd.DataFrame):
     # Process VCF file. First check if it's been entered as a TSV
-    if vcf[-3:] == 'tsv':
+    if vcf_filename[-3:] == 'tsv':
         print("Warning! TSV file must follow VCF specifications.")
     # Pre-parsing to find all the matching chromosomes between ref and vcf
     print('Processing VCF file...')
     variants = []
     try:
-        variants = pd.read_csv(vcf, sep='\t', comment='#', index_col=None, header=None)
+        variants = pd.read_csv(vcf_filename, sep='\t', comment='#', index_col=None, header=None)
         variants[VCF_CHROM_COL] = variants[VCF_CHROM_COL].map(str)
     except ValueError:
         print("VCF must be in standard VCF format with tab-separated columns")
@@ -241,7 +241,7 @@ def process_vcf(chrom_list, vcf):
     # This is solely to make regex easier later, since we can't predict where in the line a string will be
     new_info = ';' + matching_variants['INFO'].copy() + ';'
     matching_variants['INFO'] = new_info
-    return indices_to_indels, matching_chromosomes, matching_variants  # TODO list(indices_to_indels) ?
+    return list(indices_to_indels), matching_chromosomes, matching_variants
 
 
 def cluster_list(variants_position_list_sorted: list, delta: float) -> list:
@@ -265,7 +265,8 @@ def cluster_list(variants_position_list_sorted: list, delta: float) -> list:
     return list_of_lists
 
 
-def process_trinuc_counts(chrom_sequences_dict, matching_chromosomes, annotations_df, regions_stats):
+def process_trinuc_counts(chrom_sequences_dict: dict, matching_chromosomes: list, annotations_df: pd.DataFrame,
+                          regions_stats: RegionsStats):
     for chrom_name in matching_chromosomes:
 
         # using genome annotations
@@ -282,9 +283,8 @@ def process_trinuc_counts(chrom_sequences_dict, matching_chromosomes, annotation
             update_trinuc_ref_count(sub_seq, regions_stats)
 
 
-def collect_basic_stats_for_chrom(chrom_sequences_dict, chrom_name, indices_to_indels, matching_variants,
-                                  annotations_df,
-                                  regions_stats):
+def collect_basic_stats_for_chrom(chrom_sequences_dict: dict, chrom_name: str, indices_to_indels, matching_variants,
+                                  annotations_df: pd.DataFrame, regions_stats: RegionsStats):
     update_total_reflen(chrom_sequences_dict, chrom_name, regions_stats, annotations_df)
 
     # Create a view that narrows variants list to current chromosome
@@ -303,7 +303,7 @@ def collect_basic_stats_for_chrom(chrom_sequences_dict, chrom_name, indices_to_i
     process_common_variants(chrom_sequences_dict, chrom_name, regions_stats)
 
 
-def process_snps(snp_df, chrom_name, chrom_sequence, regions_stats):
+def process_snps(snp_df: pd.DataFrame, chrom_name: str, chrom_sequence: str, regions_stats: RegionsStats):
     if not snp_df.empty:
         # only consider positions where ref allele in vcf matches the nucleotide in our reference
         for index, snp in snp_df.iterrows():
@@ -331,7 +331,7 @@ def process_snps(snp_df, chrom_name, chrom_sequence, regions_stats):
                 exit(1)
 
 
-def process_indels(indel_df, chrom_name, regions_stats):
+def process_indels(indel_df: pd.DataFrame, chrom_name: str, regions_stats: RegionsStats):
     if not indel_df.empty:
         for index, indel in indel_df.iterrows():
             if "-" in indel.REF:
@@ -355,14 +355,14 @@ def process_indels(indel_df, chrom_name, regions_stats):
                 update_vdat_common(chrom_name, indel, pop_freq, regions_stats, region)
 
 
-def process_common_variants(chrom_sequences_dict, chrom_name, regions_stats):
+def process_common_variants(chrom_sequences_dict: dict, chrom_name: str, regions_stats: RegionsStats):
     # variant tuple indices:
     var_pos = 0
     var_ref = 1
     var_alt = 2
     var_freq = 3
-    for region_name, region_stats in regions_stats.get_all_stats().items():
-        vdat_common_per_chrom = region_stats[Stats.VDAT_COMMON.value]
+    for region_name, curr_region_stats in regions_stats.get_all_stats().items():
+        vdat_common_per_chrom = curr_region_stats[Stats.VDAT_COMMON.value]
         if chrom_name not in vdat_common_per_chrom:
             vdat_common_per_chrom[chrom_name] = []
         vdat_common = vdat_common_per_chrom[chrom_name]
@@ -374,15 +374,15 @@ def process_common_variants(chrom_sequences_dict, chrom_name, regions_stats):
         min_value = np.percentile([variant[var_freq] for variant in vdat_common], percentile_var)
         for variant in sorted(vdat_common):
             if variant[var_freq] >= min_value:
-                region_stats[Stats.COMMON_VARIANTS.value].append(
+                curr_region_stats[Stats.COMMON_VARIANTS.value].append(
                     (chrom_name, variant[var_pos], variant[var_ref], variant[var_alt], variant[var_freq]))
         vdat_common_positions = [variant[var_pos] for variant in vdat_common]
 
         # identify areas that have contained significantly higher random mutation rates
-        identify_high_mutations_regions(chrom_name, chrom_sequences_dict, region_stats, vdat_common_positions)
+        identify_high_mutations_regions(chrom_name, chrom_sequences_dict, curr_region_stats, vdat_common_positions)
 
 
-def identify_high_mutations_regions(chrom_name: str, chrom_sequences_dict: dict, region_stats: RegionStats,
+def identify_high_mutations_regions(chrom_name: str, chrom_sequences_dict: dict, curr_region_stats: dict,
                                     variant_positions):
     # identify regions with disproportionately more variants in them
     dist_thresh = 2000
@@ -408,7 +408,7 @@ def identify_high_mutations_regions(chrom_name: str, chrom_sequences_dict: dict,
     minimum_value = np.percentile([cnddt[cnddt_count] for cnddt in candidate_regions], percentile_clust)
     for cnddt in candidate_regions:
         if cnddt[cnddt_count] >= minimum_value:
-            region_stats[Stats.HIGH_MUT_REGIONS.value].append(
+            curr_region_stats[Stats.HIGH_MUT_REGIONS.value].append(
                 (chrom_name, cnddt[cnddt_min], cnddt[cnddt_max], cnddt[cnddt_count]))
 
     # high mutation rate region tuple indices:
@@ -417,23 +417,23 @@ def identify_high_mutations_regions(chrom_name: str, chrom_sequences_dict: dict,
     hi_rgn_max = 2
     hi_rgn_count = 3
     # collapse overlapping regions
-    for i in range(len(region_stats[Stats.HIGH_MUT_REGIONS.value]) - 1, 0, -1):
-        if region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_max] >= \
-                region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_min] and \
-                region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_chrom] == \
-                region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_chrom]:
+    for i in range(len(curr_region_stats[Stats.HIGH_MUT_REGIONS.value]) - 1, 0, -1):
+        if curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_max] >= \
+                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_min] and \
+                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_chrom] == \
+                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_chrom]:
             # Might need to research a more accurate way to get the mutation rate for this region
-            avg_mut_rate = 0.5 * region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_count] + \
-                           0.5 * region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_count]
-            region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1] = (
-                region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_chrom],
-                region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_min],
-                region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_max],
+            avg_mut_rate = 0.5 * curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_count] + \
+                           0.5 * curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_count]
+            curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1] = (
+                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_chrom],
+                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_min],
+                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_max],
                 avg_mut_rate)
-            del region_stats[Stats.HIGH_MUT_REGIONS.value][i]
+            del curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i]
 
 
-def compute_probabilities(regions_stats):
+def compute_probabilities(regions_stats: RegionsStats):
     # if for some reason we didn't find any valid input variants AT ALL, exit gracefully...
     total_var_all = regions_stats.get_stat_by_region(Region.ALL, Stats.SNP_COUNT)[0] + \
                 sum(regions_stats.get_stat_by_region(Region.ALL, Stats.INDEL_COUNT).values())
@@ -443,58 +443,60 @@ def compute_probabilities(regions_stats):
             '(Are you using the correct reference?)\n')
         exit(1)
 
-    for region_name, region_stats in regions_stats.get_all_stats().items():
-        for trinuc in sorted(region_stats[Stats.TRINUC_REF_COUNT.value].keys()):
+    for region_name, curr_region_stats in regions_stats.get_all_stats().items():
+        for trinuc in sorted(curr_region_stats[Stats.TRINUC_REF_COUNT.value].keys()):
             count = 0
 
             # TRINUC_MUT_PROB
-            for k in sorted(region_stats[Stats.TRINUC_TRANSITION_COUNT.value].keys()):
+            for k in sorted(curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value].keys()):
                 if k[0] == trinuc:
-                    count += region_stats[Stats.TRINUC_TRANSITION_COUNT.value][k]
-            region_stats[Stats.TRINUC_MUT_PROB.value][trinuc] = \
-                count / float(region_stats[Stats.TRINUC_REF_COUNT.value][trinuc])
+                    count += curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value][k]
+            curr_region_stats[Stats.TRINUC_MUT_PROB.value][trinuc] = \
+                count / float(curr_region_stats[Stats.TRINUC_REF_COUNT.value][trinuc])
 
             # TRINUC_TRANS_PROBS
-            for k in sorted(region_stats[Stats.TRINUC_TRANSITION_COUNT.value].keys()):
+            for k in sorted(curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value].keys()):
                 if k[0] == trinuc:
-                    region_stats[Stats.TRINUC_TRANS_PROBS.value][k] = \
-                        region_stats[Stats.TRINUC_TRANSITION_COUNT.value][k] / float(count)
+                    curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][k] = \
+                        curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value][k] / float(count)
 
         # SNP_TRANS_FREQ
         for n1 in VALID_NUCL:
-            rolling_tot = sum([region_stats[Stats.SNP_TRANSITION_COUNT.value][(n1, n2)] for n2 in VALID_NUCL if (n1, n2)
-                               in region_stats[Stats.SNP_TRANSITION_COUNT.value]])
+            rolling_tot = sum([curr_region_stats[Stats.SNP_TRANSITION_COUNT.value][(n1, n2)]
+                               for n2 in VALID_NUCL if (n1, n2)
+                               in curr_region_stats[Stats.SNP_TRANSITION_COUNT.value]])
             for n2 in VALID_NUCL:
                 key2 = (n1, n2)
-                if key2 in region_stats[Stats.SNP_TRANSITION_COUNT.value]:
-                    region_stats[Stats.SNP_TRANS_FREQ.value][key2] = \
-                        region_stats[Stats.SNP_TRANSITION_COUNT.value][key2] / float(rolling_tot)
+                if key2 in curr_region_stats[Stats.SNP_TRANSITION_COUNT.value]:
+                    curr_region_stats[Stats.SNP_TRANS_FREQ.value][key2] = \
+                        curr_region_stats[Stats.SNP_TRANSITION_COUNT.value][key2] / float(rolling_tot)
 
         # compute average snp and indel frequencies
-        total_indels_region = sum(region_stats[Stats.INDEL_COUNT.value].values())
-        total_var_region = region_stats[Stats.SNP_COUNT.value][0] + total_indels_region
+        total_indels_region = sum(curr_region_stats[Stats.INDEL_COUNT.value].values())
+        total_var_region = curr_region_stats[Stats.SNP_COUNT.value][0] + total_indels_region
         if total_var_region != 0:
-            region_stats[Stats.SNP_FREQ.value] = region_stats[Stats.SNP_COUNT.value][0] / float(total_var_region)
-            region_stats[Stats.AVG_INDEL_FREQ.value] = 1. - region_stats[Stats.SNP_FREQ.value]
-            region_stats[Stats.INDEL_FREQ.value] = \
-                {k: region_stats[Stats.INDEL_COUNT.value][k] / total_indels_region
-                 for k in region_stats[Stats.INDEL_COUNT.value].keys()}
+            curr_region_stats[Stats.SNP_FREQ.value] = \
+                curr_region_stats[Stats.SNP_COUNT.value][0] / float(total_var_region)
+            curr_region_stats[Stats.AVG_INDEL_FREQ.value] = 1. - curr_region_stats[Stats.SNP_FREQ.value]
+            curr_region_stats[Stats.INDEL_FREQ.value] = \
+                {k: curr_region_stats[Stats.INDEL_COUNT.value][k] / total_indels_region
+                 for k in curr_region_stats[Stats.INDEL_COUNT.value].keys()}
         else:
-            region_stats[Stats.SNP_FREQ.value] = 0.
-            region_stats[Stats.AVG_INDEL_FREQ.value] = 1.
-            region_stats[Stats.INDEL_FREQ.value] = {}
-        region_stats[Stats.AVG_MUT_RATE.value] = total_var_region / region_stats[Stats.TOTAL_REFLEN.value][0]
+            curr_region_stats[Stats.SNP_FREQ.value] = 0.
+            curr_region_stats[Stats.AVG_INDEL_FREQ.value] = 1.
+            curr_region_stats[Stats.INDEL_FREQ.value] = {}
+        curr_region_stats[Stats.AVG_MUT_RATE.value] = total_var_region / curr_region_stats[Stats.TOTAL_REFLEN.value][0]
 
         # if values weren't found in data, appropriately append null entries
         print_trinuc_warning = False
         for trinuc in VALID_TRINUC:
             trinuc_mut = [trinuc[0] + n + trinuc[2] for n in VALID_NUCL if n != trinuc[1]]
-            if trinuc not in region_stats[Stats.TRINUC_MUT_PROB.value]:
-                region_stats[Stats.TRINUC_MUT_PROB.value][trinuc] = 0.
+            if trinuc not in curr_region_stats[Stats.TRINUC_MUT_PROB.value]:
+                curr_region_stats[Stats.TRINUC_MUT_PROB.value][trinuc] = 0.
                 print_trinuc_warning = True
             for trinuc2 in trinuc_mut:
-                if (trinuc, trinuc2) not in region_stats[Stats.TRINUC_TRANS_PROBS.value]:
-                    region_stats[Stats.TRINUC_TRANS_PROBS.value][(trinuc, trinuc2)] = 0.
+                if (trinuc, trinuc2) not in curr_region_stats[Stats.TRINUC_TRANS_PROBS.value]:
+                    curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][(trinuc, trinuc2)] = 0.
                     print_trinuc_warning = True
         if print_trinuc_warning:
             print(
@@ -506,27 +508,27 @@ def compute_probabilities(regions_stats):
         #
         print(f'Probabilities for region {region_name}:')
 
-        for k in sorted(region_stats[Stats.TRINUC_MUT_PROB.value].keys()):
-            print('p(' + k + ' mutates) =', region_stats[Stats.TRINUC_MUT_PROB.value][k])
+        for k in sorted(curr_region_stats[Stats.TRINUC_MUT_PROB.value].keys()):
+            print('p(' + k + ' mutates) =', curr_region_stats[Stats.TRINUC_MUT_PROB.value][k])
 
-        for k in sorted(region_stats[Stats.TRINUC_TRANS_PROBS.value].keys()):
+        for k in sorted(curr_region_stats[Stats.TRINUC_TRANS_PROBS.value].keys()):
             print('p(' + k[0] + ' --> ' + k[1] + ' | ' + k[0] + ' mutates) =',
-                  region_stats[Stats.TRINUC_TRANS_PROBS.value][k])
+                  curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][k])
 
-        for k in sorted(region_stats[Stats.INDEL_FREQ.value].keys()):
+        for k in sorted(curr_region_stats[Stats.INDEL_FREQ.value].keys()):
             if k > 0:
                 print('p(ins length = ' + str(abs(k)) + ' | indel occurs) =',
-                      region_stats[Stats.INDEL_FREQ.value][k])
+                      curr_region_stats[Stats.INDEL_FREQ.value][k])
             else:
                 print('p(del length = ' + str(abs(k)) + ' | indel occurs) =',
-                      region_stats[Stats.INDEL_FREQ.value][k])
+                      curr_region_stats[Stats.INDEL_FREQ.value][k])
 
-        for k in sorted(region_stats[Stats.SNP_TRANS_FREQ.value].keys()):
-            print('p(' + k[0] + ' --> ' + k[1] + ' | SNP occurs) =', region_stats[Stats.SNP_TRANS_FREQ.value][k])
+        for k in sorted(curr_region_stats[Stats.SNP_TRANS_FREQ.value].keys()):
+            print('p(' + k[0] + ' --> ' + k[1] + ' | SNP occurs) =', curr_region_stats[Stats.SNP_TRANS_FREQ.value][k])
 
-        print('p(snp)   =', region_stats[Stats.SNP_FREQ.value])
-        print('p(indel) =', region_stats[Stats.AVG_INDEL_FREQ.value])
-        print('overall average mut rate:', region_stats[Stats.AVG_MUT_RATE.value])
+        print('p(snp)   =', curr_region_stats[Stats.SNP_FREQ.value])
+        print('p(indel) =', curr_region_stats[Stats.AVG_INDEL_FREQ.value])
+        print('overall average mut rate:', curr_region_stats[Stats.AVG_MUT_RATE.value])
         print('total variants processed:', total_var_region)
 
 
@@ -600,7 +602,7 @@ def update_vdat_common(chrom_name, variant, pop_freq, regions_stats, region: Reg
         vdat_common_per_chrom[chrom_name].append((variant.chr_start, variant.REF, variant.ALT, pop_freq))
 
 
-def save_stats_to_file(out_pickle, skip_common, regions_stats):
+def save_stats_to_file(out_pickle: str, skip_common: bool, regions_stats: RegionsStats):
     out_dict = {}
     for region_name, region_stats in regions_stats.get_all_stats().items():
         out_dict[f'{region_name}.{Stats.TOTAL_REFLEN.value}'] = region_stats[Stats.TOTAL_REFLEN.value][0]
