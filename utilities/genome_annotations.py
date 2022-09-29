@@ -212,17 +212,20 @@ def read_annotations_csv(file_path: str, output_dir: str = None):
         try:
             _, extension = os.path.splitext(file_path)
             if extension != '.csv':
-                raise Exception('Annotations file must be a csv file')
+                print(f'Annotations file must be a csv file. Got extension: {extension}')
+                raise Exception
             if output_dir:
                 file_path = os.path.join(output_dir, file_path)
             if exists(file_path):
                 annotations_df = pd.read_csv(file_path)
+                # TODO first/index column - cast?
                 annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
                 # TODO add in the future: (should be calculated here and not in annotated_seq)
                 # annotations_df[['strand', 'gene']] = annotations_df[['strand', 'gene']].astype(str)
                 annotations_df[['start', 'end']] = annotations_df[['start', 'end']].astype(int)
             else:
-                raise Exception('Annotations file does not exist')
+                print(f'Annotations file does not exist. File path = {file_path}')
+                raise Exception
         except Exception:
             print('Problem parsing annotations file')
     return annotations_df
