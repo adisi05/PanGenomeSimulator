@@ -106,16 +106,14 @@ class RegionsStats:
 
 def main():
     args = parse_arguments()
-    (ref, vcf, out_pickle, save_trinuc, skip_common, annotations_file, workdir) = (
-        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.b, args.w)
+    (ref, vcf, out_pickle, save_trinuc, skip_common, annotations_file) = (
+        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.b)
 
     chrom_sequences_dict, chrom_names = process_reference(ref)
 
     indices_to_indels, matching_chromosomes, matching_variants = process_vcf(chrom_names, vcf)
 
-    if not workdir:
-        workdir = os.path.dirname(out_pickle)
-    annotations_df = read_annotations_csv(annotations_file, workdir)
+    annotations_df = read_annotations_csv(annotations_file)
 
     regions_stats = RegionsStats(annotations_df)
 
@@ -149,9 +147,6 @@ def parse_arguments():
                                                                 '(use bedtools complement if you have a '
                                                                 'bed of exclusion areas)', default=None,
                         help="only_use_these_regions.bed")
-    parser.add_argument('-w', type=str, required=False, metavar='/path/to/working/dir/', default=None,
-                        help="Name of working directory to process annotations. If not given, the directory of the "
-                             "output file wll be taken instead")
     parser.add_argument('--save-trinuc', required=False, action='store_true', default=False,
                         help='save trinucleotide counts for reference')
     parser.add_argument('--skip-common', required=False, action='store_true', default=False,
