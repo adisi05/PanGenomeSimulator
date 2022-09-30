@@ -21,6 +21,8 @@ def test_overlapping_genes(in_file: str = DEFAULT_FILE_PATH, using_bed: bool = F
             gene_elements_df['gene_id'] = gene_elements_df.apply(
                 lambda x: extract_gene_id_from_gene(x['attributes']), axis=1, result_type='expand')
             del gene_elements_df['attributes']
+            if not using_bed:
+                gene_elements_df['start'] -= 1
 
             overlap_count = 0
             overlap_count_same_strand = 0
@@ -46,11 +48,11 @@ def test_overlapping_genes(in_file: str = DEFAULT_FILE_PATH, using_bed: bool = F
                     chrom_gene_count = 0
 
                 chrom_gene_count += 1
-                prev_gene = gene_elements_df.iloc[i-1, :]
+                prev_gene = gene_elements_df.iloc[i - 1, :]
                 if genes_overlap(prev_gene['seqname'], prev_gene['start'], prev_gene['end'],
-                                 gene['seqname'], gene['start'], gene['end'], using_bed):
+                                 gene['seqname'], gene['start'], gene['end']):
                     overlapping_indexes.add(i)
-                    overlapping_indexes.add(i-1)
+                    overlapping_indexes.add(i - 1)
                     overlap_count += 1
                     chrom_overlap_count += 1
                     if gene['strand'] == prev_gene['strand']:
@@ -71,7 +73,7 @@ def test_overlapping_genes(in_file: str = DEFAULT_FILE_PATH, using_bed: bool = F
             print("\nProblem reading annotation (BED/GFF) file.\n")
 
 
-def get_gene_ids_without_overlaps(in_file: str) -> pd.DataFrame:
+def get_gene_ids_without_overlaps(in_file: str, using_bed: bool) -> pd.DataFrame:
     if in_file is not None:
         try:
             annotations = pybedtools.example_bedtool(in_file)
@@ -81,18 +83,19 @@ def get_gene_ids_without_overlaps(in_file: str) -> pd.DataFrame:
             gene_elements_df['gene_id'] = gene_elements_df.apply(
                 lambda x: extract_gene_id_from_gene(x['attributes']), axis=1, result_type='expand')
             del gene_elements_df['attributes']
+            if not using_bed:
+                gene_elements_df['start'] -= 1
 
             overlapping_indexes = set()
             for i, gene in gene_elements_df.iterrows():
                 if i == 0:
                     continue
                 prev_gene = gene_elements_df.iloc[i - 1, :]
-                # TODO detect gff/bed
                 if genes_overlap(prev_gene['seqname'], prev_gene['start'], prev_gene['end'],
-                                 gene['seqname'], gene['start'], gene['end'], False):
+                                 gene['seqname'], gene['start'], gene['end']):
                     overlapping_indexes.add(i)
 
-            gene_elements_df = gene_elements_df[~gene_elements_df.index.isin(overlapping_indexes)]\
+            gene_elements_df = gene_elements_df[~gene_elements_df.index.isin(overlapping_indexes)] \
                 .reset_index(drop=True)
             gene_elements_df = gene_elements_df[['seqname', 'start', 'end', 'gene_id', 'strand']]
             return gene_elements_df
@@ -106,12 +109,9 @@ def extract_gene_id_from_gene(gff_attributes: str) -> str:
     return id_attribute.split(':')[1] if len(id_attribute.split(':')) == 2 else None
 
 
-def genes_overlap(chrom1: str, start1: int, end1: int, chrom2: str, start2: int, end2: int, using_bed: bool) -> bool:
+def genes_overlap(chrom1: str, start1: int, end1: int, chrom2: str, start2: int, end2: int) -> bool:
     if chrom1 != chrom2:
         return False
-    if not using_bed:
-        start1, end1 = gff_to_bed_coordinates(start1, end1)
-        start2, end2 = gff_to_bed_coordinates(start2, end2)
 
     return start1 <= start2 < end1 or start2 <= start1 < end2
 
@@ -120,7 +120,7 @@ def gff_to_bed_coordinates(start: int, end: int) -> (int, int):
     return start - 1, end
 
 
-def get_annotations_of_valid_genes(in_file: str, genes_df: pd.DataFrame, using_bed: bool) -> pd.DataFrame:
+def get_annotations_of_valid_genes(in_file: str, using_bed: bool, genes_df: pd.DataFrame) -> pd.DataFrame:
     # TODO detect gff/bed
     if in_file is not None:
         try:
@@ -131,30 +131,46 @@ def get_annotations_of_valid_genes(in_file: str, genes_df: pd.DataFrame, using_b
             cds_elements_df[['gene_id', 'variant_id']] = cds_elements_df.apply(
                 lambda x: extract_gene_id_variant_id_from_cds(x['attributes']), axis=1, result_type='expand')
             del cds_elements_df['attributes']
+            if not using_bed:
+                cds_elements_df['start'] -= 1
 
-            valid_genes_indices = []
-            cds_indices = []
+            valid_gene_indices = []
+            elements_list = []
             for i, gene in genes_df:
                 gene_id = gene['gene_id']
                 print(gene_id)
                 # TODO check if has intergenic before first gene
 
                 # choose the longest variants that its length is dividable by 3
-                var_lenth_dict, var_indices_dict = get_variants_of_gene(gene_id, cds_elements_df, using_bed)
-                var_lenth_dict = dict(sorted(var_lenth_dict.items(), key=operator.itemgetter(1), reverse=True))
+                var_lenths_dict = get_lengths_of_gene_variants(gene_id, cds_elements_df)
+                var_lenths_dict = dict(sorted(var_lenths_dict.items(), key=operator.itemgetter(1), reverse=True))
                 chosen_variant = -1
-                for var_id, length in var_lenth_dict.items():
-                    if length % 3 == 0:   #TODO maybe ignore this check?
+                for var_id, length in var_lenths_dict.items():
+                    if length % 3 == 0:  # TODO maybe ignore this check?
                         chosen_variant = var_id
-                        cds_indices.extend(var_indices_dict[var_id])
-                        valid_genes_indices.append(i)  #TODO maybe append gene_id instead of index?
                         break
                 if chosen_variant == -1:
                     print(f'Did not found an appropriate variant for gene {gene_id}. Ignoring this gene')
+                    continue
 
-            # TODO extract non_coding_genes based on cds and genes and add to a new df/list
-            # TODO collect intergenic before and after genes
-            # TODO translate everything to df and return, dont forget strand and gene_id
+                valid_gene_indices.append(i)
+                current_gene_elements_list = get_gene_elements(gene_id, genes_df, var_id, cds_elements_df)
+                elements_list.extend(current_gene_elements_list)
+
+            valid_genes_df = genes_df[genes_df.index.isin(valid_gene_indices)]
+            chrom_elements = annotations.filter(lambda x: ???)
+            chrom_elements = chrom_elements.sort()
+            chrom_elements_df = chrom_elements.to_dataframe()
+            # TODO some preocessing in chrom_elements_df
+            if not using_bed:
+                chrom_elements_df['start'] -= 1
+            intergenic_elements_list = get_intergenic_elements(chrom_elements_df, valid_genes_df)
+            elements_list.extend(intergenic_elements_list)
+
+
+            annotations_df = pd.DataFrame(intergenic_elements_list)
+            # TODO reorder annotations_df
+            return annotations_df
 
         except IOError:
             print("\nProblem reading annotation (BED/GFF) file.\n")
@@ -173,24 +189,103 @@ def extract_gene_id_variant_id_from_cds(gff_attributes: str) -> str:
     return None
 
 
-def get_variants_of_gene(gene_id: str, cds_elements_df: pd.DataFrame, using_bed: bool) -> (Dict[int, int], Dict[int, List[int]]):
+def get_lengths_of_gene_variants(gene_id: str, cds_elements_df: pd.DataFrame) -> Dict[str, int]:
     var_lenth_dict = {}
-    var_indices_dict = {}
     variant_ids = list(cds_elements_df[cds_elements_df['gene_id'] == gene_id]['variant_id'].unique())
     for var_id in variant_ids:
-        variant_elements_indices = list(cds_elements_df.index[cds_elements_df['gene_id'] == gene_id &
-                                              cds_elements_df['variant_id'] == var_id])
-        total_length = cds_elements_df.iloc[variant_elements_indices].apply(
-            lambda x: compute_annotation_length(x['start'], x['end'], using_bed), axis=1, result_type='expand').sum()
-        var_indices_dict[var_id] = variant_elements_indices
-        var_lenth_dict[var_id] = total_length
-    return var_lenth_dict, var_indices_dict
+        variant_elements = cds_elements_df[
+            cds_elements_df['gene_id'] == gene_id & cds_elements_df['variant_id'] == var_id]
+        var_lenth_dict[var_id] = int(variant_elements.apply(
+            lambda x: x['end'] - x['start'], axis=1, result_type='expand').sum())
+    return var_lenth_dict
 
 
-def compute_annotation_length(start: int, end: int, using_bed: bool) -> int:
-    if not using_bed:
-        start, end = gff_to_bed_coordinates(start, end)
-    return end - start
+def get_gene_elements(gene_id: str, genes_df: pd.DataFrame, var_id: int, cds_elements_df: pd.DataFrame) -> List[dict]:
+    gene = genes_df[genes_df['gene_id'] == gene_id]
+    gene_start = gene['start']
+    gene_end = gene['end']
+    strand = gene['strand']
+    elements_list = []
+
+    variants_cds_elements_df = cds_elements_df[cds_elements_df['gene_id'] == gene_id &
+                                               cds_elements_df['variant_id'] == f'{gene_id}.{var_id}']
+    cursor = gene_start
+    for i, cds_element in variants_cds_elements_df.items():
+        cds_start = cds_element['start']
+        cds_end = cds_element['end']
+
+        # NON_CODING_GENE element before current CDS
+        if cursor < cds_start:
+            non_coding_gene_dict = {
+                'gene_id': gene_id,
+                'region': Region.NON_CODING_GENE.value,
+                'start': cursor,
+                'end': cds_start,
+                'strand': strand
+            }
+            elements_list.append(non_coding_gene_dict)
+
+        # CDS element
+        cds_dict = {
+            'gene_id': gene_id,
+            'region': Region.CDS.value,
+            'start': cds_start,
+            'end': cds_end,
+            'strand': strand
+        }
+        elements_list.append(cds_dict)
+        cursor = cds_end
+
+    # NON_CODING_GENE element after last CDS
+    if cursor != gene_end:
+        non_coding_gene_dict = {
+            'gene_id': gene_id,
+            'region': Region.NON_CODING_GENE.value,
+            'start': cursor,
+            'end': gene_end,
+            'strand': strand
+        }
+        elements_list.append(non_coding_gene_dict)
+
+    return elements_list
+
+
+def get_intergenic_elements(chrom_elements_df: pd.DataFrame, valid_genes_df: pd.DataFrame) -> List[dict]:
+    elements_list = []
+
+    for _, chrom in chrom_elements_df.items():
+        chrom_name = ???
+        chrom_start = chrom['start']
+        chrom_end = chrom['end']
+        cursor = 0
+        for _, gene in valid_genes_df[valid_genes_df['seqname'] == chrom_name].items():
+
+            # INTERGENIC element before current gene
+            if cursor < gene['start']:
+                intergenic_element = {
+                    'gene_id': '',
+                    'region': Region.INTERGENIC.value,
+                    'start': cursor,
+                    'end': gene['start'],
+                    'strand': Strand.UNKNOWN.value
+                }
+                elements_list.append(intergenic_element)
+
+            cursor = gene['end']
+
+        # INTERGENIC element after last gene
+        if cursor != chrom_end:
+            intergenic_element = {
+                'gene_id': '',
+                'region': Region.INTERGENIC.value,
+                'start': cursor,
+                'end': chrom_end,
+                'strand': Strand.UNKNOWN.value
+            }
+            elements_list.append(intergenic_element)
+
+        return elements_list
+
 
 def test_cds_frames(in_file: str = DEFAULT_FILE_PATH):
     if in_file is not None:
@@ -325,12 +420,13 @@ def assign_gene(start: int, end: int, gene_elements_df: pd.DataFrame) -> (int, i
     strand = Strand(gene_elements_df.loc[gene_ids[0], 'strand'])
     return gene_ids[0] + 1, strand.value  # indices in pandas are 0-based
 
+
 if __name__ == "__main__":
     print("Testing...")
     # test_overlapping_genes(using_bed = False)
     # test_cds_frames()
-    genes_df = get_gene_ids_without_overlaps(DEFAULT_FILE_PATH, using_bed=False)
-    relevant_annotations_df = get_annotations_of_valid_genes(DEFAULT_FILE_PATH, genes_df, using_bed=False)
+    genes_df = get_gene_ids_without_overlaps(DEFAULT_FILE_PATH, False)
+    relevant_annotations_df = get_annotations_of_valid_genes(DEFAULT_FILE_PATH, False, genes_df)
 
 
 def read_annotations_csv(file_path: str, output_dir: str = None):
