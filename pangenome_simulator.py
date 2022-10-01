@@ -17,7 +17,7 @@ from utilities.vcf_func import parse_vcf
 
 
 def parse_args(raw_args=None):
-    parser = argparse.ArgumentParser(description='NEAT-genReads V3.0',
+    parser = argparse.ArgumentParser(description='PanGenomeSimulator',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
     parser.add_argument('-R', type=int, required=True, metavar='read length', help="The desired read length")
