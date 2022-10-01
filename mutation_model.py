@@ -135,7 +135,7 @@ def main():
 #########################################################
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='gen_mut_model.source',
+    parser = argparse.ArgumentParser(description='mutation_model.source',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
                         help="Reference file for organism in fasta format")
