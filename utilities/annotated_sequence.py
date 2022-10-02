@@ -90,6 +90,8 @@ class AnnotatedSequence:
             return last_cds['start'].item(), strand
 
     def get_encapsulating_codon_positions(self, pos: int) -> (int, int, int):
+        if self.debug:
+            print(f"Trying to fond codon positions for nucleotide at position {pos}.")
         cds, _ = self._get_annotation_by_position(pos)
         if cds['region'] != Region.CDS.value:
             raise Exception("Codon is only relevant for CDS region")
@@ -101,8 +103,12 @@ class AnnotatedSequence:
         first = pos - reading_offset
         second = pos + 1 - reading_offset
         third = pos + 2 - reading_offset
+        if self.debug:
+            print(f"Found this positions: {first}-{third}.")
 
         if first < cds_start or second < cds_start:
+            if self.debug:
+                print(f"Getting previous CDS because current CDS start is {cds_start}.")
             prev_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] <= cds_start)]
@@ -114,6 +120,8 @@ class AnnotatedSequence:
                 first = prev_cds_end - 1
 
         if cds_end <= second or cds_end <= third:
+            if self.debug:
+                print(f"Getting next CDS because current CDS end is {cds_end}.")
             next_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]

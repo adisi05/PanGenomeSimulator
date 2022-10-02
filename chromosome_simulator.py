@@ -498,6 +498,8 @@ class ChromosomeSimulator:
         return indel
 
     def mutate_sequence(self, mutation: Mutation):
+        print(f"Trying to insert mutation of type {mutation.mut_type.value} at position {mutation.position}.")
+
         ref_start = mutation.position
         ref_end = ref_start + len(mutation.ref_nucl)
         window_shift = mutation.get_offset_change()
@@ -511,8 +513,7 @@ class ChromosomeSimulator:
             self.chrom_sequence = self.chrom_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
                                   self.chrom_sequence[ref_end:]
 
-        print(f"Inserted mutation of type {mutation.mut_type.value} at position {mutation.position}. "
-              f"Window shift is {window_shift}")
+        print(f"Inserted mutation successfully. Window shift is {window_shift}")
         return window_shift
 
     def prepare_mutations_to_vcf(self, inserted_mutations: List[Mutation], mutations_already_inserted: bool) \
