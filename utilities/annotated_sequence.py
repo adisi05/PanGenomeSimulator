@@ -31,9 +31,9 @@ class AnnotatedSequence:
         self._annotations_df = annotations_df.copy()
         if 'chrom' in annotations_df.columns:
             self._annotations_df = self._annotations_df[annotations_df['chrom'] == chromosome]
+            del self._annotations_df['chrom']
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
-        self._annotations_df = self._annotations_df[['start', 'end', 'region', 'gene_id', 'strand']]
         self._annotations_df.reset_index(drop=True, inplace=True)
 
         relevant_region_names = self._annotations_df['region'].unique()

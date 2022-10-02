@@ -209,6 +209,10 @@ class ChromosomeSimulator:
         self.seq_len = len(chromosome_sequence)
         self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted,
                                                debug=self.debug)
+        if len(chromosome_sequence) != self.annotated_seq.len():
+            print(f'Chromosome {chromosome_name} in the reference is {len(chromosome_sequence)},'
+                  f' while in the annotations file it is {self.annotated_seq.len()}.\n'
+                  f'Currently continue normally and hope for the best...')
         self._update_mut_models(mut_models, mut_rate, dist)
         self.window_unit = WindowUnit()
 

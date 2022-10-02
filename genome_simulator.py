@@ -53,10 +53,7 @@ class GenomeSimulator:
         self._output_prefix_name = pathlib.Path(self._output_prefix).name
 
         # Load annotations dataframe
-        if not self._workdir:
-            self._workdir = os.path.dirname(self._output_prefix)
-        self._annotations_df = read_annotations_csv(self._annotations_file, self._workdir)
-
+        self._annotations_df = read_annotations_csv(self._annotations_file)
         self._load_mutation_model()
 
         self._index_reference()
@@ -76,7 +73,6 @@ class GenomeSimulator:
         self._parent_prefix = args.o + '_' + args.parent_name if args.parent_name else None
         self._output_vcf = args.vcf
         self._output_no_fastq = args.no_fastq or args.internal
-        self._workdir = args.w if args.w else None
         self._rng_seed = args.rng
         self._debug = args.d
         self._sequencing_read_len = args.R
@@ -102,7 +98,6 @@ class GenomeSimulator:
         random.seed(self._rng_seed)
         is_in_range(self._sequencing_read_len, 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
         is_in_range(self._sequencing_coverage, 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
-        # TODO check sanity workdir (output_params)
         # TODO check mut bed file, and vcf?
 
     def _load_mutation_model(self):

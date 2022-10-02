@@ -434,7 +434,7 @@ if __name__ == "__main__":
     main()
 
 
-def read_annotations_csv(file_path: str, output_dir: str = None):
+def read_annotations_csv(file_path: str):
     annotations_df = None
     if file_path:
         print('Loading csv...')
@@ -443,8 +443,6 @@ def read_annotations_csv(file_path: str, output_dir: str = None):
             if extension != '.csv':
                 print(f'Annotations file must be a csv file. Got extension: {extension}')
                 raise Exception
-            if output_dir:
-                file_path = os.path.join(output_dir, file_path)
             if exists(file_path):
                 annotations_df = pd.read_csv(file_path, index_col=0)
                 annotations_df[['chrom', 'region', 'strand']] = annotations_df[['chrom', 'region', 'strand']].astype(str)
