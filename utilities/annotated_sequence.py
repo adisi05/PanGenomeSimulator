@@ -33,7 +33,7 @@ class AnnotatedSequence:
             self._annotations_df = self._annotations_df[annotations_df['chrom'] == chromosome]
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
-        self._annotations_df = self._annotations_df[['start', 'end', 'region', 'gene', 'strand']]
+        self._annotations_df = self._annotations_df[['start', 'end', 'region', 'gene_id', 'strand']]
         self._annotations_df.reset_index(drop=True, inplace=True)
 
         relevant_region_names = self._annotations_df['region'].unique()
@@ -41,9 +41,6 @@ class AnnotatedSequence:
 
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
-
-        self._update_reading_frames()
-        self._discard_genes_without_strand()
 
     def len(self):
         if self._annotations_df is None or self._annotations_df.empty:
@@ -74,7 +71,7 @@ class AnnotatedSequence:
     def get_last_coding_position_of_encapsulating_gene(self, pos: int) -> (Optional[int], Strand):
         annotation, annotation_index = self._get_annotation_by_position(pos)
 
-        gene = annotation['gene']
+        gene = annotation['gene_id']
         if not gene or gene == 0:
             raise Exception("Coding positions are only relevant for genes")
 
@@ -82,7 +79,7 @@ class AnnotatedSequence:
         if strand.value == Strand.UNKNOWN.value:
             return None, strand
 
-        gene_cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene) &
+        gene_cds_annotations = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                                     (self._annotations_df['region'] == Region.CDS.value)]
 
         if strand.value == Strand.FORWARD.value:
@@ -98,15 +95,15 @@ class AnnotatedSequence:
             raise Exception("Codon is only relevant for CDS region")
         cds_start = cds['start']
         cds_end = cds['end']
-        gene = cds['gene']
-        reading_offset = int(cds['reading_offset']) + (pos - cds_start)
+        gene = cds['gene_id']
+        reading_offset = int(cds['frame']) + (pos - cds_start)
         reading_offset = reading_offset % 3
         first = pos - reading_offset
         second = pos + 1 - reading_offset
         third = pos + 2 - reading_offset
 
         if first < cds_start or second < cds_start:
-            prev_cds = self._annotations_df[(self._annotations_df['gene'] == gene) &
+            prev_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] <= cds_start)]
             prev_cds_end = prev_cds.iloc[-1]['end'].item()
@@ -117,7 +114,7 @@ class AnnotatedSequence:
                 first = prev_cds_end - 1
 
         if cds_end <= second or cds_end <= third:
-            next_cds = self._annotations_df[(self._annotations_df['gene'] == gene) &
+            next_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]
             next_cds_start = next_cds.iloc[0]['start'].item()
@@ -137,7 +134,7 @@ class AnnotatedSequence:
     def mute_gene(self, position_on_gene: int = -1, gene_id: int = 0) -> None:
         if 0 <= position_on_gene < self.len():
             annotation, annotation_index = self._get_annotation_by_position(position_on_gene)
-            gene_id = annotation['gene']
+            gene_id = annotation['gene_id']
         if gene_id == 0:
             return
 
@@ -145,7 +142,7 @@ class AnnotatedSequence:
         if self.debug:
             print(f"Trying to mute gene {gene_id}")
 
-        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene'] == gene_id)].tolist()
+        gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene_id'] == gene_id)].tolist()
         first_index = gene_annotations_indices[0]
         last_index = gene_annotations_indices[-1]
 
@@ -165,7 +162,7 @@ class AnnotatedSequence:
         new_intergenic = pd.DataFrame({'start': intergenic_start,
                                        'end': intergenic_end,
                                        'region': Region.INTERGENIC.value,
-                                       'gene': 0,
+                                       'gene_id': 0,
                                        'strand': Strand.UNKNOWN.value},
                                       index=[first_index])
 
@@ -263,43 +260,3 @@ class AnnotatedSequence:
                          np.full(annotation_length, mask)])
                 else:
                     self._cached_mask_in_window_per_region[region.value] = np.full(annotation_length, mask)
-
-    def _update_reading_frames(self):
-        if self._annotations_df is None or self._annotations_df.empty:
-            return
-
-        self._annotations_df['reading_offset'] = np.nan
-        gene_ids = self._annotations_df.gene.unique()
-        for gene_id in gene_ids:
-            if gene_id == 0:
-                continue  # intergenic region
-
-            cds_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id) &
-                                                   (self._annotations_df['region'] == Region.CDS.value)]
-            cds_total_len = cds_annotations['end'].sum() - cds_annotations['start'].sum()
-
-            if cds_total_len % 3 == 0:
-                reading_offset = 0
-                for idx, annotation in cds_annotations.iterrows():
-                    self._annotations_df.loc[idx, 'reading_offset'] = reading_offset
-                    reading_offset += annotation['end'] - annotation['start']
-                    reading_offset = reading_offset % 3
-
-            else:
-                # TODO raise Exception?
-                print(f'Total length of CDS elements in gene {gene_id} in chromosome {self._chromosome} '
-                      f'cannot be divided by 3')
-                self.mute_gene(gene_id=gene_id)
-
-    def _discard_genes_without_strand(self):
-        gene_ids = self._annotations_df.gene.unique()
-        for gene_id in gene_ids:
-            if gene_id == 0:
-                continue  # intergenic region
-
-            gene_annotations = self._annotations_df[(self._annotations_df['gene'] == gene_id)].reset_index(drop=True)
-            if gene_annotations is None or gene_annotations.empty:
-                continue
-            strand = Strand(gene_annotations.iloc[0]['strand'])
-            if strand.value == Strand.UNKNOWN.value:
-                self.mute_gene(gene_id=gene_id)

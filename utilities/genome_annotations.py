@@ -446,11 +446,10 @@ def read_annotations_csv(file_path: str, output_dir: str = None):
             if output_dir:
                 file_path = os.path.join(output_dir, file_path)
             if exists(file_path):
-                annotations_df = pd.read_csv(file_path)
-                # TODO first/index column - cast?
-                annotations_df[['chrom', 'region']] = annotations_df[['chrom', 'region']].astype(str)
-                annotations_df[['start', 'end',  'strand', 'gene']] = \
-                    annotations_df[['start', 'end', 'strand', 'gene']].astype(int)
+                annotations_df = pd.read_csv(file_path, index_col=0)
+                annotations_df[['chrom', 'region', 'strand']] = annotations_df[['chrom', 'region', 'strand']].astype(str)
+                annotations_df[['start', 'end', 'gene_id']] = \
+                    annotations_df[['start', 'end', 'gene_id']].astype(int)
             else:
                 print(f'Annotations file does not exist. File path = {file_path}')
                 raise Exception
