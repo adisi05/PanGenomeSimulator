@@ -109,16 +109,19 @@ class Mutation:
 
 
 class WindowUnit:
-    windows_start_offset: int = 0
-    start: int = 0
-    end: int = 0
-    original_end: int = 0
-    # Blocklist explanation:
-    # blocklist[pos] = 0		safe to insert variant here
-    # blocklist[pos] = 1		indel inserted here
-    # blocklist[pos] = 2		snp inserted here
-    # blocklist[pos] = 3		invalid position for various processing reasons
-    blocklist: dict  # TODO re-consider !!!
+    def __init__(self, debug: bool = False):
+
+        self.windows_start_offset: int = 0
+        self.start: int = 0
+        self.end: int = 0
+        self.original_end: int = 0
+        self.debug = debug
+        # Blocklist explanation:
+        # blocklist[pos] = 0		safe to insert variant here
+        # blocklist[pos] = 1		indel inserted here
+        # blocklist[pos] = 2		snp inserted here
+        # blocklist[pos] = 3		invalid position for various processing reasons
+        self.blocklist = {}  # TODO re-consider !!!
 
     def next_window(self, new_start: int = -1, new_end: int = -1):
         # TODO sanity check about start, end. Maybe consider N regions?
@@ -135,6 +138,9 @@ class WindowUnit:
         self.end = new_end
         self.original_end = self.end
         self.blocklist = {}  # np.zeros(end-start, dtype='<i4')
+        if self.debug:
+            print(f"Updated window. Overall windows offset is {self.windows_start_offset}"
+                  f" and therefore the adjusted parameters are window: start={self.start}, end={self.end}")
 
     def adjust_window(self, end_shift=0):
         # TODO sanity check about start, end. Maybe consider N regions?
@@ -214,7 +220,7 @@ class ChromosomeSimulator:
                   f' while in the annotations file it is {self.annotated_seq.len()}.\n'
                   f'Currently continue normally and hope for the best...')
         self._update_mut_models(mut_models, mut_rate, dist)
-        self.window_unit = WindowUnit()
+        self.window_unit = WindowUnit(self.debug)
 
     def _update_mut_models(self, model_data: dict, mut_rate, dist):
         # TODO figure out: called one time? or a few times, for each window?

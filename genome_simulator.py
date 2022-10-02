@@ -180,9 +180,9 @@ class GenomeSimulator:
     def _simulate_window(self, valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeSimulator,
                          start: int, end: int):
 
-        chromosome_processor.next_window(start=start, end=end)
         if self._debug:
-            print(f"Current window: start={start}, end={end}")
+            print(f"Updating window: start={start}, end={end}")
+        chromosome_processor.next_window(start=start, end=end)
 
         vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
         given_mutations_inserted = chromosome_processor.insert_given_mutations(vars_in_current_window)
