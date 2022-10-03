@@ -128,7 +128,7 @@ class WindowUnit:
         last_window_offset = self.end - self.original_end
         new_start += (self.windows_start_offset + last_window_offset)
         new_end += (self.windows_start_offset + last_window_offset)
-        if new_start < 0 or new_end < 0 or not (self.end <= new_start < new_end):
+        if new_start < 0 or new_end < 0 or not (self.end == new_start < new_end):
             raise Exception(f'Illegal window positions. Start and end should be positive integers. '
                             f'The new window should come after the previous one and not overlap with it. '
                             f'Got the next values: start={new_start}, end={new_end}, '
@@ -142,15 +142,17 @@ class WindowUnit:
             print(f"Updated window. Overall windows offset is {self.windows_start_offset}"
                   f" and therefore the adjusted parameters are window: start={self.start}, end={self.end}")
 
-    def adjust_window(self, end_shift=0):
+    def adjust_window(self, end_shift: int = 0):
         # TODO sanity check about start, end. Maybe consider N regions?
+        if self.debug:
+            print(f"Adjusting window, end shift is {end_shift}")
         self.end += end_shift
 
-    def update_blocklist(self, mutation):
+    def update_blocklist(self, mutation: Mutation):
         for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):  # TODO continue here
             self.blocklist[k] = 1 if mutation.mut_type.value == MutType.INDEL.value else 2
 
-    def check_blocklist(self, mutation):
+    def check_blocklist(self, mutation: Mutation):
         for k in range(mutation.position, mutation.position + len(mutation.ref_nucl)):
             if self.blocklist.get(k, 0):
                 return False
@@ -507,7 +509,7 @@ class ChromosomeSimulator:
         print(f"Trying to insert mutation of type {mutation.mut_type.value} at position {mutation.position}.")
 
         ref_start = mutation.position
-        ref_end = ref_start + len(mutation.ref_nucl)
+        ref_end = ref_start + len(mutation.ref_nucl) #TODO
         window_shift = mutation.get_offset_change()
 
         if mutation.ref_nucl != str(self.chrom_sequence[ref_start:ref_end]):
@@ -585,7 +587,8 @@ class ChromosomeSimulator:
     def handle_annotations_after_small_insertion(self, inserted_mutation: Mutation):
         if self.should_mute_gene_after_small_insertion(inserted_mutation):
             self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
-        self.annotated_seq.handle_insertion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
+        self.annotated_seq.handle_insertion(inserted_mutation.position,
+                                            len(inserted_mutation.new_nucl) - len(inserted_mutation.ref_nucl))
 
     def should_mute_gene_after_small_insertion(self, inserted_mutation: Mutation) -> bool:
         region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
@@ -631,7 +634,8 @@ class ChromosomeSimulator:
 
         if self.should_mute_gene_after_small_deletion(inserted_mutation):
             self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
-        self.annotated_seq.handle_deletion(inserted_mutation.position, len(inserted_mutation.new_nucl) - 1)
+        self.annotated_seq.handle_deletion(inserted_mutation.position,
+                                           len(inserted_mutation.ref_nucl) - len(inserted_mutation.new_nucl))
 
     def should_mute_gene_after_small_deletion(self, inserted_mutation: Mutation) -> bool:
         region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)

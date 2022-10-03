@@ -45,14 +45,15 @@ class AnnotatedSequence:
     def len(self):
         if self._annotations_df is None or self._annotations_df.empty:
             return None
-        return self._annotations_df.iloc[-1]['end'].item()
+        return self._annotations_df.iloc[-1]['end']
 
     def _get_annotation_by_position(self, pos) -> (pd.Series, int):
         condition = (self._annotations_df['start'] <= pos) & (pos < self._annotations_df['end'])
         annotation_indices = self._annotations_df.index[condition].tolist()
         if len(annotation_indices) != 1:
-            raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}")
-        return self._annotations_df.loc[annotation_indices[0]], annotation_indices[0]
+            raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}.\n"
+                            f"Number of proposed annotations is {len(annotation_indices)}")
+        return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
 
     def get_regions(self) -> List[Region]:
         return self._relevant_regions
@@ -84,10 +85,10 @@ class AnnotatedSequence:
 
         if strand.value == Strand.FORWARD.value:
             last_cds = gene_cds_annotations.iloc[-1]
-            return last_cds['end'].item() - 1, strand
+            return last_cds['end'] - 1, strand
         else:
             last_cds = gene_cds_annotations.iloc[0]
-            return last_cds['start'].item(), strand
+            return last_cds['start'], strand
 
     def get_encapsulating_codon_positions(self, pos: int) -> (int, int, int):
         if self.debug:
@@ -112,7 +113,9 @@ class AnnotatedSequence:
             prev_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] <= cds_start)]
-            prev_cds_end = prev_cds.iloc[-1]['end'].item()
+            if len(prev_cds) == 0 and self.debug:
+                print(f"No previous CDS element is available.")
+            prev_cds_end = prev_cds.iloc[-1]['end']
             if second < cds_start:
                 second = prev_cds_end - 1
                 first = prev_cds_end - 2
@@ -125,7 +128,9 @@ class AnnotatedSequence:
             next_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]
-            next_cds_start = next_cds.iloc[0]['start'].item()
+            if len(next_cds) == 0 and self.debug:
+                print(f"No next CDS element is available.")
+            next_cds_start = next_cds.iloc[0]['start']
             if cds_end <= second:
                 second = next_cds_start
                 third = next_cds_start + 1
@@ -156,71 +161,82 @@ class AnnotatedSequence:
 
         # melt with previous intergenic region if exists
         if first_index != 0 and \
-                self._annotations_df.loc[first_index - 1, 'region'] == Region.INTERGENIC.value:
+                self._annotations_df.iloc[first_index - 1]['region'] == Region.INTERGENIC.value:
             first_index -= 1
 
         # melt with next intergenic region if exists
         if last_index + 1 != len(self._annotations_df) and \
-                self._annotations_df.loc[last_index + 1, 'region'] == Region.INTERGENIC.value:
+                self._annotations_df.iloc[last_index + 1]['region'] == Region.INTERGENIC.value:
             last_index += 1
 
         # create new intergenic region
-        intergenic_start = self._annotations_df.loc[first_index, 'start'].item()
-        intergenic_end = self._annotations_df.loc[last_index, 'end'].item()
+        intergenic_start = self._annotations_df.iloc[first_index]['start']
+        intergenic_end = self._annotations_df.iloc[last_index]['end']
         new_intergenic = pd.DataFrame({'start': intergenic_start,
                                        'end': intergenic_end,
                                        'region': Region.INTERGENIC.value,
                                        'gene_id': 0,
-                                       'strand': Strand.UNKNOWN.value},
+                                       'strand': Strand.UNKNOWN.value,
+                                       'frame': np.nan},
                                       index=[first_index])
 
         # insert new intergenic region instead of muted gene
         dfs_to_concat = []
         if first_index != 0:
-            dfs_to_concat.append(self._annotations_df.loc[:first_index])
+            dfs_to_concat.append(self._annotations_df.iloc[:first_index, :])
         dfs_to_concat.append(new_intergenic)
         if last_index + 1 != len(self._annotations_df):
-            dfs_to_concat.append(self._annotations_df.loc[last_index + 1:])
+            dfs_to_concat.append(self._annotations_df.iloc[last_index + 1:, :])
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
         if self.debug:
             end = time.time()
             print(f"Gene muting took {int(end - start)} seconds.")
+            print(f"New intergenic region is now from start={intergenic_start} to end={intergenic_end}.")
+            print(f"Merged the (current) annotation indexes: first_index={first_index} to last_index={last_index}.")
+            print(f"The result: lost {last_index-first_index} annotations.")
 
     def handle_insertion(self, pos: int, insertion_len: int) -> None:
         _, index = self._get_annotation_by_position(pos)
-        self._annotations_df.loc[index, 'end'] += insertion_len
+        self._annotations_df.iloc[index, self._annotations_df.columns.get_loc('end')] += insertion_len
         if index + 1 != len(self._annotations_df):
-            self._annotations_df.loc[index + 1:, 'start'] += insertion_len
-            self._annotations_df.loc[index + 1:, 'end'] += insertion_len
+            self._annotations_df.iloc[index + 1:, self._annotations_df.columns.get_loc('start')] += insertion_len
+            self._annotations_df.iloc[index + 1:, self._annotations_df.columns.get_loc('end')] += insertion_len
+            if self.debug:
+                print(f"Shifted forward annotations from index {index + 1} by {insertion_len}.")
 
     def handle_deletion(self, pos: int, deletion_len: int) -> None:
         """
         Delete right after pos, sequence at the length deletion_len
         """
         _, index = self._get_annotation_by_position(pos)
-        annotation_residue = self._annotations_df.loc[index, 'end'].item() - pos - 1
+        annotation_residue = self._annotations_df.iloc[index]['end'] - pos - 1
         deleted_already = min(annotation_residue, deletion_len)
-        self._annotations_df.loc[index, 'end'] -= deleted_already
+        self._annotations_df.iloc[index, self._annotations_df.columns.get_loc('end')] -= deleted_already
         index += 1
 
         annotations_to_delete = []
         # deletion involves more than one annotation
         while deleted_already < deletion_len and index < len(self._annotations_df):
-            annotation_len = self._annotations_df.loc[index, 'end'].item() - \
-                             self._annotations_df.loc[index, 'start'].item()
-            if annotation_len <= deletion_len - deleted_already:
+            annotation_len = self._annotations_df.iloc[index]['end'] - \
+                             self._annotations_df.iloc[index]['start']
+
+            if annotation_len <= (deletion_len - deleted_already):
                 annotations_to_delete.append(index)
                 deleted_already += annotation_len
             else:
-                self._annotations_df.loc[index, 'start'] = pos + 1
-                self._annotations_df.loc[index, 'end'] = (pos + annotation_len) - (deletion_len - deleted_already)
+                self._annotations_df.iloc[index, self._annotations_df.columns.get_loc('start')] = pos + 1
+                self._annotations_df.iloc[index, self._annotations_df.columns.get_loc('end')] = \
+                    (pos + 1 + annotation_len) - (deletion_len - deleted_already)
                 deleted_already = deletion_len
+
             index += 1
 
         if index != len(self._annotations_df):
-            self._annotations_df.loc[index:, 'start'] -= deletion_len
-            self._annotations_df.loc[index:, 'end'] -= deletion_len
+            self._annotations_df.iloc[index:, self._annotations_df.columns.get_loc('start')] -= deletion_len
+            self._annotations_df.iloc[index:, self._annotations_df.columns.get_loc('end')] -= deletion_len
+            if self.debug:
+                print(f"Shifted backwards annotations from index {index + 1} by {deletion_len}.")
 
         if len(annotations_to_delete):
             self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
