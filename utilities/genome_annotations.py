@@ -161,10 +161,10 @@ def get_lengths_of_gene_variants(gene_id: str, cds_elements_df: pd.DataFrame) ->
 def get_sub_gene_elements(gene_id: str, genes_df: pd.DataFrame, var_id: int, cds_elements_df: pd.DataFrame)\
         -> List[dict]:
     gene = genes_df[genes_df['gene_id'] == gene_id]
-    gene_start = gene['start']
-    gene_end = gene['end']
-    gene_strand = gene['strand']
-    gene_chrom = gene['chrom']
+    gene_start = gene['start'].item()
+    gene_end = gene['end'].item()
+    gene_strand = gene['strand'].item()
+    gene_chrom = gene['chrom'].item()
     elements_list = []
 
     variants_cds_elements_df = cds_elements_df[(cds_elements_df['gene_id'] == gene_id) &
