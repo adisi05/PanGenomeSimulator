@@ -27,6 +27,7 @@ def workflow(input_path: str, output_path: str):
     all_annotations_df = all_annotations_df.sort_values(by=['chrom', 'start', 'end']).reset_index(drop=True)
     all_annotations_df = gene_ids_to_numbers(all_annotations_df)
     all_annotations_df[['start', 'end', 'gene_id']] = all_annotations_df[['start', 'end', 'gene_id']].astype(int)
+    all_annotations_df = assign_frame_to_cds(all_annotations_df)
     sanity_check(all_annotations_df)
     all_annotations_df.to_csv(output_path)
 
@@ -128,7 +129,7 @@ def get_sub_gene_annotations(genes_df: pd.DataFrame, cds_elements_df: pd.DataFra
         var_lenths_dict = dict(sorted(var_lenths_dict.items(), key=operator.itemgetter(1), reverse=True))
         chosen_variant = -1
         for var_id, length in var_lenths_dict.items():
-            if length % 3 == 0:  # TODO maybe ignore this check?
+            if length % 3 == 0:
                 chosen_variant = var_id
                 break
         if chosen_variant == -1:
@@ -160,10 +161,10 @@ def get_lengths_of_gene_variants(gene_id: str, cds_elements_df: pd.DataFrame) ->
 def get_sub_gene_elements(gene_id: str, genes_df: pd.DataFrame, var_id: int, cds_elements_df: pd.DataFrame)\
         -> List[dict]:
     gene = genes_df[genes_df['gene_id'] == gene_id]
-    gene_start = gene['start'].item()
-    gene_end = gene['end'].item()
-    gene_strand = gene['strand'].item()
-    gene_chrom = gene['chrom'].item()
+    gene_start = gene['start']
+    gene_end = gene['end']
+    gene_strand = gene['strand']
+    gene_chrom = gene['chrom']
     elements_list = []
 
     variants_cds_elements_df = cds_elements_df[(cds_elements_df['gene_id'] == gene_id) &
@@ -289,6 +290,40 @@ def main(raw_args=None):
         test_overlapping_genes(input_file)
 
 
+def assign_frame_to_cds(annotations_df: pd.DataFrame) -> pd.DataFrame:
+    annotations_df = assign_frame_to_cds_on_strand(annotations_df, Strand.FORWARD)
+    annotations_df = assign_frame_to_cds_on_strand(annotations_df, Strand.REVERSE)
+    return annotations_df
+
+
+def assign_frame_to_cds_on_strand(annotations_df: pd.DataFrame, strand: Strand) -> pd.DataFrame:
+    print(f"Assigning frames for CDS elements in strand {strand.value}...")
+    t_start = time.time()
+    index = annotations_df.index
+    if strand.value == Strand.REVERSE.value:
+        index = reversed(index)
+
+    current_gene_id = 0
+    previous_offset = 0
+    for i in index:
+        annotation = annotations_df.iloc[i, :]
+        if annotation['strand'] != strand.value:
+            continue
+
+        # encountered a new gene
+        if annotation['gene_id'] != current_gene_id and annotation['gene_id'] != 0:
+            current_gene_id = annotation['gene_id']
+            previous_offset = 0
+
+        if annotation['region'] == Region.CDS.value:
+            if annotation['frame'] != previous_offset:
+                annotations_df.iloc[i, annotations_df.columns.get_loc('frame')] = previous_offset
+
+            previous_offset = (previous_offset + annotation['end'] - annotation['start']) % 3
+    print(f"Completed frames assignment, took {int(time.time() - t_start)} seconds.")
+    return annotations_df
+
+
 #####################
 ### Sanity Checks ###
 #####################
@@ -304,10 +339,12 @@ def sanity_check(annotations_df: pd.DataFrame):
 
 
 def sanity_check_elements_positions(annotations_df):
+    print("Starting positions sanity check")
+    count = 0
     current_chrom = ''
     previous_end = -1
     for i, annotation in annotations_df.iterrows():
-
+        count += 1
         # first annotation in chromosome
         if current_chrom != annotation['chrom']:
             current_chrom = annotation['chrom']
@@ -318,21 +355,36 @@ def sanity_check_elements_positions(annotations_df):
             print(f'Wrong start for annotation index {i}')
 
         previous_end = annotation['end']
+    print(f"Positions sanity check completed, {count} annotations were checked")
 
 
 def sanity_check_gene_strand(annotations_df):
+    print("Starting strand sanity check")
+    count = 0
     for i, annotation in annotations_df.iterrows():
+        count += 1
         if annotation['region'] in [Region.CDS.value, Region.NON_CODING_GENE.value] and \
                 annotation['strand'] not in [Strand.FORWARD.value, Strand.REVERSE.value]:
             print(f'Wrong strand for annotation index {i}')
+    print(f"Strand sanity check completed, {count} annotations were checked")
 
 
 def sanity_check_cds_frames(annotations_df):
+
+    sanity_check_cds_frames_for_strand(annotations_df, Strand.FORWARD)
+
+    reversed_df = annotations_df.reindex(index=annotations_df.index[::-1])
+    sanity_check_cds_frames_for_strand(reversed_df, Strand.REVERSE)
+
+
+def sanity_check_cds_frames_for_strand(annotations_df: pd.DataFrame, strand: Strand):
+    print(f"Sanity check for CDS frames in strand {strand.value}...")
     current_gene_id = 0
     previous_offset = 0
+    count = 0
+    invalid_count = 0
     for i, annotation in annotations_df.iterrows():
-        if annotation['strand'] != Strand.FORWARD:
-            # currently the check is on forward strand only...
+        if annotation['strand'] != strand.value:
             continue
 
         # encountered a new gene
@@ -341,30 +393,31 @@ def sanity_check_cds_frames(annotations_df):
             previous_offset = 0
 
         if annotation['region'] == Region.CDS.value:
+            count += 1
             if annotation['frame'] != previous_offset:
-                print(f'Wrong frame for annotation index {i}')
-            previous_offset = (annotation['end'] - annotation['start']) % 3
+                # print(f'Wrong frame for annotation index {i}')
+                invalid_count += 1
+            previous_offset = (previous_offset + annotation['end'] - annotation['start']) % 3
+    print(f"Out of {count} CDS elements, {invalid_count} have invalid frames")
 
 
-# def external_sanity_check(raw_args=None):
-#     parser = argparse.ArgumentParser(description='Genome annotations sanity check',
-#                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
-#     parser.add_argument('-csv', type=str, required=False, metavar='/path/to/output.csv',
-#                         help="Path to output csv file")
-#     args = parser.parse_args(raw_args)
-#
-#     output_file = args.csv if args.csv else DEFAULT_OUTPUT_FILE
-#     annotations_df = read_annotations_csv(output_file)
-#
-#     start_t = time.time()
-#     print('Starting sanity check...')
-#     sanity_check(annotations_df)
-#     print('Sanity check completed. Took {0:.3f} (sec)'.format(time.time() - start_t))
+def external_sanity_check(raw_args=None):
+    parser = argparse.ArgumentParser(description='Genome annotations sanity check',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
+    parser.add_argument('-csv', type=str, required=False, metavar='/path/to/output.csv',
+                        help="Path to output csv file")
+    args = parser.parse_args(raw_args)
+
+    output_file = args.csv if args.csv else DEFAULT_OUTPUT_FILE
+    annotations_df = read_annotations_csv(output_file)
+
+    sanity_check(annotations_df)
 
 
 ############
 ### Test ###
 ############
+
 
 def test_overlapping_genes(in_file: str = DEFAULT_INPUT_FILE):
     if in_file is not None:
@@ -445,7 +498,8 @@ def read_annotations_csv(file_path: str):
                 raise Exception
             if exists(file_path):
                 annotations_df = pd.read_csv(file_path, index_col=0)
-                annotations_df[['chrom', 'region', 'strand']] = annotations_df[['chrom', 'region', 'strand']].astype(str)
+                annotations_df[['chrom', 'region', 'strand']] = \
+                    annotations_df[['chrom', 'region', 'strand']].astype(str)
                 annotations_df[['start', 'end', 'gene_id']] = \
                     annotations_df[['start', 'end', 'gene_id']].astype(int)
             else:
