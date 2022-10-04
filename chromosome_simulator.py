@@ -128,7 +128,7 @@ class WindowUnit:
         last_window_offset = self.end - self.original_end
         new_start += (self.windows_start_offset + last_window_offset)
         new_end += (self.windows_start_offset + last_window_offset)
-        if new_start < 0 or new_end < 0 or not (self.end == new_start < new_end):
+        if new_start < 0 or new_end < 0 or not (self.end <= new_start < new_end):
             raise Exception(f'Illegal window positions. Start and end should be positive integers. '
                             f'The new window should come after the previous one and not overlap with it. '
                             f'Got the next values: start={new_start}, end={new_end}, '
@@ -309,7 +309,7 @@ class ChromosomeSimulator:
             # from initialization, the probability of the first and the last element is 0
         end = time.time()
         if self.debug:
-            print(f"Updating window trinuc bias took {int(end - start)} seconds.")
+            print(f"Updating window trinuc bias took {0:.3f} seconds.".format(end-start))
 
     def init_poisson(self, type_is_indel: bool = True):
         list_per_region = {}

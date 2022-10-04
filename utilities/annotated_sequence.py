@@ -211,12 +211,14 @@ class AnnotatedSequence:
 
         if self.debug:
             end = time.time()
-            print(f"Gene muting took {int(end - start)} seconds.")
+            print(f"Gene muting took {0:.3f} seconds.".format(end-start))
             print(f"New intergenic region is now from start={intergenic_start} to end={intergenic_end}.")
             print(f"Merged the (current) annotation indexes: first_index={first_index} to last_index={last_index}.")
             print(f"The result: lost {last_index-first_index} annotations.")
 
     def handle_insertion(self, pos: int, insertion_len: int) -> None:
+        start = time.time()
+
         _, index = self._get_annotation_by_position(pos)
         self._annotations_df.iloc[index, self._annotations_df.columns.get_loc('end')] += insertion_len
         if index + 1 != len(self._annotations_df):
@@ -225,10 +227,16 @@ class AnnotatedSequence:
             if self.debug:
                 print(f"Shifted forward annotations from index {index + 1} by {insertion_len}.")
 
+        if self.debug:
+            end = time.time()
+            print(f"handle_insertion took {0:.3f} seconds.".format(end-start))
+
     def handle_deletion(self, pos: int, deletion_len: int) -> None:
         """
         Delete right after pos, sequence at the length deletion_len
         """
+        start = time.time()
+
         _, index = self._get_annotation_by_position(pos)
         annotation_residue = self._annotations_df.iloc[index]['end'] - pos - 1
         deleted_already = min(annotation_residue, deletion_len)
@@ -260,6 +268,10 @@ class AnnotatedSequence:
 
         if len(annotations_to_delete):
             self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
+
+        if self.debug:
+            end = time.time()
+            print(f"handle_deletion took {0:.3f} seconds.".format(end-start))
 
     def get_nucleotides_counts_per_region(self, start: int = -1, end: int = -1) -> dict:
         start = start if start != -1 else 0
