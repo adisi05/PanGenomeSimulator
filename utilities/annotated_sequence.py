@@ -92,25 +92,44 @@ class AnnotatedSequence:
 
     def get_encapsulating_codon_positions(self, pos: int) -> (int, int, int):
         if self.debug:
-            print(f"Trying to fond codon positions for nucleotide at position {pos}.")
+            print(f"Trying to find codon positions for nucleotide at position {pos}.")
         cds, _ = self._get_annotation_by_position(pos)
         if cds['region'] != Region.CDS.value:
             raise Exception("Codon is only relevant for CDS region")
         cds_start = cds['start']
         cds_end = cds['end']
-        gene = cds['gene_id']
-        reading_offset = int(cds['frame']) + (pos - cds_start)
-        reading_offset = reading_offset % 3
-        first = pos - reading_offset
-        second = pos + 1 - reading_offset
-        third = pos + 2 - reading_offset
+        cds_gene = cds['gene_id']
+        cds_strand = cds['strand']
+        if self.debug:
+            print(f"CDS details: start={cds_start}, CDS end={cds_end}, gene={cds_gene}, strand={cds_strand}.")
+
+        # find positions of 3 nucleotides
+        if cds_strand == Strand.FORWARD.value:
+            pos_frame = (int(cds['frame']) + (pos - cds_start)) % 3
+            first = pos - pos_frame
+            second = pos + 1 - pos_frame
+            third = pos + 2 - pos_frame
+        elif cds_strand == Strand.REVERSE.value:
+            # initially, find codons in reversed read
+            reversed_cds_start = cds_end - 1
+            pos_frame = (int(cds['frame']) + (reversed_cds_start - pos)) % 3
+            reversed_first = pos + pos_frame
+            reversed_second = pos - 1 + pos_frame
+            reversed_third = pos - 2 + pos_frame
+            # then convert to forward read
+            first = reversed_third
+            second = reversed_second
+            third = reversed_first
+        else:
+            raise Exception("Unknown strand for CDS element")
         if self.debug:
             print(f"Found this positions: {first}-{third}.")
 
+        # get previous CDS (which is actually next if reverse strand...) if needed
         if first < cds_start or second < cds_start:
             if self.debug:
                 print(f"Getting previous CDS because current CDS start is {cds_start}.")
-            prev_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
+            prev_cds = self._annotations_df[(self._annotations_df['gene_id'] == cds_gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] <= cds_start)]
             if len(prev_cds) == 0 and self.debug:
@@ -122,10 +141,11 @@ class AnnotatedSequence:
             elif first < cds_start:
                 first = prev_cds_end - 1
 
+        # get next CDS (which is actually previous if reverse strand...) if needed
         if cds_end <= second or cds_end <= third:
             if self.debug:
                 print(f"Getting next CDS because current CDS end is {cds_end}.")
-            next_cds = self._annotations_df[(self._annotations_df['gene_id'] == gene) &
+            next_cds = self._annotations_df[(self._annotations_df['gene_id'] == cds_gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]
             if len(next_cds) == 0 and self.debug:
