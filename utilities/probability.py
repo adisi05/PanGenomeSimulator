@@ -9,21 +9,6 @@ import numpy as np
 LOW_PROB_THRESH = 1e-12
 
 
-def mean_ind_of_weighted_list(candidate_list: list) -> int:
-    """
-    Returns the index of the mean of a weighted list
-
-    :param candidate_list: weighted list
-    :return: index of mean
-    """
-    my_mid = sum(candidate_list) / 2.0
-    my_sum = 0.0
-    for i in range(len(candidate_list)):
-        my_sum += candidate_list[i]
-        if my_sum >= my_mid:
-            return i
-
-
 class DiscreteDistribution:
     def __init__(self, weights, values, degenerate_val=None, method='bisect'):
 
@@ -126,35 +111,3 @@ def poisson_list(k_range, input_lambda):
     if len(w_range) <= 1:
         return DiscreteDistribution([1], [0], degenerate_val=0)
     return DiscreteDistribution(w_range, k_range[:len(w_range)])
-
-
-# quantize a list of values into blocks
-def quantize_list(list_to_quantize):
-    min_prob = 1e-12
-    quant_blocks = 10
-    sum_list = float(sum(list_to_quantize))
-    sorted_list = sorted([n for n in list_to_quantize if n >= min_prob * sum_list])
-    if len(sorted_list) == 0:
-        return None
-    qi = []
-    for i in range(quant_blocks):
-        # qi.append(sorted_list[int((i)*(len(sorted_list)/float(quant_blocks)))])
-        qi.append(sorted_list[0] + (i / float(quant_blocks)) * (sorted_list[-1] - sorted_list[0]))
-    qi.append(1e12)
-    running_list = []
-    prev_bi = None
-    prev_i = None
-    for i in range(len(list_to_quantize)):
-        if list_to_quantize[i] >= min_prob * sum_list:
-            bi = bisect.bisect(qi, list_to_quantize[i])
-            # print i, l[i], qi[bi-1]
-            if prev_bi is not None:
-                if bi == prev_bi and prev_i == i - 1:
-                    running_list[-1][1] += 1
-                else:
-                    running_list.append([i, i, qi[bi - 1]])
-            else:
-                running_list.append([i, i, qi[bi - 1]])
-            prev_bi = bi
-            prev_i = i
-    return running_list
