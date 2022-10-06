@@ -25,7 +25,8 @@ from typing import List, Dict, Tuple
 import pandas as pd
 
 from writers.fastq_file_writer import FastqFileWriter
-from chromosome_simulator import ChromosomeSimulator, parse_input_mutation_model
+from chromosome_simulator import ChromosomeSimulator
+from mutation_model import load_mutation_model_from_file
 from writers.fasta_file_writer import FastaFileWriter
 from utilities.input_checking import check_file_open, is_in_range
 from utilities.ref_func import index_ref, read_ref
@@ -54,7 +55,7 @@ class GenomeSimulator:
 
         # Load annotations dataframe
         self._annotations_df = read_annotations_csv(self._annotations_file)
-        self._load_mutation_model()
+        self._load_mutation_model_data()
 
         self._index_reference()
 
@@ -100,11 +101,11 @@ class GenomeSimulator:
         is_in_range(self._sequencing_coverage, 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
         # TODO check mut bed file, and vcf?
 
-    def _load_mutation_model(self):
-        self._mutation_model = parse_input_mutation_model(self._mutation_model, 1)
+    def _load_mutation_model_data(self):
+        self._mutation_model = load_mutation_model_from_file(self._mutation_model)
         if self._mutation_rate < 0.:
             self._mutation_rate = None
-        if self._mutation_rate != -1 and self._mutation_rate is not None:
+        if self._mutation_rate is not None:
             is_in_range(self._mutation_rate, 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
 
     def _index_reference(self):
@@ -149,7 +150,7 @@ class GenomeSimulator:
         chrom_valid_variants = self._prune_invalid_variants(chrom, chrom_sequence)
         chrom_annotations_df = self._annotations_df[self._annotations_df['chrom'] == chrom]
         chromosome_processor = ChromosomeSimulator(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True,
-                                                   mut_models=self._mutation_model, mut_rate=self._mutation_rate,
+                                                   mut_model=self._mutation_model, mut_rate=self._mutation_rate,
                                                    dist=self._relative_distance, debug=self._debug)
 
         print('--------------------------------')
