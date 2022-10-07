@@ -390,7 +390,7 @@ class ChromosomeSimulator:
 
             # forbid deletion to crossing the boundary of annotation!
             _, annotation_end = self.annotated_seq.get_annotation_start_end(position)
-            if position + indel_len >= annotation_end:
+            if annotation_end and position + indel_len >= annotation_end:
                 indel_len = annotation_end - 1 - position
 
             if indel_len < 0:
@@ -448,7 +448,7 @@ class ChromosomeSimulator:
         return vcf_mutations
 
     def handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation) -> bool:
-        if self.annotated_seq.get_regions() == [Region.ALL]:
+        if [region.value for region in self.annotated_seq.get_regions()] == [Region.ALL.value]:
             return False  # sequence is not annotated
 
         # SNP

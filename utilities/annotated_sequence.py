@@ -65,6 +65,9 @@ class AnnotatedSequence:
         return Region(annotation['region']), Strand(annotation['strand'])
 
     def get_annotation_start_end(self, pos) -> (int, int):
+        if self._annotations_df is None or self._annotations_df.empty:
+            return None, None
+
         annotation, _ = self._get_annotation_by_position(pos)
 
         return annotation['start'], annotation['end']
@@ -274,6 +277,9 @@ class AnnotatedSequence:
             print(f"handle_deletion took {0:.3f} seconds.".format(end-start))
 
     def get_nucleotides_counts_per_region(self, start: int = -1, end: int = -1) -> dict:
+        if self._annotations_df is None or self._annotations_df.empty:
+            return {Region.ALL.value: end - start}
+
         start = start if start != -1 else 0
         end = end if end != -1 else self.len()
         relevant_annotations = self.get_annotations_in_range(start, end)
@@ -302,6 +308,10 @@ class AnnotatedSequence:
         return self._cached_mask_in_window_per_region[relevant_region.value]
 
     def compute_mask_in_window(self, start: int, end: int):
+        if self._annotations_df is None or self._annotations_df.empty:
+            self._cached_mask_in_window_per_region = {Region.ALL.value: np.full(end - start, 1)}
+            return
+
         relevant_annotations = self.get_annotations_in_range(start, end)
         for _, annotation in relevant_annotations.iterrows():
             annotation_start = max(start, annotation['start'])

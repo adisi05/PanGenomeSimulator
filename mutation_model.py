@@ -665,9 +665,10 @@ def parse_mutation_model(model_file: str = None):
     mut_model = {region.value: {} for region in Region}
     if model_file is not None:
         pickle_dict = pickle.load(open(model_file, "rb"))
+        region_names_found = []
+
         region_list = list(Region)
         region_list.append('')
-        region_names_found = []
         for region in region_list:
             if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:  # checking that the current region exists
                 continue
@@ -687,6 +688,10 @@ def parse_mutation_model(model_file: str = None):
             trinuc_mut_prob = pickle_dict[pickel_key(region, Stats.TRINUC_MUT_PROB)]
             parse_mutation_model_trinuc_mut_probs(mut_model, region_name, trinuc_mut_prob)
         print(f'found the next regions in the model: {region_names_found}')
+        for region in Region:
+            if region.value not in region_names_found:
+                del mut_model[region.value]
+
     else:
         print('\nError: No mutation model specified\n')
         sys.exit(1)
@@ -753,23 +758,24 @@ def init_model(model_from_file: dict) -> dict:
     Initialize mutation model, ready to use
     """
 
-    model_per_region = {region.value: {} for region in Region}
-    for region in Region:
-        data = model_from_file[region.value]
-        model_per_region[region.value][MODEL_AVG_MUT_RATE] = data[MODEL_AVG_MUT_RATE]
-        model_per_region[region.value][MODEL_P_INDEL] = data[MODEL_P_INDEL]
-        model_per_region[region.value][MODEL_P_INSERTION] = data[MODEL_P_INSERTION]
-        model_per_region[region.value][MODEL_INS_LEN_DSTRBTN] = \
+    model_per_region = {}
+    for region_name in model_from_file.keys():
+        data = model_from_file[region_name]
+        model_per_region[region_name] = {}
+        model_per_region[region_name][MODEL_AVG_MUT_RATE] = data[MODEL_AVG_MUT_RATE]
+        model_per_region[region_name][MODEL_P_INDEL] = data[MODEL_P_INDEL]
+        model_per_region[region_name][MODEL_P_INSERTION] = data[MODEL_P_INSERTION]
+        model_per_region[region_name][MODEL_INS_LEN_DSTRBTN] = \
             DiscreteDistribution(data[INS_LENGTH_WEIGHTS], data[INS_LENGTH_VALUES])
-        model_per_region[region.value][MODEL_DEL_LEN_DSTRBTN] = \
+        model_per_region[region_name][MODEL_DEL_LEN_DSTRBTN] = \
             DiscreteDistribution(data[DEL_LENGTH_WEIGHTS], data[DEL_LENGTH_VALUES])
 
-        model_per_region[region.value][MODEL_TRINUC_TRANS_DSTRBTN] = []
+        model_per_region[region_name][MODEL_TRINUC_TRANS_DSTRBTN] = []
         for m in data[TRINUC_FREQS]:
             # noinspection PyTypeChecker
-            model_per_region[region.value][MODEL_TRINUC_TRANS_DSTRBTN].append(
+            model_per_region[region_name][MODEL_TRINUC_TRANS_DSTRBTN].append(
                 [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
                  DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
-        model_per_region[region.value][MODEL_P_TRINUC_MUT] = [m for m in data[TRINUC_BIAS]]
+        model_per_region[region_name][MODEL_P_TRINUC_MUT] = [m for m in data[TRINUC_BIAS]]
 
     return model_per_region

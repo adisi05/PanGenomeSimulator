@@ -148,8 +148,7 @@ class GenomeSimulator:
                                              self._sequencing_n_handling)
 
         chrom_valid_variants = self._prune_invalid_variants(chrom, chrom_sequence)
-        chrom_annotations_df = self._annotations_df[self._annotations_df['chrom'] == chrom]
-        chromosome_processor = ChromosomeSimulator(chrom, chrom_sequence, chrom_annotations_df, annotations_sorted=True,
+        chromosome_processor = ChromosomeSimulator(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
                                                    mut_model=self._mutation_model, mut_rate=self._mutation_rate,
                                                    dist=self._relative_distance, debug=self._debug)
 
