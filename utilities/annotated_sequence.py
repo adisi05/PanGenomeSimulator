@@ -30,7 +30,16 @@ class AnnotatedSequence:
 
         self._annotations_df = annotations_df.copy()
         if 'chrom' in annotations_df.columns:
-            self._annotations_df = self._annotations_df[annotations_df['chrom'] == chromosome]
+
+            # if chromosome name is not the exactly the name in the dataframe, try to find it
+            if self._chromosome not in self._annotations_df.chrom.unique():
+                split = self._chromosome.split(' ')
+                for item in split:
+                    if item in self._annotations_df.chrom.unique():
+                        self._chromosome = item
+                        break
+
+            self._annotations_df = self._annotations_df[annotations_df['chrom'] == self._chromosome]
             del self._annotations_df['chrom']
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
