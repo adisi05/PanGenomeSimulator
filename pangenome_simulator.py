@@ -6,14 +6,11 @@ from itertools import repeat
 import ete3
 import time
 import os
-import pandas as pd
 
 from genome_simulator import GenomeSimulator, ANNOTATIONS_FILE_FORMAT
 from writers.fasta_file_writer import FastaFileWriter
 from writers.fastq_file_writer import FastqFileWriter
-from utilities.input_checking import check_file_open
 from writers.vcf_file_writer import VcfFileWriter
-from utilities.vcf_func import parse_vcf
 
 
 def parse_args(raw_args=None):
@@ -31,8 +28,6 @@ def parse_args(raw_args=None):
                         help="Rescale avg mutation rate to this (1/bp), must be between 0 and 0.3")
     parser.add_argument('-Mb', type=str, required=False, metavar='mut_rates.bed', default=None,
                         help="Bed file containing positional mut rates")
-    parser.add_argument('-v', type=str, required=False, metavar='vcf.file', default=None,
-                        help="Input VCF file of variants to include")
     parser.add_argument('-ws', type=int, required=False, metavar='<int>', default=10000,
                         help='Window size of simulation. Choose an integer number larger than 10')
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
@@ -58,16 +53,8 @@ def main(raw_args=None):
     print("Using the next args:", args)
     load_default_args(args)
 
-    # parse input variants, if present
-    if args.v:
-        check_file_open(args.v, 'ERROR: could not open input VCF, {}'.format(args.v), required=False)
-        all_input_variants = load_input_variants(args.v)  # input_vcf = args.v
-    else:
-        all_input_variants = pd.DataFrame(columns=['dummy'])
-
     if not args.newick:
         print("No phylogenetic tree supplied")
-        args.input_variants = all_input_variants
         print("Generating sequence started")
         start = time.time()
         genome_simulator = GenomeSimulator(args)
@@ -90,15 +77,7 @@ def main(raw_args=None):
     args.root_to_ref_dist = set_ref_as_accession(args.a, t)
 
     args.root_fasta = args.r
-    if not all_input_variants.empty:
-        start = time.time()
-        all_input_variants = all_input_variants.sample(frac=1).reset_index(drop=True)
-        end = time.time()
-        print("Suffling input variants was done in {} seconds.".format(int(end - start)))
-
-    task_list = load_task_list(t, args, all_input_variants)
-    del all_input_variants
-
+    task_list = load_task_list(t, args)
     if args.max_threads > 1:
         generate_concurrently(args.max_threads, task_list)
     else:
@@ -113,8 +92,6 @@ def load_default_args(args):
     args.name = "simulation"
     args.dist = 1
     args.internal = False
-    args.input_variants = None
-    args.input_variants_path = None
     args.parent_name = None
 
 
@@ -164,7 +141,7 @@ def generate_for_node(args):
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
 
 
-def get_node_args_for_simulation(node, args, all_input_variants, input_variants_used):
+def get_node_args_for_simulation(node, args):
     new_args = copy.copy(args)
     new_args.name = node.name
     new_args.internal = len(node.children) > 0
@@ -178,16 +155,7 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = FastaFileWriter.get_output_filenames(new_args.o, new_args.parent_name)[0]
         new_args.Mb = ANNOTATIONS_FILE_FORMAT.format(new_args.o + '_' + new_args.parent_name)
-    branch_input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants,
-                                                                           input_variants_used)
-    if args.max_threads > 1:
-        new_args.input_variants = None
-        new_args.input_variants_path = args.o + "_" + node.name + "_input_variants.csv"
-        branch_input_variants.to_csv(new_args.input_variants_path, index=False)
-    else:
-        new_args.input_variants = branch_input_variants
-        new_args.input_variants_path = None
-    return new_args, input_variants_used
+    return new_args
 
 
 def get_output_filenames(prefix, name):
@@ -210,27 +178,6 @@ def clear_previous_tree_output(prefix, t):
                     os.remove(filename)
 
 
-def load_input_variants(input_vcf):
-    print("Loading input variants...")
-    start = time.time()
-    # TODO read this in as a pandas dataframe
-    input_variants = None
-    if input_vcf:
-        (sample_names, input_variants) = parse_vcf(input_vcf, ploidy=1)
-    end = time.time()
-    print("Loading input variants took {} seconds.".format(int(end - start)))
-    return input_variants
-
-
-def get_branch_input_variants(branch_dist, input_variants, input_variants_used):
-    if input_variants.empty:
-        return input_variants, 0
-    branch_input_variants_amount = round(branch_dist * len(input_variants))
-    variants_used_including_this = min(input_variants_used + branch_input_variants_amount, len(input_variants))
-    return input_variants.loc[input_variants_used:variants_used_including_this, :].reset_index(
-        drop=True), variants_used_including_this
-
-
 def set_ref_as_accession(accession, t):
     root_to_ref_dist = 0
     if accession:
@@ -249,15 +196,13 @@ def tree_total_dist(t):
     return total_dist
 
 
-def load_task_list(t, args, all_input_variants):
+def load_task_list(t, args):
     task_list = []
-    input_variants_used = 0
     for node in t.traverse("levelorder"):  # AKA breadth first search
         if node is t:
             continue  # This is the root - don't simulate for it
         else:
-            node_params, input_variants_used = get_node_args_for_simulation(node, args, all_input_variants,
-                                                                            input_variants_used)
+            node_params = get_node_args_for_simulation(node, args)
             print("TEST, inside create_task_queue, node_params.name=", node_params.name)
             task_list.append(node_params)
     return task_list

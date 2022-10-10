@@ -59,12 +59,8 @@ class GenomeSimulator:
 
         self._index_reference()
 
-        self._load_vcf()
-
     def _extract_args(self, args):
         self._input_reference = args.r
-        self._input_variants = args.input_variants
-        self._input_variants_path = args.input_variants_path
         self._annotations_file = args.Mb
         self._mutation_model = args.m
         self._mutation_rate = args.M
@@ -124,14 +120,6 @@ class GenomeSimulator:
         end = time.time()
         print('Indexing reference took {} seconds.'.format(int(end - start)))
 
-    def _load_vcf(self):
-        if self._input_variants is None:
-            variants_from_vcf = pd.read_csv(self._input_variants_path)
-            variants_from_vcf[['chrom', 'allele']] = variants_from_vcf[['chrom', 'allele']].astype(str)
-            variants_from_vcf['pos'] = variants_from_vcf['pos'].astype(int)
-            os.remove(self._input_variants_path)
-            self._input_variants = variants_from_vcf
-
     def simulate(self):
         final_chromosomes = {}
         inserted_mutations = {}  # TODO change to list / df?
@@ -151,7 +139,6 @@ class GenomeSimulator:
         chrom_sequence, n_regions = read_ref(self._input_reference, self._indices_by_ref_name[chrom],
                                              self._sequencing_n_handling)
 
-        chrom_valid_variants = self._prune_invalid_variants(chrom, chrom_sequence)
         chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
                                                    mut_model=self._mutation_model, mut_rate=self._mutation_rate,
                                                    dist=self._relative_distance, debug=self._debug)
@@ -164,7 +151,7 @@ class GenomeSimulator:
             windows_list = self._break_to_windows(non_n_region[0], non_n_region[1])
             for window in windows_list:
                 start, end = window
-                window_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor, start, end)
+                window_mutations = self._simulate_window(chromosome_processor, start, end)
                 inserted_mutations.extend(window_mutations)
         print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
@@ -183,20 +170,12 @@ class GenomeSimulator:
             remained_length = next_end - next_start
         return windows_list
 
-    def _simulate_window(self, valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeProcessor,
-                         start: int, end: int):
-
+    def _simulate_window(self, chromosome_processor: ChromosomeProcessor, start: int, end: int):
         if self._debug:
             print(f"Updating window: start={start}, end={end}")
         chromosome_processor.next_window(start=start, end=end)
-
-        vars_in_current_window = get_vars_in_window(start, end, valid_variants_from_vcf)
-        given_mutations_inserted = chromosome_processor.insert_given_mutations(vars_in_current_window)
-
         random_mutations_inserted = chromosome_processor.generate_random_mutations()
-
-        # TODO return random_mutations_inserted only?
-        return given_mutations_inserted + random_mutations_inserted
+        return random_mutations_inserted
 
     def _write_output(self, final_chromosomes: Dict[str, str], inserted_mutations,
                       new_annotations_df: pd.DataFrame = None):
@@ -222,62 +201,6 @@ class GenomeSimulator:
 
         # annotations CSV
         new_annotations_df.to_csv(ANNOTATIONS_FILE_FORMAT.format(self._output_prefix))
-
-    def _prune_invalid_variants(self, chrom, chrom_sequence) -> pd.DataFrame:
-        print('Pruning relevant variants from input VCF...')
-        start = time.time()
-        """Prune invalid input variants, e.g variants that:
-                        - try to delete or alter any N characters
-                        - don't match the reference base at their specified position
-                        - any alt allele contains anything other than allowed characters"""
-        valid_variants_from_vcf_indexes = []
-        n_skipped = [0, 0, 0]
-        if (not self._input_variants.empty) and (chrom in self._input_variants.chrom.unique()):
-            for index, variant in self._input_variants[self._input_variants.chrom == chrom].iterrows():
-                span = (variant.pos, variant.pos + len(variant.allele))
-                r_seq = str(chrom_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
-                # Checks if there are any invalid nucleotides in the vcf items
-                all_alternatives_nuleotides = [nuc for alt in variant.alternatives for nuc in alt]
-                any_bad_nucl = any([(nuc not in VALID_NUCL) for nuc in all_alternatives_nuleotides])
-                # Ensure reference sequence matches the nucleotide in the vcf
-                if r_seq != variant.allele:
-                    n_skipped[0] += 1
-                    continue
-                # Ensure that we aren't trying to insert into an N region
-                elif 'N' in r_seq:
-                    n_skipped[1] += 1
-                    continue
-                # Ensure that we don't insert any disallowed characters
-                elif any_bad_nucl:
-                    n_skipped[2] += 1
-                    continue
-                # If it passes the above tests, append to valid variants list
-                valid_variants_from_vcf_indexes.append(index)
-
-            print('found', len(valid_variants_from_vcf_indexes), 'valid variants for ' +
-                  chrom + ' in input VCF...')
-            if any(n_skipped):
-                print(sum(n_skipped), 'variants skipped...')
-                print(' - [' + str(n_skipped[0]) + '] ref allele does not match reference')
-                print(' - [' + str(n_skipped[1]) + '] attempting to insert into N-region')
-                print(' - [' + str(n_skipped[2]) + '] alt allele contains non-ACGT characters')
-        end = time.time()
-        print('Done. Pruning took {} seconds.'.format(int(end - start)))
-        return self._input_variants.loc[valid_variants_from_vcf_indexes, 'pos':].reset_index(drop=True)
-
-
-def get_vars_in_window(start: int, end: int, valid_variants_from_vcf: pd.DataFrame) -> pd.DataFrame:
-    vars_in_window_indexes = []
-
-    for i, variant in valid_variants_from_vcf.iterrows():
-        if start <= variant['pos'] < end:
-            vars_in_window_indexes.append(i)
-
-    if not valid_variants_from_vcf.empty:
-        vars_in_window = valid_variants_from_vcf.loc[vars_in_window_indexes, 'pos':].reset_index(drop=True)
-    else:
-        vars_in_window = valid_variants_from_vcf
-    return vars_in_window
 
 
 # TODO deprecated?

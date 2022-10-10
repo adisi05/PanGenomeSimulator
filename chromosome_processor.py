@@ -57,13 +57,10 @@ class ChromosomeProcessor:
         random_mutations_pool = self._get_window_mutations()
         if not IGNORE_TRINUC:
             self._update_trinuc_bias_of_window()
-        # TODO consider ? random_snps_minus_inserted = max(self.snps_to_add[i] - len(self.snp_list[i]), 0)
-        # TODO consider ? random_indels_minus_inserted = max(self.indels_to_add[i] - len(self.indel_list[i]), 0)
 
         inserted_mutations = []
         while random_mutations_pool.has_next():
             mut_type, region = random_mutations_pool.get_next()
-            # TODO add a check to see if the mutation was really inserted? something like status code?
             inserted_mutation, window_shift = self._insert_random_mutation(mut_type, region)
             if not inserted_mutation:
                 continue
@@ -177,7 +174,6 @@ class ChromosomeProcessor:
         return inserted_mutation, window_shift
 
     def _find_position_for_mutation(self, mut_type: MutType, region: Region) -> int:
-        # TODO use blocklist?
         region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
                                                                       self.window_unit.end)
         if 1 not in region_mask:
@@ -212,7 +208,6 @@ class ChromosomeProcessor:
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
         new_nucl = self.model_per_region[region.value][MODEL_TRINUC_TRANS_DSTRBTN][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
         snp = Mutation(position, ref_nucl, new_nucl, MutType.SNP)
-        # self.blocklist[snp.position] = 2  # TODO use blocklist?
         return snp
 
     def _insert_indel(self, position: int, region: Region):
@@ -235,11 +230,11 @@ class ChromosomeProcessor:
 
             # skip if deletion too close to boundary
             if position + indel_len >= self.window_unit.end:
-                # TODO mind that by using self.window_unit.end,
+                indel_len = self.window_unit.end - 1 - position
+                # - mind that by using self.window_unit.end,
                 #  and not self.seq_len + self.sequence_offset + current_offset,
                 #  we don't allow deletions to take a "bite" form the next window.
-                #  - should we allow that?
-                indel_len = self.window_unit.end - 1 - position
+                #  Should we allow that?
 
             # forbid deletion to crossing the boundary of annotation!
             _, annotation_end = self.annotated_seq.get_annotation_start_end(position)
@@ -259,10 +254,6 @@ class ChromosomeProcessor:
                 indel_seq = str(self.chrom_sequence[position + 1:position + indel_len + 1])
             ref_nucl = self.chrom_sequence[position]
             indel = Mutation(position, ref_nucl + indel_seq, ref_nucl, MutType.INDEL)
-
-        # TODO use blocklist?
-        # for k in range(position, position + indel_len + 1):
-        #     self.blocklist[k] = 1
 
         return indel
 
@@ -423,45 +414,7 @@ class ChromosomeProcessor:
                 vcf_position -= mutations_affected_offset
                 mutations_affected_offset += mutation.get_offset_change()
             vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl, 1, 'WP=1']))
-        # TODO: combine multiple variants that happened to occur at same position into single vcf entry?
-        #       reconsider blocklist for that!
         return vcf_mutations
-
-    def insert_given_mutations(self, vars_in_current_window) -> List[Tuple]:
-        mutations_to_insert = self._validate_given_mutations_list(vars_in_current_window)
-
-        # TODO actually insert mutations!!!
-        #  consider current_offset and self.window_unit.update(end_shift=mutation.get_offset_change())
-        vcf_mutations = self._prepare_mutations_to_vcf(mutations_to_insert, mutations_already_inserted=False)
-        return vcf_mutations
-
-    def _validate_given_mutations_list(self, input_df: pd.DataFrame):
-        inserted_mutations = []
-        for _, row in input_df.iterrows():
-            ref_nucl = row['allele']
-            new_nucl = row['alternatives'][0]  # take the first alternative
-            mut_type = MutType.SNP if len(ref_nucl) == 1 and len(new_nucl) == 1 else MutType.INDEL
-            mutation = Mutation(row['pos'] + self.window_unit.windows_start_offset, ref_nucl, new_nucl, mut_type)
-            if self._validate_given_mutation(mutation):
-                self.window_unit.update_blocklist(mutation)
-                inserted_mutations.append(mutation)
-
-        return inserted_mutations
-
-    def _validate_given_mutation(self, mutation: Mutation):
-        if mutation.position < self.window_unit.start or mutation.position >= self.window_unit.end:
-            print('\nError: Attempting to insert variant out of window bounds.')
-            print(f'mutation.position={mutation.position}')
-            print(f'self.window_unit.start={self.window_unit.start}')
-            print(f'self.window_unit.end={self.window_unit.end}')
-
-            sys.exit(1)
-        # TODO - use this instead? : ref_len = max([len(input_variable[1]), len(my_alt)])
-        if mutation.position + len(mutation.ref_nucl) >= self.window_unit.end:
-            # TODO mind that by using self.window_unit.end and not self.seq_len + self.sequence_offset + current_offset
-            #  we don't allow deletions to take a "bite" form the next window. Should we aloow that?
-            return False
-        return self.window_unit.check_blocklist(mutation)
 
 
 def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:
