@@ -49,7 +49,6 @@ class VcfFileWriter:
             self._file.write('##ALT=<ID=TRANS,Description="Translocation">\n'.encode('utf-8'))
             self._file.write('##ALT=<ID=INV-TRANS,Description="Inverted translocation">\n'.encode('utf-8'))
             self._file.write('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'.encode('utf-8'))
-            # TODO add sample to vcf output
             self._file.write('#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{}\n'
                              .format(accession).encode('utf-8'))
 

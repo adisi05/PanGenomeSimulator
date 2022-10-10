@@ -17,8 +17,6 @@ class FastqFileWriter:
     @staticmethod
     def generate_reads(fasta_files: List[str], paired_end: bool, read_length: int, coverage: float, insert_size: int,
                        insert_std: int):
-        print(fasta_files)
-        # print(sequencing_params)
         paired = "-p" if paired_end else ""
         fastq_files = [filename[:-len('.fasta')] + "_read" for filename in fasta_files]
         for fasta, fastq in zip(fasta_files, fastq_files):

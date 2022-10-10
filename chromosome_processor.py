@@ -405,7 +405,7 @@ class ChromosomeProcessor:
 
     def _prepare_mutations_to_vcf(self, inserted_mutations: List[Mutation], mutations_already_inserted: bool) \
             -> List[Tuple]:
-        inserted_mutations.sort()
+        inserted_mutations.sort()  # sort by positions, which derives from Mutation class definition
         vcf_mutations = []
         mutations_affected_offset = 0
         for mutation in inserted_mutations:
@@ -413,7 +413,7 @@ class ChromosomeProcessor:
             if mutations_already_inserted:
                 vcf_position -= mutations_affected_offset
                 mutations_affected_offset += mutation.get_offset_change()
-            vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl, 1, 'WP=1']))
+            vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl]))
         return vcf_mutations
 
 

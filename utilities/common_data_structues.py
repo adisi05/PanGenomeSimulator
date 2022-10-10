@@ -27,8 +27,8 @@ class MutType(Enum):
 @dataclass(order=True)
 @dataclass
 class Mutation:
-    position: int  # = field(init=False, repr=False)
-    ref_nucl: str  # = field(init=False, repr=False)
+    position: int
+    ref_nucl: str
     new_nucl: str
     mut_type: MutType
 

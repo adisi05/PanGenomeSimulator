@@ -18,13 +18,9 @@ import pathlib
 import random
 import sys
 import time
-
-import os
+import pandas as pd
 from typing import List, Dict, Tuple
 
-import pandas as pd
-
-from utilities.common_data_structues import VALID_NUCL
 from writers.fastq_file_writer import FastqFileWriter
 from chromosome_processor import ChromosomeProcessor
 from mutation_model import load_mutation_model_from_file
@@ -122,7 +118,7 @@ class GenomeSimulator:
 
     def simulate(self):
         final_chromosomes = {}
-        inserted_mutations = {}  # TODO change to list / df?
+        inserted_mutations = {}
 
         dfs_to_concat = []
         for chrom in self._indices_by_ref_name.keys():
@@ -177,8 +173,9 @@ class GenomeSimulator:
         random_mutations_inserted = chromosome_processor.generate_random_mutations()
         return random_mutations_inserted
 
-    def _write_output(self, final_chromosomes: Dict[str, str], inserted_mutations,
+    def _write_output(self, final_chromosomes: Dict[str, str], inserted_mutations: Dict[str, List[Tuple]],
                       new_annotations_df: pd.DataFrame = None):
+
         # FASTA
         fasta_file_writer = FastaFileWriter(self._output_prefix, self._output_line_width)
         for name, sequence in final_chromosomes.items():
@@ -193,26 +190,26 @@ class GenomeSimulator:
 
         # VCF
         if self._output_vcf:
-            vcf_header = [self._input_reference]
-            vcf_file_writer = VcfFileWriter(self._output_prefix, self._parent_prefix,
-                                            self._output_accession, vcf_header)
-            # TODO write inserted mutations - ?
-            vcf_file_writer.close_file(add_parent_variants=True)
+            self._write_vcf(inserted_mutations)
 
         # annotations CSV
         new_annotations_df.to_csv(ANNOTATIONS_FILE_FORMAT.format(self._output_prefix))
 
+    def _write_vcf(self, inserted_mutations: Dict[str, List[Tuple]]):
+        vcf_header = [self._input_reference]
+        vcf_file_writer = VcfFileWriter(self._output_prefix, self._parent_prefix,
+                                        self._output_accession, vcf_header)
+        print('Writing output VCF started...')
+        start = time.time()
+        for chrom in inserted_mutations.keys():
+            for mutation in inserted_mutations[chrom]:
+                my_id = '.'
+                my_quality = '.'
+                my_filter = 'PASS'
+                # mutation[0] + 1 because we're going back to 1-based vcf coords
+                vcf_file_writer.write_record(chrom, str(int(mutation[0]) + 1), my_id, mutation[1], mutation[2],
+                                             my_quality, my_filter, 'WP=1')
 
-# TODO deprecated?
-def write_vcf(vcf_file_writer, inserted_mutations, chrom):
-    print('Writing output VCF started...')
-    start = time.time()
-    for k in sorted(inserted_mutations.keys()):
-        my_id = '.'
-        my_quality = '.'
-        my_filter = 'PASS'
-        # k[0] + 1 because we're going back to 1-based vcf coords
-        vcf_file_writer.write_record(chrom, str(int(k[0]) + 1), my_id, k[1], k[2], my_quality,
-                                     my_filter, k[4])
-    end = time.time()
-    print('Done. Writing output VCF took {} seconds.'.format(int(end - start)))
+        end = time.time()
+        print('Done. Writing output VCF took {} seconds.'.format(int(end - start)))
+        vcf_file_writer.close_file(add_parent_variants=True)
