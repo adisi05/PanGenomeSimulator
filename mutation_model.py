@@ -10,7 +10,7 @@ import pandas as pd
 from enum import Enum
 
 from utilities import DiscreteDistribution
-from utilities.common_data_structues import Region, VALID_NUCL, VALID_TRINUC, TRI_IND, NUC_IND, ALL_TRI, ALL_IND, NUCL
+from utilities.common_data_structues import Region, VALID_TRINUC, TRI_IND, NUC_IND, ALL_TRI, ALL_IND, VALID_NUCL
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.genome_annotations import read_annotations_csv
 
@@ -774,8 +774,8 @@ def init_model(model_from_file: dict) -> dict:
         for m in data[TRINUC_FREQS]:
             # noinspection PyTypeChecker
             model_per_region[region_name][MODEL_TRINUC_TRANS_DSTRBTN].append(
-                [DiscreteDistribution(m[0], NUCL), DiscreteDistribution(m[1], NUCL),
-                 DiscreteDistribution(m[2], NUCL), DiscreteDistribution(m[3], NUCL)])
+                [DiscreteDistribution(m[0], VALID_NUCL), DiscreteDistribution(m[1], VALID_NUCL),
+                 DiscreteDistribution(m[2], VALID_NUCL), DiscreteDistribution(m[3], VALID_NUCL)])
         model_per_region[region_name][MODEL_P_TRINUC_MUT] = [m for m in data[TRINUC_BIAS]]
 
     return model_per_region

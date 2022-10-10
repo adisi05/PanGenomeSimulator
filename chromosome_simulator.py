@@ -12,7 +12,7 @@ from mutation_model import MODEL_AVG_MUT_RATE, MODEL_P_INDEL, MODEL_P_INSERTION,
     MODEL_DEL_LEN_DSTRBTN, MODEL_TRINUC_TRANS_DSTRBTN, MODEL_P_TRINUC_MUT
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.common_data_structues import Region, MutType, Strand, STOP_CODONS_FORWARD_STRAND, \
-    STOP_CODONS_REVERSE_STRAND, NUCL, TRI_IND, NUC_IND, ALL_IND
+    STOP_CODONS_REVERSE_STRAND, VALID_NUCL, TRI_IND, NUC_IND, ALL_IND
 from utilities.probability import DiscreteDistribution, poisson_list
 
 import pandas as pd
@@ -372,7 +372,7 @@ class ChromosomeSimulator:
         if random.random() <= self.model_per_region[region.value][MODEL_P_INSERTION]:
             indel_len = self.model_per_region[region.value][MODEL_INS_LEN_DSTRBTN].sample()
             # sequence content of random insertions is uniformly random (change this later, maybe)
-            indel_seq = ''.join([random.choice(NUCL) for _ in range(indel_len)])
+            indel_seq = ''.join([random.choice(VALID_NUCL) for _ in range(indel_len)])
             ref_nucl = self.chrom_sequence[position]
             indel = Mutation(position, ref_nucl, ref_nucl + indel_seq, MutType.INDEL)
 

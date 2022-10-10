@@ -24,6 +24,7 @@ from typing import List, Dict, Tuple
 
 import pandas as pd
 
+from utilities.common_data_structues import VALID_NUCL
 from writers.fastq_file_writer import FastqFileWriter
 from chromosome_simulator import ChromosomeSimulator
 from mutation_model import load_mutation_model_from_file
@@ -40,10 +41,6 @@ Some constants needed for analysis
 # Default window size for simulation
 DEFAULT_WINDOW_SIZE = 1000
 MIN_WINDOW_SIZE = 10
-
-# allowed nucleotides
-ALLOWED_NUCL = ['A', 'C', 'G', 'T']
-
 
 class GenomeSimulator:
     def __init__(self, args):
@@ -82,8 +79,8 @@ class GenomeSimulator:
         # TODO try use args.pe not null? :
         self._sequencing_paired_end = (self._sequencing_fragment_size and self._sequencing_fragment_std) \
             or args.pe_model
-        self._sequencing_n_handling = ('random', self._sequencing_fragment_size) if self._sequencing_paired_end \
-            else ('ignore', self._sequencing_read_len)
+        self._sequencing_n_handling = {'method': 'random', 'max_threshold': self._sequencing_fragment_size} \
+            if self._sequencing_paired_end else {'method': 'ignore', 'max_threshold': None}
         self._window_size = args.ws if args.ws > MIN_WINDOW_SIZE else DEFAULT_WINDOW_SIZE
 
     def _params_sanity_check(self):
@@ -99,7 +96,8 @@ class GenomeSimulator:
         random.seed(self._rng_seed)
         is_in_range(self._sequencing_read_len, 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
         is_in_range(self._sequencing_coverage, 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
-        # TODO check mut bed file, and vcf?
+        check_file_open(self._annotations_file, f'ERROR: could not open annotations file, {self._annotations_file}',
+                        required=False)
 
     def _load_mutation_model_data(self):
         self._mutation_model = load_mutation_model_from_file(self._mutation_model)
@@ -118,7 +116,7 @@ class GenomeSimulator:
         ref_index, line_width = index_ref(self._input_reference)
         # TODO check if this index can work, maybe it's faster
         # ref_index2 = SeqIO.index(reference, 'fasta')
-        self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index}  # TODO chrom[1:] ?
+        self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index}
         self._output_line_width = line_width
         end = time.time()
         print('Indexing reference took {} seconds.'.format(int(end - start)))
@@ -228,7 +226,7 @@ class GenomeSimulator:
                 r_seq = str(chrom_sequence[span[0] - 1:span[1] - 1])  # -1 because going from VCF coords to array coords
                 # Checks if there are any invalid nucleotides in the vcf items
                 all_alternatives_nuleotides = [nuc for alt in variant.alternatives for nuc in alt]
-                any_bad_nucl = any([(nuc not in ALLOWED_NUCL) for nuc in all_alternatives_nuleotides])
+                any_bad_nucl = any([(nuc not in VALID_NUCL) for nuc in all_alternatives_nuleotides])
                 # Ensure reference sequence matches the nucleotide in the vcf
                 if r_seq != variant.allele:
                     n_skipped[0] += 1

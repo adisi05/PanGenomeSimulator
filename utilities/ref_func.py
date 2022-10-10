@@ -6,8 +6,9 @@ import pathlib
 import random
 from Bio.Seq import Seq, MutableSeq
 
-OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}  # TODO 16-04-2022
-ALLOWED_NUCL = ['A', 'C', 'G', 'T']  # TODO 16-04-2022
+from utilities.common_data_structues import VALID_NUCL
+
+OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
 
 
 def index_ref(reference_path: str) -> [list, int]:
@@ -131,27 +132,17 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):  #
     # handle N base-calls as desired
     # TODO this seems to randomly replace an N with a base. Is this necessary? How to do this in an immutable seq?
     n_info = {'all': [], 'big': [], 'non_N': []}
-    if n_handling[0] == 'random':
+    if n_handling['method'] == 'random':
         for n_region in n_atlas:
             n_info['all'].extend(n_region)
-            if n_region[1] - n_region[0] <= n_handling[1]:
+            if n_region[1] - n_region[0] <= n_handling['max_threshold']:
                 for i in range(n_region[0], n_region[1]):
                     temp = MutableSeq(my_dat)
-                    temp[i] = random.choice(ALLOWED_NUCL)
+                    temp[i] = random.choice(VALID_NUCL)
                     my_dat = Seq(temp)
             else:
                 n_info['big'].extend(n_region)
-    elif n_handling[0] == 'allChr' and n_handling[2] in OK_CHR_ORD:
-        for n_region in n_atlas:
-            n_info['all'].extend(n_region)
-            if n_region[1] - n_region[0] <= n_handling[1]:
-                for i in range(n_region[0], n_region[1]):
-                    temp = MutableSeq(my_dat)
-                    temp[i] = n_handling[2]
-                    my_dat = Seq(temp)
-            else:
-                n_info['big'].extend(n_region)
-    elif n_handling[0] == 'ignore':
+    elif n_handling['method'] == 'ignore':
         for n_region in n_atlas:
             n_info['all'].extend(n_region)
             n_info['big'].extend(n_region)
@@ -179,76 +170,3 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):  #
     print('Reading reference took {0:.3f} (sec)'.format(time.time() - tt))
 
     return my_dat, n_info
-
-
-def get_all_ref_regions(ref_path, ref_inds, n_handling, save_output=False):
-    """
-    Find all non-N regions in reference sequence ahead of time, for computing jobs in parallel
-
-    :param ref_path:
-    :param ref_inds:
-    :param n_handling:
-    :param save_output:
-    :return:
-    """
-    out_regions = {}
-    fn = ref_path + '.nnr'
-    if os.path.isfile(fn) and not save_output:
-        print('found list of preidentified non-N regions...')
-        f = open(fn, 'r')
-        for line in f:
-            splt = line.strip().split('\t')
-            if splt[0] not in out_regions:
-                out_regions[splt[0]] = []
-            out_regions[splt[0]].append((int(splt[1]), int(splt[2])))
-        f.close()
-        return out_regions
-    else:
-        print('enumerating all non-N regions in reference sequence...')
-        for RI in range(len(ref_inds)):
-            (ref_sequence, N_regions) = read_ref(ref_path, ref_inds[RI], n_handling, quiet=True)
-            ref_name = ref_inds[RI][0]
-            out_regions[ref_name] = [n for n in N_regions['non_N']]
-        if save_output:
-            f = open(fn, 'w')
-            for k in out_regions.keys():
-                for n in out_regions[k]:
-                    f.write(k + '\t' + str(n[0]) + '\t' + str(n[1]) + '\n')
-            f.close()
-        return out_regions
-
-
-def partition_ref_regions(in_regions, ref_inds, my_job, n_jobs):
-    """
-    Find which of the non-N regions are going to be used for this job
-
-    :param in_regions:
-    :param ref_inds:
-    :param my_job:
-    :param n_jobs:
-    :return:
-    """
-    tot_size = 0
-    for RI in range(len(ref_inds)):
-        ref_name = ref_inds[RI][0]
-        for region in in_regions[ref_name]:
-            tot_size += region[1] - region[0]
-    size_per_job = int(tot_size / float(n_jobs) - 0.5)
-
-    regions_per_job = [[] for _ in range(n_jobs)]
-    refs_per_job = [{} for _ in range(n_jobs)]
-    current_ind = 0
-    current_count = 0
-    for RI in range(len(ref_inds)):
-        ref_name = ref_inds[RI][0]
-        for region in in_regions[ref_name]:
-            regions_per_job[current_ind].append((ref_name, region[0], region[1]))
-            refs_per_job[current_ind][ref_name] = True
-            current_count += region[1] - region[0]
-            if current_count >= size_per_job:
-                current_count = 0
-                current_ind = min([current_ind + 1, n_jobs - 1])
-
-    relevant_refs = refs_per_job[my_job - 1].keys()
-    relevant_regs = regions_per_job[my_job - 1]
-    return relevant_refs, relevant_regs
