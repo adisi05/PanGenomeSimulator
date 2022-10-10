@@ -47,6 +47,9 @@ class ChromosomeProcessor:
         self._load_mutation_model(mut_model, mut_rate, dist)
         self.window_unit = SimulationWindow(self.debug)
 
+    def get_annotations_df(self) -> pd.DataFrame:
+        return self.annotated_seq.get_annotations_df()
+
     def next_window(self, start: int, end: int):
         self.window_unit.next_window(start, end)
 

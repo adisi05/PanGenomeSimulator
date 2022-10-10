@@ -61,13 +61,11 @@ class AnnotatedSequence:
             return None
         return self._annotations_df.iloc[-1]['end']
 
-    def _get_annotation_by_position(self, pos) -> (pd.Series, int):
-        condition = (self._annotations_df['start'] <= pos) & (pos < self._annotations_df['end'])
-        annotation_indices = self._annotations_df.index[condition].tolist()
-        if len(annotation_indices) != 1:
-            raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}.\n"
-                            f"Number of proposed annotations is {len(annotation_indices)}")
-        return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]
+    def get_annotations_df(self) -> pd.DataFrame:
+        annotations_df = self._annotations_df.copy()
+        if 'chrom' not in annotations_df.columns:
+            annotations_df['chrom'] = self._chromosome
+        return annotations_df
 
     def get_regions(self) -> List[Region]:
         return self._relevant_regions
@@ -317,11 +315,11 @@ class AnnotatedSequence:
         self._cached_mask_in_window_per_region = {}
 
         # compute if no cache
-        self.compute_mask_in_window(start, end)
+        self._compute_mask_in_window(start, end)
 
         return self._cached_mask_in_window_per_region[relevant_region.value]
 
-    def compute_mask_in_window(self, start: int, end: int):
+    def _compute_mask_in_window(self, start: int, end: int):
         if self._annotations_df is None or self._annotations_df.empty:
             self._cached_mask_in_window_per_region = {Region.ALL.value: np.full(end - start, 1)}
             return
@@ -340,3 +338,11 @@ class AnnotatedSequence:
                          np.full(annotation_length, mask)])
                 else:
                     self._cached_mask_in_window_per_region[region.value] = np.full(annotation_length, mask)
+
+    def _get_annotation_by_position(self, pos) -> (pd.Series, int):
+        condition = (self._annotations_df['start'] <= pos) & (pos < self._annotations_df['end'])
+        annotation_indices = self._annotations_df.index[condition].tolist()
+        if len(annotation_indices) != 1:
+            raise Exception(f"Can't determine annotation for chromosome {self._chromosome} position {pos}.\n"
+                            f"Number of proposed annotations is {len(annotation_indices)}")
+        return self._annotations_df.iloc[annotation_indices[0]], annotation_indices[0]

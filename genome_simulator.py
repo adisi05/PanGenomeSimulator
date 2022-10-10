@@ -34,6 +34,8 @@ from utilities.ref_func import index_ref, read_ref
 from writers.vcf_file_writer import VcfFileWriter
 from utilities.genome_annotations import read_annotations_csv
 
+ANNOTATIONS_FILE_FORMAT = '{}_annotations.csv'
+
 """
 Some constants needed for analysis
 """
@@ -41,6 +43,7 @@ Some constants needed for analysis
 # Default window size for simulation
 DEFAULT_WINDOW_SIZE = 1000
 MIN_WINDOW_SIZE = 10
+
 
 class GenomeSimulator:
     def __init__(self, args):
@@ -133,12 +136,15 @@ class GenomeSimulator:
         final_chromosomes = {}
         inserted_mutations = {}  # TODO change to list / df?
 
+        dfs_to_concat = []
         for chrom in self._indices_by_ref_name.keys():
             chrom_processor, chrom_inserted_mutations = self._simulate_chrom(chrom)
             final_chromosomes[chrom_processor.chrom_name] = str(chrom_processor.chrom_sequence)
             inserted_mutations[chrom_processor.chrom_name] = chrom_inserted_mutations
+            dfs_to_concat.append(chrom_processor.get_annotations_df())
 
-        self._write_output(final_chromosomes, inserted_mutations)
+        new_annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
+        self._write_output(final_chromosomes, inserted_mutations, new_annotations_df)
 
     def _simulate_chrom(self, chrom) -> Tuple[ChromosomeProcessor, List[Tuple]]:
         # read in reference sequence and notate blocks of Ns
@@ -153,11 +159,13 @@ class GenomeSimulator:
         print('--------------------------------')
         print('Simulating chromosome {} of sequence started...'.format(chrom))
         t_start = time.time()
+        inserted_mutations = []
         for non_n_region in n_regions['non_N']:
             windows_list = self._break_to_windows(non_n_region[0], non_n_region[1])
             for window in windows_list:
                 start, end = window
-                inserted_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor, start, end)
+                window_mutations = self._simulate_window(chrom_valid_variants, chromosome_processor, start, end)
+                inserted_mutations.extend(window_mutations)
         print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
         return chromosome_processor, inserted_mutations
@@ -190,7 +198,8 @@ class GenomeSimulator:
         # TODO return random_mutations_inserted only?
         return given_mutations_inserted + random_mutations_inserted
 
-    def _write_output(self, final_chromosomes: Dict[str, str], inserted_mutations):
+    def _write_output(self, final_chromosomes: Dict[str, str], inserted_mutations,
+                      new_annotations_df: pd.DataFrame = None):
         # FASTA
         fasta_file_writer = FastaFileWriter(self._output_prefix, self._output_line_width)
         for name, sequence in final_chromosomes.items():
@@ -210,6 +219,9 @@ class GenomeSimulator:
                                             self._output_accession, vcf_header)
             # TODO write inserted mutations - ?
             vcf_file_writer.close_file(add_parent_variants=True)
+
+        # annotations CSV
+        new_annotations_df.to_csv(ANNOTATIONS_FILE_FORMAT.format(self._output_prefix))
 
     def _prune_invalid_variants(self, chrom, chrom_sequence) -> pd.DataFrame:
         print('Pruning relevant variants from input VCF...')

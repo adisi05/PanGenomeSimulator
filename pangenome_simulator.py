@@ -8,7 +8,7 @@ import time
 import os
 import pandas as pd
 
-from genome_simulator import GenomeSimulator
+from genome_simulator import GenomeSimulator, ANNOTATIONS_FILE_FORMAT
 from writers.fasta_file_writer import FastaFileWriter
 from writers.fastq_file_writer import FastqFileWriter
 from utilities.input_checking import check_file_open
@@ -155,6 +155,7 @@ def process_handler(params_with_cond):
 
 def generate_for_node(args):
     print("TEST inside generate_for_node, args.r=", args.r)
+    print("TEST inside generate_for_node, args.Mb=", args.Mb)
     print("Generating sequence for taxon (node):", args.name)
     start = time.time()
     genome_simulator = GenomeSimulator(args)
@@ -169,13 +170,14 @@ def get_node_args_for_simulation(node, args, all_input_variants, input_variants_
     new_args.internal = len(node.children) > 0
     if not node.up.up:
         # Root direct descendants
+        new_args.parent_name = None
         new_args.dist = (node.dist + new_args.root_to_ref_dist) / new_args.total_dist
         new_args.r = new_args.root_fasta
-        new_args.parent_name = None
     else:
-        new_args.dist = node.dist / new_args.total_dist
-        new_args.r = FastaFileWriter.get_output_filenames(new_args.o, node.up.name)[0]
         new_args.parent_name = node.up.name
+        new_args.dist = node.dist / new_args.total_dist
+        new_args.r = FastaFileWriter.get_output_filenames(new_args.o, new_args.parent_name)[0]
+        new_args.Mb = ANNOTATIONS_FILE_FORMAT.format(new_args.o + '_' + new_args.parent_name)
     branch_input_variants, input_variants_used = get_branch_input_variants(new_args.dist, all_input_variants,
                                                                            input_variants_used)
     if args.max_threads > 1:
@@ -193,6 +195,7 @@ def get_output_filenames(prefix, name):
     res.extend(FastaFileWriter.get_output_filenames(prefix, name))
     res.extend(FastqFileWriter.get_output_filenames(prefix, name))
     res.extend(VcfFileWriter.get_output_filenames(prefix, name))
+    res.append(ANNOTATIONS_FILE_FORMAT.format(prefix + '_' + name))
     return res
 
 
