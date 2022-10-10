@@ -26,7 +26,7 @@ import pandas as pd
 
 from utilities.common_data_structues import VALID_NUCL
 from writers.fastq_file_writer import FastqFileWriter
-from chromosome_simulator import ChromosomeSimulator
+from chromosome_processor import ChromosomeProcessor
 from mutation_model import load_mutation_model_from_file
 from writers.fasta_file_writer import FastaFileWriter
 from utilities.input_checking import check_file_open, is_in_range
@@ -140,13 +140,13 @@ class GenomeSimulator:
 
         self._write_output(final_chromosomes, inserted_mutations)
 
-    def _simulate_chrom(self, chrom) -> Tuple[ChromosomeSimulator, List[Tuple]]:
+    def _simulate_chrom(self, chrom) -> Tuple[ChromosomeProcessor, List[Tuple]]:
         # read in reference sequence and notate blocks of Ns
         chrom_sequence, n_regions = read_ref(self._input_reference, self._indices_by_ref_name[chrom],
                                              self._sequencing_n_handling)
 
         chrom_valid_variants = self._prune_invalid_variants(chrom, chrom_sequence)
-        chromosome_processor = ChromosomeSimulator(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
+        chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
                                                    mut_model=self._mutation_model, mut_rate=self._mutation_rate,
                                                    dist=self._relative_distance, debug=self._debug)
 
@@ -175,7 +175,7 @@ class GenomeSimulator:
             remained_length = next_end - next_start
         return windows_list
 
-    def _simulate_window(self, valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeSimulator,
+    def _simulate_window(self, valid_variants_from_vcf: pd.DataFrame, chromosome_processor: ChromosomeProcessor,
                          start: int, end: int):
 
         if self._debug:

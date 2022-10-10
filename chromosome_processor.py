@@ -139,7 +139,7 @@ class RandomMutationPool:
         return MutType(mut_type_name), Region(region_name)
 
 
-class ChromosomeSimulator:
+class ChromosomeProcessor:
     """
     Container for reference sequences, applies mutations
     """
@@ -179,7 +179,6 @@ class ChromosomeSimulator:
                 redundant_regions.append(region_name)
         for region_name in redundant_regions:
             del self.model_per_region[region_name]
-
 
     def get_window_mutations(self) -> RandomMutationPool:
         # NOTE: window can be also a whole non-N region or the entire chromosome
