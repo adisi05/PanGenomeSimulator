@@ -117,18 +117,19 @@ class GenomeSimulator:
         print('Indexing reference took {} seconds.'.format(int(end - start)))
 
     def simulate(self):
-        final_chromosomes = {}
         inserted_mutations = {}
+        fasta_file_writer = FastaFileWriter(self._output_prefix, self._output_line_width)
 
         dfs_to_concat = []
         for chrom in self._indices_by_ref_name.keys():
             chrom_processor, chrom_inserted_mutations = self._simulate_chrom(chrom)
-            final_chromosomes[chrom_processor.chrom_name] = str(chrom_processor.chrom_sequence)
             inserted_mutations[chrom_processor.chrom_name] = chrom_inserted_mutations
             dfs_to_concat.append(chrom_processor.get_annotations_df())
+            fasta_file_writer.write_record(str(chrom_processor.chrom_sequence), chrom_processor.chrom_name)
 
+        fasta_file_writer.finalize()
         new_annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
-        self._write_output(final_chromosomes, inserted_mutations, new_annotations_df)
+        self._write_non_fasta_output(fasta_file_writer.get_file_name(), inserted_mutations, new_annotations_df)
 
     def _simulate_chrom(self, chrom) -> Tuple[ChromosomeProcessor, List[Tuple]]:
         # read in reference sequence and notate blocks of Ns
@@ -173,18 +174,12 @@ class GenomeSimulator:
         random_mutations_inserted = chromosome_processor.generate_random_mutations()
         return random_mutations_inserted
 
-    def _write_output(self, final_chromosomes: Dict[str, str], inserted_mutations: Dict[str, List[Tuple]],
-                      new_annotations_df: pd.DataFrame = None):
-
-        # FASTA
-        fasta_file_writer = FastaFileWriter(self._output_prefix, self._output_line_width)
-        for name, sequence in final_chromosomes.items():
-            fasta_file_writer.write_record(sequence, name)
-        fasta_file_writer.finalize()
+    def _write_non_fasta_output(self, fasta_file_name: str, inserted_mutations: Dict[str, List[Tuple]],
+                                new_annotations_df: pd.DataFrame = None):
 
         # FASTQ
         if not self._output_no_fastq:
-            FastqFileWriter.generate_reads([fasta_file_writer.get_file_name()], self._sequencing_paired_end,
+            FastqFileWriter.generate_reads([fasta_file_name], self._sequencing_paired_end,
                                            self._sequencing_read_len, self._sequencing_coverage,
                                            self._sequencing_fragment_size, self._sequencing_fragment_std)
 
