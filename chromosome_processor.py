@@ -56,7 +56,7 @@ class ChromosomeProcessor:
     def generate_random_mutations(self) -> List[Tuple]:
         random_mutations_pool = self._get_window_mutations()
         if not IGNORE_TRINUC:
-            self._update_trinuc_bias_of_window()
+            self._init_trinuc_bias_of_window()
 
         inserted_mutations = []
         while random_mutations_pool.has_next():
@@ -65,15 +65,14 @@ class ChromosomeProcessor:
             if not inserted_mutation:
                 continue
             inserted_mutations.append(inserted_mutation)
-            # check window
+            # handle window
             if window_shift != 0:
                 self.window_unit.adjust_window(end_shift=window_shift)
-            # check annotations
-            annotation_changed = self._handle_annotations_after_mutated_sequence(inserted_mutation)
-            # if at least one has changed - sample mutations again
-            if annotation_changed or window_shift != 0:
-                if not IGNORE_TRINUC:
-                    self._update_trinuc_bias_of_window()
+            # handle annotations
+            self._handle_annotations_after_mutated_sequence(inserted_mutation)
+            # handle trinuc bias
+            if not IGNORE_TRINUC:
+                self._update_trinuc_bias_of_window(inserted_mutation)
 
         vcf_mutations = self._prepare_mutations_to_vcf(inserted_mutations, mutations_already_inserted=True)
         return vcf_mutations
@@ -128,19 +127,18 @@ class ChromosomeProcessor:
             poisson_per_region[region.value] = poisson_list(k_range, poisson_lambda)
         return poisson_per_region
 
-    def _update_trinuc_bias_of_window(self):
-        # initialize/update trinuc snp bias
-        # compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
-        #
-        # note: since indels are added before snps, it's possible these positional biases aren't correctly utilized
-        #       at positions affected by indels. At the moment I'm going to consider this negligible.
-
-        start = time.time()
+    def _init_trinuc_bias_of_window(self):
+        """
+        initialize trinuc snp bias
+        compute mutation positional bias given trinucleotide strings of the sequence (ONLY AFFECTS SNPs)
+        :return:
+        """
+        t_start = time.time()
         window_seq_len = self.window_unit.end - self.window_unit.start
         trinuc_snp_bias_of_window_per_region = {region.value: [0. for _ in range(window_seq_len)] for region in
                                                 self.annotated_seq.get_regions()}
         self.trinuc_bias_per_region = {region.value: None for region in self.annotated_seq.get_regions()}
-        for region in self.annotated_seq.get_regions():  # TODO switch order between loops?
+        for region in self.annotated_seq.get_regions():
             region_mask = self.annotated_seq.get_mask_in_window_of_region(region, self.window_unit.start,
                                                                           self.window_unit.end)
             for i in range(0 + 1, window_seq_len - 1):
@@ -150,9 +148,46 @@ class ChromosomeProcessor:
             self.trinuc_bias_per_region[region.value] = \
                 DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value], range(window_seq_len))
             # from initialization, the probability of the first and the last element is 0
-        end = time.time()
+        t_end = time.time()
         if self.debug:
-            print(f"Updating window trinuc bias took {0:.3f} seconds.".format(end-start))
+            print(f"Initializing window trinuc bias took {0:.3f} seconds.".format(t_end-t_start))
+
+    def _update_trinuc_bias_of_window(self, mut: Mutation):
+        """
+        update trinuc snp bias after mutation has occurred
+        :return:
+        """
+        t_start = time.time()
+
+        window_seq_len = self.window_unit.end - self.window_unit.start
+        forbidden_zone_start = max(mut.position - 1, self.window_unit.start) - self.window_unit.start
+        forbidden_zone_end = min(mut.position + len(mut.new_nucl), self.window_unit.end - 1) - self.window_unit.start
+        forbidden_positions = range(forbidden_zone_start, forbidden_zone_end + 1)
+
+        for region in self.annotated_seq.get_regions():
+            if self.trinuc_bias_per_region[region.value].degenerate is None:
+                new_weights = self.trinuc_bias_per_region[region.value].weights
+                # INSERTION
+                if mut.get_offset_change() > 0:
+                    offset = mut.get_offset_change()
+                    for i in range(offset):
+                        new_weights.insert(mut.position + 1 + i - self.window_unit.start, 0.)
+                # DELETION
+                elif mut.get_offset_change() < 0:
+                    offset = -mut.get_offset_change()
+                    del new_weights[mut.position + 1 - self.window_unit.start:
+                                    mut.position + offset + 1 - self.window_unit.start]
+            else:
+                new_weights = [self.trinuc_bias_per_region[region.value].degenerate for _ in range(window_seq_len)]
+
+            for pos in forbidden_positions:
+                new_weights[pos] = 0.
+
+            self.trinuc_bias_per_region[region.value] = DiscreteDistribution(new_weights, range(window_seq_len))
+
+        t_end = time.time()
+        if self.debug:
+            print(f"Updating window trinuc bias took {0:.3f} seconds.".format(t_end-t_start))
 
     def _insert_random_mutation(self, mut_type: MutType, region: Region) -> (Optional[Mutation], int):
         window_shift = 0
@@ -276,28 +311,26 @@ class ChromosomeProcessor:
         print(f"Inserted mutation successfully. Window shift is {window_shift}")
         return window_shift
 
-    def _handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation) -> bool:
+    def _handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation):
         if [region.value for region in self.annotated_seq.get_regions()] == [Region.ALL.value]:
-            return False  # sequence is not annotated
+            return
 
         # SNP
         if inserted_mutation.mut_type.value == MutType.SNP.value:
-            return self._handle_annotations_after_snp(inserted_mutation)
+            self._handle_annotations_after_snp(inserted_mutation)
         # INDEL - insertion
         elif inserted_mutation.mut_type.value == MutType.INDEL.value \
                 and len(inserted_mutation.ref_nucl) < len(inserted_mutation.new_nucl):
             self._handle_annotations_after_small_insertion(inserted_mutation)
-            return True
         # INDEL - deletion
         elif inserted_mutation.mut_type.value == MutType.INDEL.value \
                 and len(inserted_mutation.ref_nucl) >= len(inserted_mutation.new_nucl):
             self._handle_annotations_after_small_deletion(inserted_mutation)
-            return True
         # SVs and other - currently not supported
         else:
             raise Exception("currently supporting only SNPs and INDELs")
 
-    def _handle_annotations_after_snp(self, inserted_mutation: Mutation) -> bool:
+    def _handle_annotations_after_snp(self, inserted_mutation: Mutation):
         """
         Handle annotations after SNP
         :param inserted_mutation:
@@ -306,7 +339,7 @@ class ChromosomeProcessor:
         region, strand = self.annotated_seq.get_region_by_position(inserted_mutation.position)
 
         if region.value == Region.INTERGENIC.value or region.value == Region.NON_CODING_GENE.value:
-            return False  # current behaviour is not to check for start/stop codon in these regions.
+            return  # current behaviour is not to check for start/stop codon in these regions.
 
         elif region.value == Region.CDS.value:
             start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
@@ -316,8 +349,6 @@ class ChromosomeProcessor:
             is_last_codon = self._is_last_coding_position(start, end)
             if (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
                 self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
-                return True
-            return False
         else:
             raise Exception("unknown annotation")
 

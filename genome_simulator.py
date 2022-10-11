@@ -38,7 +38,7 @@ Some constants needed for analysis
 
 # Default window size for simulation
 DEFAULT_WINDOW_SIZE = 1000
-MIN_WINDOW_SIZE = 10
+MIN_WINDOW_SIZE = 100
 
 
 class GenomeSimulator:
