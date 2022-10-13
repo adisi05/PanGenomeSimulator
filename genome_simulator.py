@@ -199,10 +199,10 @@ class GenomeSimulator:
         overall_snps = 0
         overall_indels = 0
         for chrom_name, counts in snps_indels_counts.items():
-            print(f'Chromosome {chrom_name}: {counts[0]} SNPs and {counts[1]} Indels where inserted')
+            print(f'Chromosome {chrom_name}: {counts[0]} SNPs and {counts[1]} Indels were inserted')
             overall_snps += counts[0]
             overall_indels += counts[1]
-        print(f'Overall {overall_snps} SNPs and {overall_indels} were inserted')
+        print(f'Overall {overall_snps} SNPs and {overall_indels} were inserted for this genome.')
 
 
     def _write_vcf(self, inserted_mutations: Dict[str, List[Tuple]]):

@@ -201,7 +201,12 @@ def generate_sequentially(task_list):
 
 
 def generate_for_node(args):
-    print("Generating sequence for taxon (node):", args.name)
+    print('\n')
+    print('==================================================')
+    print("\tGenerating sequence for taxon (node):", args.name)
+    print('==================================================')
+    print('Branch length is {:.3f} of the overall tree branches length'.format(args.dist))
+
     start = time.time()
     genome_simulator = GenomeSimulator(args)
     genome_simulator.simulate()
