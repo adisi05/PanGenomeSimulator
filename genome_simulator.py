@@ -51,15 +51,13 @@ class GenomeSimulator:
 
         # Load annotations dataframe
         self._annotations_df = read_annotations_csv(self._annotations_file)
-        self._load_mutation_model_data()
+        self._load_mutation_model_data(args)
 
         self._index_reference()
 
     def _extract_args(self, args):
         self._input_reference = args.r
         self._annotations_file = args.Mb
-        self._mutation_model = args.m
-        self._mutation_rate = args.M
         self._relative_distance = args.dist
         self._output_accession = args.name
         self._output_prefix = args.o + '_' + args.name
@@ -94,12 +92,12 @@ class GenomeSimulator:
         check_file_open(self._annotations_file, f'ERROR: could not open annotations file, {self._annotations_file}',
                         required=False)
 
-    def _load_mutation_model_data(self):
+    def _load_mutation_model_data(self, args):
+        self._mutation_model = str(args.m)
         self._mutation_model = load_mutation_model_from_file(self._mutation_model)
-        if self._mutation_rate < 0.:
-            self._mutation_rate = None
-        if self._mutation_rate is not None:
-            is_in_range(self._mutation_rate, 0.0, 1.0, 'Error: -M must be between 0 and 0.3')
+        self._mutation_scalar = args.M
+        if self._mutation_scalar <= 0.:
+            self._mutation_scalar = None
 
     def _index_reference(self):
         print('Indexing reference started:', self._input_reference)
@@ -137,7 +135,7 @@ class GenomeSimulator:
                                              self._sequencing_n_handling)
 
         chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
-                                                   mut_model=self._mutation_model, mut_rate=self._mutation_rate,
+                                                   mut_model=self._mutation_model, mut_scalar=self._mutation_scalar,
                                                    dist=self._relative_distance, debug=self._debug)
 
         print('--------------------------------')
@@ -169,7 +167,7 @@ class GenomeSimulator:
 
     def _simulate_window(self, chromosome_processor: ChromosomeProcessor, start: int, end: int):
         if self._debug:
-            print(f"Updating window: start={start}, end={end}")
+            print(f"New simulation window: start={start}, end={end}")
         chromosome_processor.next_window(start=start, end=end)
         random_mutations_inserted = chromosome_processor.generate_random_mutations()
         return random_mutations_inserted

@@ -67,8 +67,8 @@ def parse_args(raw_args=None):
                         help="Average coverage, default is 10.0")
     parser.add_argument('-m', type=str, required=False, metavar='model.p', default=None,
                         help="Mutation model pickle file")
-    parser.add_argument('-M', type=float, required=False, metavar='avg mut rate', default=-1,
-                        help="Rescale avg mutation rate to this (1/bp), must be between 0 and 0.3")
+    parser.add_argument('-M', type=float, required=False, metavar='avg mut rate scalar', default=-1,
+                        help="Rescale avg mutation rate to this (1/bp), must be larger than 0")
     parser.add_argument('-Mb', type=str, required=False, metavar='mut_rates.bed', default=None,
                         help="Bed file containing positional mut rates")
     parser.add_argument('-ws', type=int, required=False, metavar='<int>', default=10000,

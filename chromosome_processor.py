@@ -32,7 +32,7 @@ class ChromosomeProcessor:
     """
 
     def __init__(self, chromosome_name: str, chromosome_sequence: Seq, annotations_df: pd.DataFrame,
-                 annotations_sorted: bool = False, mut_model=None, mut_rate=None, dist=None, debug: bool = False):
+                 annotations_sorted: bool = False, mut_model=None, mut_scalar=None, dist=None, debug: bool = False):
         self.debug = debug
         self.chrom_name = chromosome_name
         self.chrom_sequence = MutableSeq(str(chromosome_sequence))
@@ -44,7 +44,7 @@ class ChromosomeProcessor:
             print(f'Chromosome {chromosome_name} in the reference is {len(chromosome_sequence)},'
                   f' while in the annotations file it is {self.annotated_seq.len()}.\n'
                   f'Currently continue normally and hope for the best...')
-        self._load_mutation_model(mut_model, mut_rate, dist)
+        self._load_mutation_model(mut_model, mut_scalar, dist)
         self.window_unit = SimulationWindow(self.debug)
 
     def get_annotations_df(self) -> pd.DataFrame:
@@ -77,7 +77,7 @@ class ChromosomeProcessor:
         vcf_mutations = self._prepare_mutations_to_vcf(inserted_mutations, mutations_already_inserted=True)
         return vcf_mutations
 
-    def _load_mutation_model(self, mut_model: dict, mut_rate: float, dist: float):
+    def _load_mutation_model(self, mut_model: dict, mut_scalar: float, dist: float):
         self.model_per_region = copy.deepcopy(mut_model)
 
         model_regions = [region_name for region_name in self.model_per_region.keys()]
@@ -86,8 +86,8 @@ class ChromosomeProcessor:
                 self.model_per_region[region.value] = self.model_per_region[Region.ALL.value]
             if dist:
                 self.model_per_region[region.value][MODEL_AVG_MUT_RATE] *= dist
-            if mut_rate:  # TODO remove this feature?
-                self.model_per_region[region.value][MODEL_AVG_MUT_RATE] = mut_rate
+            if mut_scalar:
+                self.model_per_region[region.value][MODEL_AVG_MUT_RATE] *= mut_scalar
 
         relevant_regions = [region.value for region in self.annotated_seq.get_regions()]
         redundant_regions = []
