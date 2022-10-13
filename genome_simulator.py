@@ -116,20 +116,23 @@ class GenomeSimulator:
 
     def simulate(self):
         inserted_mutations = {}
+        snps_indels_counts = {}
         fasta_file_writer = FastaFileWriter(self._output_prefix, self._output_line_width)
 
         dfs_to_concat = []
         for chrom in self._indices_by_ref_name.keys():
-            chrom_processor, chrom_inserted_mutations = self._simulate_chrom(chrom)
+            chrom_processor, chrom_inserted_mutations, chrom_snps_count, chrom_indels_count = self._simulate_chrom(chrom)
             inserted_mutations[chrom_processor.chrom_name] = chrom_inserted_mutations
+            snps_indels_counts[chrom_processor.chrom_name] = (chrom_snps_count, chrom_indels_count)
             dfs_to_concat.append(chrom_processor.get_annotations_df())
             fasta_file_writer.write_record(str(chrom_processor.chrom_sequence), chrom_processor.chrom_name)
 
         fasta_file_writer.finalize()
         new_annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
-        self._write_non_fasta_output(fasta_file_writer.get_file_name(), inserted_mutations, new_annotations_df)
+        self._write_non_fasta_output(fasta_file_writer.get_file_name(), inserted_mutations, snps_indels_counts,
+                                     new_annotations_df)
 
-    def _simulate_chrom(self, chrom) -> Tuple[ChromosomeProcessor, List[Tuple]]:
+    def _simulate_chrom(self, chrom) -> (ChromosomeProcessor, List[Tuple], int, int):
         # read in reference sequence and notate blocks of Ns
         chrom_sequence, n_regions = read_ref(self._input_reference, self._indices_by_ref_name[chrom],
                                              self._sequencing_n_handling)
@@ -142,15 +145,19 @@ class GenomeSimulator:
         print('Simulating chromosome {} of sequence started...'.format(chrom))
         t_start = time.time()
         inserted_mutations = []
+        total_snps_count = 0
+        total_indels_count = 0
         for non_n_region in n_regions['non_N']:
             windows_list = self._break_to_windows(non_n_region[0], non_n_region[1])
             for window in windows_list:
                 start, end = window
-                window_mutations = self._simulate_window(chromosome_processor, start, end)
+                window_mutations, snps_count, indels_count = self._simulate_window(chromosome_processor, start, end)
                 inserted_mutations.extend(window_mutations)
+                total_snps_count += snps_count
+                total_indels_count += indels_count
         print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
-        return chromosome_processor, inserted_mutations
+        return chromosome_processor, inserted_mutations, total_snps_count, total_indels_count
 
     def _break_to_windows(self, start: int, end: int) -> List[Tuple[int, int]]:
         remained_length = end - start
@@ -165,15 +172,15 @@ class GenomeSimulator:
             remained_length = next_end - next_start
         return windows_list
 
-    def _simulate_window(self, chromosome_processor: ChromosomeProcessor, start: int, end: int):
+    def _simulate_window(self, chromosome_processor: ChromosomeProcessor, start: int, end: int) ->\
+            (List[Tuple], int, int):
         if self._debug:
             print(f"New simulation window: start={start}, end={end}")
         chromosome_processor.next_window(start=start, end=end)
-        random_mutations_inserted = chromosome_processor.generate_random_mutations()
-        return random_mutations_inserted
+        return chromosome_processor.generate_random_mutations()
 
     def _write_non_fasta_output(self, fasta_file_name: str, inserted_mutations: Dict[str, List[Tuple]],
-                                new_annotations_df: pd.DataFrame = None):
+                                snps_indels_counts: Dict[str, Tuple], new_annotations_df: pd.DataFrame = None):
 
         # FASTQ
         if not self._output_no_fastq:
@@ -187,6 +194,16 @@ class GenomeSimulator:
 
         # annotations CSV
         new_annotations_df.to_csv(ANNOTATIONS_FILE_FORMAT.format(self._output_prefix))
+
+        # SNPs and Indels counts
+        overall_snps = 0
+        overall_indels = 0
+        for chrom_name, counts in snps_indels_counts.items():
+            print(f'Chromosome {chrom_name}: {counts[0]} SNPs and {counts[1]} Indels where inserted')
+            overall_snps += counts[0]
+            overall_indels += counts[1]
+        print(f'Overall {overall_snps} SNPs and {overall_indels} were inserted')
+
 
     def _write_vcf(self, inserted_mutations: Dict[str, List[Tuple]]):
         vcf_header = [self._input_reference]

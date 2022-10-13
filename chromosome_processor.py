@@ -53,18 +53,24 @@ class ChromosomeProcessor:
     def next_window(self, start: int, end: int):
         self.window_unit.next_window(start, end)
 
-    def generate_random_mutations(self) -> List[Tuple]:
+    def generate_random_mutations(self) -> (List[Tuple], int, int):
         random_mutations_pool = self._get_window_mutations()
         if not IGNORE_TRINUC:
             self._init_trinuc_bias_of_window()
 
         inserted_mutations = []
+        snps_count = 0
+        indels_count = 0
         while random_mutations_pool.has_next():
             mut_type, region = random_mutations_pool.get_next()
             inserted_mutation, window_shift = self._insert_random_mutation(mut_type, region)
             if not inserted_mutation:
                 continue
             inserted_mutations.append(inserted_mutation)
+            if inserted_mutation.mut_type.value == MutType.SNP.value:
+                snps_count += 1
+            else:
+                indels_count += 1
             # handle window
             if window_shift != 0:
                 self.window_unit.adjust_window(end_shift=window_shift)
@@ -75,7 +81,7 @@ class ChromosomeProcessor:
                 self._update_trinuc_bias_of_window(inserted_mutation)
 
         vcf_mutations = self._prepare_mutations_to_vcf(inserted_mutations, mutations_already_inserted=True)
-        return vcf_mutations
+        return vcf_mutations, snps_count, indels_count
 
     def _load_mutation_model(self, mut_model: dict, mut_scalar: float, dist: float):
         self.model_per_region = copy.deepcopy(mut_model)
