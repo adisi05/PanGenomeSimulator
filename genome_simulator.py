@@ -114,23 +114,26 @@ class GenomeSimulator:
         end = time.time()
         print('Indexing reference took {} seconds.'.format(int(end - start)))
 
-    def simulate(self):
+    def simulate(self) -> Dict[str, bool]:
         inserted_mutations = {}
         snps_indels_counts = {}
         fasta_file_writer = FastaFileWriter(self._output_prefix, self._output_line_width)
 
         dfs_to_concat = []
+        genes_presence_absence_dict = {}
         for chrom in self._indices_by_ref_name.keys():
             chrom_processor, chrom_inserted_mutations, chrom_snps_count, chrom_indels_count = self._simulate_chrom(chrom)
             inserted_mutations[chrom_processor.chrom_name] = chrom_inserted_mutations
             snps_indels_counts[chrom_processor.chrom_name] = (chrom_snps_count, chrom_indels_count)
             dfs_to_concat.append(chrom_processor.get_annotations_df())
             fasta_file_writer.write_record(str(chrom_processor.chrom_sequence), chrom_processor.chrom_name)
+            genes_presence_absence_dict.update(chrom_processor.get_genes_presence_absence_dict())
 
         fasta_file_writer.finalize()
         new_annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
         self._write_non_fasta_output(fasta_file_writer.get_file_name(), inserted_mutations, snps_indels_counts,
                                      new_annotations_df)
+        return genes_presence_absence_dict
 
     def _simulate_chrom(self, chrom) -> (ChromosomeProcessor, List[Tuple], int, int):
         # read in reference sequence and notate blocks of Ns
@@ -203,7 +206,6 @@ class GenomeSimulator:
             overall_snps += counts[0]
             overall_indels += counts[1]
         print(f'Overall {overall_snps} SNPs and {overall_indels} were inserted for this genome.')
-
 
     def _write_vcf(self, inserted_mutations: Dict[str, List[Tuple]]):
         vcf_header = [self._input_reference]

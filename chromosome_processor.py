@@ -453,6 +453,9 @@ class ChromosomeProcessor:
             vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl]))
         return vcf_mutations
 
+    def get_genes_presence_absence_dict(self) -> dict:
+        return self.annotated_seq.get_genes_presence_absence_dict()
+
 
 def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:
     stop = False

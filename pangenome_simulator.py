@@ -2,6 +2,8 @@ import argparse
 import copy
 import multiprocessing
 from itertools import repeat
+from typing import Dict
+import pandas as pd
 
 import ete3
 import time
@@ -47,13 +49,12 @@ def main(raw_args=None):
 
     task_list = load_task_list(t, args)
     if args.max_threads > 1:
-        generate_concurrently(args.max_threads, task_list)
+        genes_per_accession = generate_concurrently(args.max_threads, task_list)
     else:
-        generate_sequentially(task_list)
+        genes_per_accession = generate_sequentially(task_list)
 
+    generate_gene_presence_absence_matrix(genes_per_accession)
     print('================================')
-    # TODO remove all mut_bed files
-    # TODO remove all csv/whatever files now, and not before!
 
 
 def parse_args(raw_args=None):
@@ -164,17 +165,18 @@ def get_node_args_for_simulation(node, args):
     return new_args
 
 
-def generate_concurrently(ncpu, task_list):
+def generate_concurrently(ncpu, task_list) -> Dict[str, Dict[str, bool]]:
     print(f"Starting a multi-process simulation, number of processes: {ncpu}")
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
     cond = manager.Condition()
-    pool.imap(process_handler, zip(task_list, repeat(cond)))
+    return_values = pool.imap(process_handler, zip(task_list, repeat(cond)))
     pool.close()
     pool.join()
+    return {val[0]: val[1] for val in return_values}
 
 
-def process_handler(params_with_cond):
+def process_handler(params_with_cond) -> (str, Dict[str, bool]):
     simulation_params, cond = params_with_cond
     curr_proc = multiprocessing.current_process()
     print('MULTIPROCESS LOG - current process:', curr_proc.name, curr_proc._identity)
@@ -186,21 +188,24 @@ def process_handler(params_with_cond):
             cond.wait()
             print("MULTIPROCESS LOG: ", curr_proc.name, 'checking again if ancestor exists')
     print("MULTIPROCESS LOG: ", curr_proc, ", ancestor_path=", ancestor_path, "is ready")
-    generate_for_node(simulation_params)
+    accession_genes = generate_for_node(simulation_params)
     with cond:
         print("MULTIPROCESS LOG: ", curr_proc, " has finished simulation for ", simulation_params.name)
         cond.notify_all()
 
-    return "Done"
+    return simulation_params.name, accession_genes
 
 
-def generate_sequentially(task_list):
+def generate_sequentially(task_list) -> Dict[str, Dict[str, bool]]:
     print("Starting a single-process simulation")
+    genes_per_accession = {}
     for args in task_list:
-        generate_for_node(args)
+        accession_genes = generate_for_node(args)
+        genes_per_accession[args.name] = accession_genes
+    return genes_per_accession
 
 
-def generate_for_node(args):
+def generate_for_node(args) -> Dict[str, bool]:
     print('\n')
     print('==================================================')
     print("\tGenerating sequence for taxon (node):", args.name)
@@ -209,9 +214,27 @@ def generate_for_node(args):
 
     start = time.time()
     genome_simulator = GenomeSimulator(args)
-    genome_simulator.simulate()
+    accession_genes = genome_simulator.simulate()
     end = time.time()
     print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
+    return accession_genes
+
+
+def generate_gene_presence_absence_matrix(genes_per_accession: Dict[str, Dict[str, bool]]):
+    accessions_list = []
+    accessions_data_per_gene = {}
+    for accession, accession_genes in genes_per_accession.items():
+        accessions_list.append(accession)
+        for gene, accession_presence in accession_genes.items():
+            if gene not in accessions_data_per_gene:
+                accessions_data_per_gene[gene] = []
+            accessions_data_per_gene[gene].append(accession_presence)
+    # assumption:   accession_genes contains all genes from the relevant annotation file
+    # conclusion:   accessions_data_per_gene will have accession data always in the same order for each gene,
+    #               which is also the same order of accessions_list
+    tuples_list = [tuple(accessions_values.insert(0, gene)) for gene, accessions_values in accessions_data_per_gene]
+    df = pd.DataFrame.from_records(tuples_list, columns=accessions_list)
+    df.to_csv('gene_presence_absence_matrix.csv')
 
 
 if __name__ == "__main__":
