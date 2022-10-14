@@ -2,7 +2,7 @@ import argparse
 import copy
 import multiprocessing
 from itertools import repeat
-from typing import Dict
+from typing import Dict, Tuple
 import pandas as pd
 
 import ete3
@@ -10,15 +10,19 @@ import time
 import os
 
 from genome_simulator import GenomeSimulator, ANNOTATIONS_FILE_FORMAT
+from utilities.genome_annotations import get_all_genes
 from writers.fasta_file_writer import FastaFileWriter
 from writers.fastq_file_writer import FastqFileWriter
 from writers.vcf_file_writer import VcfFileWriter
+
+PRESENCE_ABSENCE_MATRIX = '{}_gene_presence_absence_matrix.csv'
 
 
 def main(raw_args=None):
     args = parse_args(raw_args)
     print("Got the next args from the user:", args)
     load_default_args(args)
+    all_genes = get_all_genes(args.Mb)
 
     # Single simulation
     if not args.newick:
@@ -26,8 +30,9 @@ def main(raw_args=None):
         print("Generating sequence started")
         start = time.time()
         genome_simulator = GenomeSimulator(args)
-        genome_simulator.simulate()
+        accession_genes = genome_simulator.simulate()
         end = time.time()
+        generate_gene_presence_absence_matrix(all_genes, {args.name: accession_genes}, args.o)
         print("Done. Generating sequence took {} seconds.".format(int(end - start)))
         return
 
@@ -53,7 +58,7 @@ def main(raw_args=None):
     else:
         genes_per_accession = generate_sequentially(task_list)
 
-    generate_gene_presence_absence_matrix(genes_per_accession)
+    generate_gene_presence_absence_matrix(all_genes, genes_per_accession, args.o)
     print('================================')
 
 
@@ -70,8 +75,8 @@ def parse_args(raw_args=None):
                         help="Mutation model pickle file")
     parser.add_argument('-M', type=float, required=False, metavar='avg mut rate scalar', default=-1,
                         help="Rescale avg mutation rate to this (1/bp), must be larger than 0")
-    parser.add_argument('-Mb', type=str, required=False, metavar='mut_rates.bed', default=None,
-                        help="Bed file containing positional mut rates")
+    parser.add_argument('-Mb', type=str, required=False, metavar='annotations_file.csv', default=None,
+                        help="CSV file contains annotations data")
     parser.add_argument('-ws', type=int, required=False, metavar='<int>', default=10000,
                         help='Window size of simulation. Choose an integer number larger than 10')
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
@@ -165,7 +170,7 @@ def get_node_args_for_simulation(node, args):
     return new_args
 
 
-def generate_concurrently(ncpu, task_list) -> Dict[str, Dict[str, bool]]:
+def generate_concurrently(ncpu, task_list) -> Dict[str, set]:
     print(f"Starting a multi-process simulation, number of processes: {ncpu}")
     manager = multiprocessing.Manager()
     pool = multiprocessing.Pool(processes=ncpu)
@@ -176,7 +181,7 @@ def generate_concurrently(ncpu, task_list) -> Dict[str, Dict[str, bool]]:
     return {val[0]: val[1] for val in return_values}
 
 
-def process_handler(params_with_cond) -> (str, Dict[str, bool]):
+def process_handler(params_with_cond) -> (str, set):
     simulation_params, cond = params_with_cond
     curr_proc = multiprocessing.current_process()
     print('MULTIPROCESS LOG - current process:', curr_proc.name, curr_proc._identity)
@@ -196,7 +201,7 @@ def process_handler(params_with_cond) -> (str, Dict[str, bool]):
     return simulation_params.name, accession_genes
 
 
-def generate_sequentially(task_list) -> Dict[str, Dict[str, bool]]:
+def generate_sequentially(task_list) -> Dict[str, set]:
     print("Starting a single-process simulation")
     genes_per_accession = {}
     for args in task_list:
@@ -205,7 +210,7 @@ def generate_sequentially(task_list) -> Dict[str, Dict[str, bool]]:
     return genes_per_accession
 
 
-def generate_for_node(args) -> Dict[str, bool]:
+def generate_for_node(args) -> set:
     print('\n')
     print('==================================================')
     print("\tGenerating sequence for taxon (node):", args.name)
@@ -220,21 +225,18 @@ def generate_for_node(args) -> Dict[str, bool]:
     return accession_genes
 
 
-def generate_gene_presence_absence_matrix(genes_per_accession: Dict[str, Dict[str, bool]]):
-    accessions_list = []
-    accessions_data_per_gene = {}
+def generate_gene_presence_absence_matrix(all_genes: Dict[str, Tuple[str, int, int]],
+                                          genes_per_accession: Dict[str, set], out_prefix: str):
+    column_list = ['gene_id', 'chrom', 'ref_start', 'ref_end']
+    accessions_data_per_gene = {gene_id: [] for gene_id in all_genes}
     for accession, accession_genes in genes_per_accession.items():
-        accessions_list.append(accession)
-        for gene, accession_presence in accession_genes.items():
-            if gene not in accessions_data_per_gene:
-                accessions_data_per_gene[gene] = []
-            accessions_data_per_gene[gene].append(accession_presence)
-    # assumption:   accession_genes contains all genes from the relevant annotation file
-    # conclusion:   accessions_data_per_gene will have accession data always in the same order for each gene,
-    #               which is also the same order of accessions_list
-    tuples_list = [tuple(accessions_values.insert(0, gene)) for gene, accessions_values in accessions_data_per_gene]
-    df = pd.DataFrame.from_records(tuples_list, columns=accessions_list)
-    df.to_csv('gene_presence_absence_matrix.csv')
+        column_list.append(accession)
+        for gene_id in all_genes.keys():
+            accessions_data_per_gene[gene_id].append(True if gene_id in accession_genes else False)
+    tuples_list = [(gene_id,) + all_genes[gene_id] + tuple(accessions_values)
+                   for gene_id, accessions_values in accessions_data_per_gene.items()]
+    df = pd.DataFrame.from_records(tuples_list, columns=column_list)
+    df.to_csv(PRESENCE_ABSENCE_MATRIX.format(out_prefix))
 
 
 if __name__ == "__main__":

@@ -247,7 +247,8 @@ class ChromosomeProcessor:
         ref_nucl = self.chrom_sequence[position]
         context = str(self.chrom_sequence[position - 1]) + str(self.chrom_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
-        new_nucl = self.model_per_region[region.value][MODEL_TRINUC_TRANS_DSTRBTN][TRI_IND[context]][NUC_IND[ref_nucl]].sample()
+        new_nucl = self.model_per_region[region.value][MODEL_TRINUC_TRANS_DSTRBTN][TRI_IND[context]][NUC_IND[ref_nucl]]\
+            .sample()
         snp = Mutation(position, ref_nucl, new_nucl, MutType.SNP)
         return snp
 
@@ -453,8 +454,8 @@ class ChromosomeProcessor:
             vcf_mutations.append(tuple([vcf_position, mutation.ref_nucl, mutation.new_nucl]))
         return vcf_mutations
 
-    def get_genes_presence_absence_dict(self) -> dict:
-        return self.annotated_seq.get_genes_presence_absence_dict()
+    def get_genes(self) -> set:
+        return self.annotated_seq.get_genes()
 
 
 def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:

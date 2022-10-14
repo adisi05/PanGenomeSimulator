@@ -4,7 +4,7 @@ import time
 
 import numpy as np
 from os.path import exists
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import operator
 import pandas as pd
@@ -509,6 +509,19 @@ def read_annotations_csv(file_path: str):
             print('Problem parsing annotations file')
     return annotations_df
 
+
+def get_all_genes(file_path: str) -> Dict[str, Tuple[str, int, int]]:
+    annotations_df = read_annotations_csv(file_path)
+    relevant_genes = {}
+    for gene_id in annotations_df.gene_id.unique():
+        if gene_id == 0:
+            continue
+        gene_annotations = annotations_df[annotations_df['gene_id'] == gene_id]
+        chrom = gene_annotations.iloc[0]['chrom']
+        start = gene_annotations.iloc[0]['start']
+        end = gene_annotations.iloc[-1]['end']
+        relevant_genes[gene_id] = (chrom, start, end)
+    return relevant_genes
 
 # if __name__ == "__main__":
 #     external_sanity_check()

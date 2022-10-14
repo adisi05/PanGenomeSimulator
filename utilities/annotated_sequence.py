@@ -24,7 +24,7 @@ class AnnotatedSequence:
     def __init__(self, annotations_df: pd.DataFrame, chromosome: str, is_sorted: bool = False, debug: bool = False):
         self.debug = debug
         self._chromosome = chromosome
-        self._genes_presence_absence_dict = {}
+        self._gene_ids = {}
 
         if annotations_df is None or annotations_df.empty:
             self._relevant_regions.append(Region.ALL)
@@ -57,8 +57,8 @@ class AnnotatedSequence:
         if len(self._relevant_regions) == 0:
             self._relevant_regions.append(Region.ALL)
 
-        relevant_genes = self._annotations_df.gene_id.unique()
-        self._genes_presence_absence_dict = {gene_id: True for gene_id in relevant_genes}
+        self._gene_ids = set(self._annotations_df.gene_id.unique())
+        self._gene_ids.remove(0)
 
     def len(self):
         if self._annotations_df is None or self._annotations_df.empty:
@@ -71,8 +71,8 @@ class AnnotatedSequence:
             annotations_df['chrom'] = self._chromosome
         return annotations_df
 
-    def get_genes_presence_absence_dict(self) -> dict:
-        return self._genes_presence_absence_dict
+    def get_genes(self) -> set:
+        return self._gene_ids
 
     def get_regions(self) -> List[Region]:
         return self._relevant_regions
@@ -231,7 +231,7 @@ class AnnotatedSequence:
             dfs_to_concat.append(self._annotations_df.iloc[last_index + 1:, :])
         self._annotations_df = pd.concat(dfs_to_concat).reset_index(drop=True)
 
-        self._genes_presence_absence_dict[gene_id] = False
+        self._gene_ids.remove(gene_id)
 
         if self.debug:
             end = time.time()
