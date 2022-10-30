@@ -300,7 +300,8 @@ class ChromosomeProcessor:
         return indel
 
     def _mutate_sequence(self, mutation: Mutation):
-        print(f"Trying to insert mutation of type {mutation.mut_type.value} at position {mutation.position}.")
+        if self.debug:
+            print(f"Trying to insert mutation of type {mutation.mut_type.value} at position {mutation.position}.")
 
         ref_start = mutation.position
         ref_end = ref_start + len(mutation.ref_nucl)
@@ -315,7 +316,8 @@ class ChromosomeProcessor:
             self.chrom_sequence = self.chrom_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
                                   self.chrom_sequence[ref_end:]
 
-        print(f"Inserted mutation successfully. Window shift is {window_shift}")
+        if self.debug:
+            print(f"Inserted mutation successfully. Window shift is {window_shift}")
         return window_shift
 
     def _handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation):
