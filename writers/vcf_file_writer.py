@@ -83,8 +83,9 @@ class VcfFileWriter:
 
         iterate_simulatnously = utils.walk_together(vcf_reader_parent, vcf_reader_child)
         for readers in iterate_simulatnously:
-            if readers[1]:
-                vcf_writer.write_record(readers[1])
-            elif readers[0]:
-                vcf_writer.write_record(readers[0])
+            if readers is not None:
+                if len(readers) > 1 and readers[1]:
+                    vcf_writer.write_record(readers[1])
+                elif len(readers) > 0 and readers[0]:
+                    vcf_writer.write_record(readers[0])
         out.close()
