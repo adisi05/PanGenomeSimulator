@@ -14,8 +14,9 @@ class DiscreteDistribution:
 
         # some sanity checking
         if not len(weights) or not len(values):
-            print('\nError: weight or value vector given to DiscreteDistribution() are 0-length.\n')
-            sys.exit(1)
+            print('\nWarning: weight or value vector given to DiscreteDistribution() are 0-length.\n')
+            values = [0]
+            weights = [0]
 
         self.method = method
         sum_weight = float(sum(weights))
