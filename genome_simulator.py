@@ -37,7 +37,7 @@ Some constants needed for analysis
 """
 
 # Default window size for simulation
-DEFAULT_WINDOW_SIZE = 1000
+DEFAULT_WINDOW_SIZE = 10000
 MIN_WINDOW_SIZE = 100
 
 
