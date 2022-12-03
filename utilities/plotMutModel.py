@@ -28,6 +28,8 @@ parser.add_argument('-i', type=str, required=True, metavar='<str>', nargs='+',
 parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
                     help="* legend labels: model1_name [model2_name] [model3_name]...")
 parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output pdf prefix")
+parser.add_argument('-g', type=str, required=False, metavar='<str>', default='all',
+                    help="genomic region to focus on. default is 'all'")
 args = parser.parse_args()
 
 
@@ -76,6 +78,7 @@ OUP = args.o
 LAB = args.l
 # print LAB
 INP = args.i
+genomic_region = args.g
 
 N_FILES = len(INP)
 
@@ -94,7 +97,8 @@ for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"), encoding="utf-8")
-    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT['AVG_MUT_RATE'], DATA_DICT['SNP_FREQ'], DATA_DICT['INDEL_FREQ']]
+    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{genomic_region}.AVG_MUT_RATE'], DATA_DICT[f'{genomic_region}.SNP_FREQ'],
+                                            DATA_DICT[f'{genomic_region}.INDEL_FREQ']]
     mpl.bar([color_ind - 1], [AVG_MUT_RATE], 1., color=my_col)
 mpl.xlim([-1, N_FILES + 1])
 mpl.grid()
@@ -108,7 +112,8 @@ for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"), encoding='utf-8')
-    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT['AVG_MUT_RATE'], DATA_DICT['SNP_FREQ'], DATA_DICT['INDEL_FREQ']]
+    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{genomic_region}.AVG_MUT_RATE'], DATA_DICT[f'{genomic_region}.SNP_FREQ'],
+                                            DATA_DICT[f'{genomic_region}.INDEL_FREQ']]
     mpl.bar([color_ind - 1], [SNP_FREQ], 1., color=my_col)
     mpl.bar([color_ind - 1], [1. - SNP_FREQ], 1., color=my_col, bottom=[SNP_FREQ], hatch='/')
 mpl.axis([-1, N_FILES + 1, 0, 1.2])
@@ -125,7 +130,8 @@ for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"))
-    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT['AVG_MUT_RATE'], DATA_DICT['SNP_FREQ'], DATA_DICT['INDEL_FREQ']]
+    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{genomic_region}.AVG_MUT_RATE'], DATA_DICT[f'{genomic_region}.SNP_FREQ'],
+                                            DATA_DICT[f'{genomic_region}.INDEL_FREQ']]
     x = sorted(INDEL_FREQ.keys())
     y = [INDEL_FREQ[n] for n in x]
     mpl.plot(x, y, color=my_col)
@@ -150,7 +156,7 @@ for fn in INP:
     my_col = get_color(color_ind, N_FILES)
     color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"))
-    TRINUC_MUT_PROB = DATA_DICT['TRINUC_MUT_PROB']
+    TRINUC_MUT_PROB = DATA_DICT[f'{genomic_region}.TRINUC_MUT_PROB']
 
     x = range(color_ind - 1, len(TRINUC_MUT_PROB) * N_FILES, N_FILES)
     xt = sorted(TRINUC_MUT_PROB.keys())
@@ -178,7 +184,7 @@ plot_num = 3
 for fn in INP:
     fig = mpl.figure(plot_num, figsize=(12, 10))
     DATA_DICT = pickle.load(open(fn, "rb"))
-    TRINUC_TRANS_PROBS = DATA_DICT['TRINUC_TRANS_PROBS']
+    TRINUC_TRANS_PROBS = DATA_DICT[f'{genomic_region}.TRINUC_TRANS_PROBS']
 
     xt2 = [m[3] for m in sorted([(n[0], n[2], n[1], n) for n in xt])]
     reverse_dict = {xt2[i]: i for i in range(len(xt2))}
@@ -226,7 +232,7 @@ bp_total_byFile = [0 for n in INP]
 color_ind = 0
 for fn in INP:
     DATA_DICT = pickle.load(open(fn, "rb"))
-    HIGH_MUT_REGIONS = DATA_DICT['HIGH_MUT_REGIONS']
+    HIGH_MUT_REGIONS = DATA_DICT[f'{genomic_region}.HIGH_MUT_REGIONS']
     for region in HIGH_MUT_REGIONS:
         if region[0] not in track_byFile_byChr[color_ind]:
             track_byFile_byChr[color_ind][region[0]] = []
@@ -267,7 +273,7 @@ set_of_vars = [set([]) for n in INP]
 color_ind = 0
 for fn in INP:
     DATA_DICT = pickle.load(open(fn, "rb"))
-    COMMON_VARIANTS = DATA_DICT['COMMON_VARIANTS']
+    COMMON_VARIANTS = DATA_DICT[f'{genomic_region}.COMMON_VARIANTS']
     for n in COMMON_VARIANTS:
         set_of_vars[color_ind].add(n)
     color_ind += 1
