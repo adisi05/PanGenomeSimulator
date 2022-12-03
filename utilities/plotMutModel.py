@@ -17,6 +17,7 @@ import argparse
 
 # mpl.rc('text',usetex=True)
 # mpl.rcParams['text.latex.preamble']=[r"\usepackage{amsmath}"]
+from utilities.common_data_structues import Region
 
 parser = argparse.ArgumentParser(description='Plot and compare mutation models from mutation_model.source Usage: '
                                              'source plotMutModel.source -i model1.p [model2.p] [model3.p]... '
@@ -28,7 +29,7 @@ parser.add_argument('-i', type=str, required=True, metavar='<str>', nargs='+',
 parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
                     help="* legend labels: model1_name [model2_name] [model3_name]...")
 parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output pdf prefix")
-parser.add_argument('-g', type=str, required=False, metavar='<str>', default='all',
+parser.add_argument('-g', type=str, required=False, metavar='<str>', default=None,
                     help="genomic region to focus on. default is 'all'")
 args = parser.parse_args()
 
@@ -75,11 +76,18 @@ def get_bed_overlap(track, ind_s, ind_e):
 #	return ocount
 
 OUP = args.o
-LAB = args.l
 # print LAB
 INP = args.i
-genomic_region = args.g
+genomic_regions = [region.value for region in Region]
+if args.g:
+    genomic_regions = [args.g]
+LABELS = genomic_regions
+if args.l:
+    LABELS = []
+    for label in args.l:
+        LABELS.extend([f"{label} - {gr}" for gr in genomic_regions])
 
+N_LABELS = len(LABELS)
 N_FILES = len(INP)
 
 mpl.rcParams.update({'font.size': 13, 'font.weight': 'bold', 'lines.linewidth': 3})
@@ -91,56 +99,67 @@ mpl.rcParams.update({'font.size': 13, 'font.weight': 'bold', 'lines.linewidth': 
 #################################################
 mpl.figure(0, figsize=(12, 10))
 
-mpl.subplot(2, 2, 1)
+mpl.subplot(2, 3, 1)
+mpl.tight_layout(pad=5.0)
 color_ind = 0
 for fn in INP:
-    my_col = get_color(color_ind, N_FILES)
-    color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"), encoding="utf-8")
-    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{genomic_region}.AVG_MUT_RATE'], DATA_DICT[f'{genomic_region}.SNP_FREQ'],
-                                            DATA_DICT[f'{genomic_region}.INDEL_FREQ']]
-    mpl.bar([color_ind - 1], [AVG_MUT_RATE], 1., color=my_col)
-mpl.xlim([-1, N_FILES + 1])
+    for gr in genomic_regions:
+        my_col = get_color(color_ind, N_LABELS)
+        color_ind += 1
+        [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{gr}.AVG_MUT_RATE'], DATA_DICT[f'{gr}.SNP_FREQ'],
+                                                DATA_DICT[f'{gr}.INDEL_FREQ']]
+        mpl.bar([color_ind - 1], [AVG_MUT_RATE], 1., color=my_col)
+mpl.xlim([-1, N_LABELS])
 mpl.grid()
 mpl.xticks([], [])
+# mpl.xticks(np.arange(N_LABELS), LABELS)
 mpl.ylabel('Frequency')
 mpl.title('Overall mutation rate (1/bp)')
 
-mpl.subplot(2, 2, 2)
+mpl.subplot(2, 3, 2)
 color_ind = 0
+y_min = 1
+y_max = 0
 for fn in INP:
-    my_col = get_color(color_ind, N_FILES)
-    color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"), encoding='utf-8')
-    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{genomic_region}.AVG_MUT_RATE'], DATA_DICT[f'{genomic_region}.SNP_FREQ'],
-                                            DATA_DICT[f'{genomic_region}.INDEL_FREQ']]
-    mpl.bar([color_ind - 1], [SNP_FREQ], 1., color=my_col)
-    mpl.bar([color_ind - 1], [1. - SNP_FREQ], 1., color=my_col, bottom=[SNP_FREQ], hatch='/')
-mpl.axis([-1, N_FILES + 1, 0, 1.2])
+    for gr in genomic_regions:
+        my_col = get_color(color_ind, N_LABELS)
+        color_ind += 1
+        [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{gr}.AVG_MUT_RATE'], DATA_DICT[f'{gr}.SNP_FREQ'],
+                                            DATA_DICT[f'{gr}.INDEL_FREQ']]
+        mpl.bar([color_ind - 1], [SNP_FREQ], 1., color=my_col)
+        y_min = y_min if y_min < SNP_FREQ else SNP_FREQ
+        y_max = y_max if y_max > SNP_FREQ else SNP_FREQ
+y_range = y_max - y_min
+mpl.axis([-1, N_LABELS, 0, 1.2])
 mpl.grid()
 mpl.xticks([], [])
-mpl.yticks([0, .2, .4, .6, .8, 1.], [0, 0.2, 0.4, 0.6, 0.8, 1.0])
+# mpl.xticks(np.arange(N_LABELS), LABELS)
+# mpl.yticks([0, .2, .4, .6, .8, 1.], [0, 0.2, 0.4, 0.6, 0.8, 1.0])
+mpl.ylim([y_min-0.1*y_range, y_max+0.1*y_range])
 mpl.ylabel('Frequency')
-mpl.title('SNP freq [  ] & indel freq [//]')
+mpl.title('SNP freq (given mutation)')
+mpl.legend(LABELS, bbox_to_anchor=(1.04, 0.5), loc="center left")
 
 mpl.subplot(2, 1, 2)
 color_ind = 0
-leg_text = LAB
 for fn in INP:
-    my_col = get_color(color_ind, N_FILES)
-    color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"))
-    [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{genomic_region}.AVG_MUT_RATE'], DATA_DICT[f'{genomic_region}.SNP_FREQ'],
-                                            DATA_DICT[f'{genomic_region}.INDEL_FREQ']]
-    x = sorted(INDEL_FREQ.keys())
-    y = [INDEL_FREQ[n] for n in x]
-    mpl.plot(x, y, color=my_col)
+    for gr in genomic_regions:
+        my_col = get_color(color_ind, N_LABELS)
+        color_ind += 1
+        [AVG_MUT_RATE, SNP_FREQ, INDEL_FREQ] = [DATA_DICT[f'{gr}.AVG_MUT_RATE'], DATA_DICT[f'{gr}.SNP_FREQ'],
+                                                DATA_DICT[f'{gr}.INDEL_FREQ']]
+        x = sorted(INDEL_FREQ.keys())
+        y = [INDEL_FREQ[n] for n in x]
+        mpl.plot(x, y, color=my_col)
 # leg_text.append(fn)
 mpl.grid()
 mpl.xlabel('Indel size (bp)', fontweight='bold')
 mpl.ylabel('Frequency')
 mpl.title('Indel frequency by size (- deletion, + insertion)')
-mpl.legend(leg_text)
+mpl.legend(LABELS)
 # mpl.show()
 mpl.savefig(OUP + '_plot1_mutRates.pdf')
 
@@ -151,27 +170,25 @@ mpl.savefig(OUP + '_plot1_mutRates.pdf')
 #################################################
 mpl.figure(1, figsize=(14, 6))
 color_ind = 0
-leg_text = LAB
 for fn in INP:
-    my_col = get_color(color_ind, N_FILES)
-    color_ind += 1
     DATA_DICT = pickle.load(open(fn, "rb"))
-    TRINUC_MUT_PROB = DATA_DICT[f'{genomic_region}.TRINUC_MUT_PROB']
-
-    x = range(color_ind - 1, len(TRINUC_MUT_PROB) * N_FILES, N_FILES)
-    xt = sorted(TRINUC_MUT_PROB.keys())
-    y = [TRINUC_MUT_PROB[k] for k in xt]
-    markerline, stemlines, baseline = mpl.stem(x, y, '-.')
-    mpl.setp(markerline, 'markerfacecolor', my_col)
-    mpl.setp(markerline, 'markeredgecolor', my_col)
-    mpl.setp(baseline, 'color', my_col, 'linewidth', 0)
-    mpl.setp(stemlines, 'color', my_col, 'linewidth', 3)
-    if color_ind == 1:
-        mpl.xticks(x, xt, rotation=90)
-# leg_text.append(fn)
+    for gr in genomic_regions:
+        my_col = get_color(color_ind, N_LABELS)
+        color_ind += 1
+        TRINUC_MUT_PROB = DATA_DICT[f'{gr}.TRINUC_MUT_PROB']
+        x = range(color_ind - 1, len(TRINUC_MUT_PROB) * N_LABELS, N_LABELS)
+        xt = sorted(TRINUC_MUT_PROB.keys())
+        y = [TRINUC_MUT_PROB[k] for k in xt]
+        markerline, stemlines, baseline = mpl.stem(x, y, '-.')
+        mpl.setp(markerline, 'markerfacecolor', my_col)
+        mpl.setp(markerline, 'markeredgecolor', my_col)
+        mpl.setp(baseline, 'color', my_col, 'linewidth', 0)
+        mpl.setp(stemlines, 'color', my_col, 'linewidth', 3)
+        if color_ind == 1:
+            mpl.xticks(x, xt, rotation=90)
 mpl.grid()
 mpl.ylabel('p(trinucleotide mutates)')
-mpl.legend(leg_text)
+mpl.legend(LABELS, loc='upper center', bbox_to_anchor=(0., 1.02, 1., .102), mode="expand", shadow=True, ncol=N_LABELS)
 # mpl.show()
 mpl.savefig(OUP + '_plot2_trinucPriors.pdf')
 
@@ -180,46 +197,46 @@ mpl.savefig(OUP + '_plot2_trinucPriors.pdf')
 #	TRINUC TRANS PROB
 #
 #################################################
+HARDCODED_LABEL = ['A_A', 'A_C', 'A_G', 'A_T',
+                   'C_A', 'C_C', 'C_G', 'C_T',
+                   'G_A', 'G_C', 'G_G', 'G_T',
+                   'T_A', 'T_C', 'T_G', 'T_T']
 plot_num = 3
 for fn in INP:
-    fig = mpl.figure(plot_num, figsize=(12, 10))
-    DATA_DICT = pickle.load(open(fn, "rb"))
-    TRINUC_TRANS_PROBS = DATA_DICT[f'{genomic_region}.TRINUC_TRANS_PROBS']
+    for gr in genomic_regions:
+        fig = mpl.figure(plot_num, figsize=(12, 10))
+        DATA_DICT = pickle.load(open(fn, "rb"))
+        TRINUC_TRANS_PROBS = DATA_DICT[f'{gr}.TRINUC_TRANS_PROBS']
 
-    xt2 = [m[3] for m in sorted([(n[0], n[2], n[1], n) for n in xt])]
-    reverse_dict = {xt2[i]: i for i in range(len(xt2))}
-    Z = np.zeros((64, 64))
-    L = [['' for n in range(64)] for m in range(64)]
-    for k in TRINUC_TRANS_PROBS:
-        i = reverse_dict[k[0]]
-        j = reverse_dict[k[1]]
-        Z[i][j] = TRINUC_TRANS_PROBS[k]
+        xt2 = [m[3] for m in sorted([(n[0], n[2], n[1], n) for n in xt])]
+        reverse_dict = {xt2[i]: i for i in range(len(xt2))}
+        Z = np.zeros((64, 64))
+        L = [['' for n in range(64)] for m in range(64)]
+        for k in TRINUC_TRANS_PROBS:
+            i = reverse_dict[k[0]]
+            j = reverse_dict[k[1]]
+            Z[i][j] = TRINUC_TRANS_PROBS[k]
 
-    HARDCODED_LABEL = ['A_A', 'A_C', 'A_G', 'A_T',
-                       'C_A', 'C_C', 'C_G', 'C_T',
-                       'G_A', 'G_C', 'G_G', 'G_T',
-                       'T_A', 'T_C', 'T_G', 'T_T']
+        for pi in range(16):
+            mpl.subplot(4, 4, pi + 1)
+            Z2 = Z[pi * 4:(pi + 1) * 4, pi * 4:(pi + 1) * 4]
+            X, Y = np.meshgrid(range(0, len(Z2[0]) + 1), range(0, len(Z2) + 1))
+            im = mpl.pcolormesh(X, Y, Z2[::-1, :], vmin=0.0, vmax=0.5)
+            mpl.axis([0, 4, 0, 4])
+            mpl.xticks([0.5, 1.5, 2.5, 3.5], ['A', 'C', 'G', 'T'])
+            mpl.yticks([0.5, 1.5, 2.5, 3.5], ['T', 'G', 'C', 'A'])
+            mpl.text(1.6, 1.8, HARDCODED_LABEL[pi], color='white')
 
-    for pi in range(16):
-        mpl.subplot(4, 4, pi + 1)
-        Z2 = Z[pi * 4:(pi + 1) * 4, pi * 4:(pi + 1) * 4]
-        X, Y = np.meshgrid(range(0, len(Z2[0]) + 1), range(0, len(Z2) + 1))
-        im = mpl.pcolormesh(X, Y, Z2[::-1, :], vmin=0.0, vmax=0.5)
-        mpl.axis([0, 4, 0, 4])
-        mpl.xticks([0.5, 1.5, 2.5, 3.5], ['A', 'C', 'G', 'T'])
-        mpl.yticks([0.5, 1.5, 2.5, 3.5], ['T', 'G', 'C', 'A'])
-        mpl.text(1.6, 1.8, HARDCODED_LABEL[pi], color='white')
+        # colorbar haxx
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+        cb = fig.colorbar(im, cax=cbar_ax)
+        cb.set_label(r"p(X$Y_1$Z->X$Y_2$Z | X_Z mutates)")
 
-    # colorbar haxx
-    fig.subplots_adjust(right=0.8)
-    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    cb = fig.colorbar(im, cax=cbar_ax)
-    cb.set_label(r"p(X$Y_1$Z->X$Y_2$Z | X_Z mutates)")
-
-    # mpl.tight_layout()
-    # mpl.figtext(0.24,0.94,'Trinucleotide Mutation Frequency',size=20)
-    # mpl.show()
-    mpl.savefig(OUP + '_plot' + str(plot_num) + '_trinucTrans.pdf')
+        # mpl.tight_layout()
+        # mpl.figtext(0.24,0.94,'Trinucleotide Mutation Frequency',size=20)
+        # mpl.show()
+        mpl.savefig(OUP + '_plot' + str(plot_num) + '_' + gr + '_trinucTrans.pdf')
     plot_num += 1
 
 #################################################
@@ -232,7 +249,7 @@ bp_total_byFile = [0 for n in INP]
 color_ind = 0
 for fn in INP:
     DATA_DICT = pickle.load(open(fn, "rb"))
-    HIGH_MUT_REGIONS = DATA_DICT[f'{genomic_region}.HIGH_MUT_REGIONS']
+    HIGH_MUT_REGIONS = DATA_DICT['all.HIGH_MUT_REGIONS']
     for region in HIGH_MUT_REGIONS:
         if region[0] not in track_byFile_byChr[color_ind]:
             track_byFile_byChr[color_ind][region[0]] = []
@@ -273,7 +290,7 @@ set_of_vars = [set([]) for n in INP]
 color_ind = 0
 for fn in INP:
     DATA_DICT = pickle.load(open(fn, "rb"))
-    COMMON_VARIANTS = DATA_DICT[f'{genomic_region}.COMMON_VARIANTS']
+    COMMON_VARIANTS = DATA_DICT['all.COMMON_VARIANTS']
     for n in COMMON_VARIANTS:
         set_of_vars[color_ind].add(n)
     color_ind += 1
