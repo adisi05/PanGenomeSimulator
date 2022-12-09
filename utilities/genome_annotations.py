@@ -1,7 +1,7 @@
 import argparse
 import os
 import time
-
+import re
 import numpy as np
 from os.path import exists
 from typing import Dict, List, Tuple
@@ -16,7 +16,7 @@ DEFAULT_INPUT_FILE = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/g
 DEFAULT_OUTPUT_FILE = 'all_chroms_annotations.csv'
 
 
-def workflow(input_path: str, output_path: str):
+def workflow(input_path: str, output_path: str, legend_output_path: str):
     genes_df, cds_elements_df, chroms_df = extract_data_frames(input_path)
 
     genes_df = get_genes_without_overlaps(genes_df)
@@ -25,11 +25,12 @@ def workflow(input_path: str, output_path: str):
 
     all_annotations_df = pd.concat([sub_gene_annotations_df, intergenics_df])  # ignore_index=True ?
     all_annotations_df = all_annotations_df.sort_values(by=['chrom', 'start', 'end']).reset_index(drop=True)
-    all_annotations_df = gene_ids_to_numbers(all_annotations_df)
+    all_annotations_df, genes_legend_df = gene_ids_to_numbers(all_annotations_df)
     all_annotations_df[['start', 'end', 'gene_id']] = all_annotations_df[['start', 'end', 'gene_id']].astype(int)
     all_annotations_df = assign_frame_to_cds(all_annotations_df)
     sanity_check(all_annotations_df)
     all_annotations_df.to_csv(output_path)
+    genes_legend_df.to_csv(legend_output_path)
 
 
 def extract_data_frames(file_path: str) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
@@ -178,7 +179,7 @@ def get_sub_gene_elements(gene_id: str, genes_df: pd.DataFrame, var_id: int, cds
         if cursor < cds_start:
             non_coding_gene_dict = {
                 'chrom': gene_chrom,
-                'gene_id': gene_id,
+                'gene_id': gene_id + '.' + str(var_id),
                 'region': Region.NON_CODING_GENE.value,
                 'start': cursor,
                 'end': cds_start,
@@ -190,7 +191,7 @@ def get_sub_gene_elements(gene_id: str, genes_df: pd.DataFrame, var_id: int, cds
         # CDS element
         cds_dict = {
             'chrom': gene_chrom,
-            'gene_id': gene_id,
+            'gene_id': gene_id + '.' + str(var_id),
             'region': Region.CDS.value,
             'start': cds_start,
             'end': cds_end,
@@ -204,7 +205,7 @@ def get_sub_gene_elements(gene_id: str, genes_df: pd.DataFrame, var_id: int, cds
     if cursor != gene_end:
         non_coding_gene_dict = {
             'chrom': gene_chrom,
-            'gene_id': gene_id,
+            'gene_id': gene_id + '.' + str(var_id),
             'region': Region.NON_CODING_GENE.value,
             'start': cursor,
             'end': gene_end,
@@ -255,7 +256,7 @@ def get_intergenic_annotations(chroms_df: pd.DataFrame, genes_df: pd.DataFrame) 
     return intergenics_df
 
 
-def gene_ids_to_numbers(all_annotations_df: pd.DataFrame) -> pd.DataFrame:
+def gene_ids_to_numbers(all_annotations_df: pd.DataFrame) -> (pd.DataFrame, pd.DataFrame):
     name_to_number = {'': 0}
     id_counter = 1
     for i, annotation in all_annotations_df.iterrows():
@@ -265,7 +266,9 @@ def gene_ids_to_numbers(all_annotations_df: pd.DataFrame) -> pd.DataFrame:
             name_to_number[annotation['gene_id']] = id_counter
             all_annotations_df.loc[i, 'gene_id'] = id_counter
             id_counter += 1
-    return all_annotations_df
+    name_number_df = pd.DataFrame([(name, number) for name, number in name_to_number.items()], columns=['Name', 'ID'])
+
+    return all_annotations_df, name_number_df
 
 
 def main(raw_args=None):
@@ -282,10 +285,11 @@ def main(raw_args=None):
     input_file = args.a if args.a else DEFAULT_INPUT_FILE
     output_file = args.o if args.o else DEFAULT_OUTPUT_FILE
     output_file = output_file if output_file.lower().endswith('.csv') else DEFAULT_OUTPUT_FILE
+    legend_file = re.split('.csv', output_file, flags=re.IGNORECASE)[0] + '_legend.csv'
     test_mode = args.test
 
     if not test_mode:
-        workflow(input_file, output_file)
+        workflow(input_file, output_file, legend_file)
     else:
         test_overlapping_genes(input_file)
 
