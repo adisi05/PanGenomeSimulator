@@ -515,8 +515,10 @@ def read_annotations_csv(file_path: str):
 
 
 def get_all_genes(file_path: str) -> Dict[str, Tuple[str, int, int]]:
-    annotations_df = read_annotations_csv(file_path)
     relevant_genes = {}
+    annotations_df = read_annotations_csv(file_path)
+    if annotations_df is None or annotations_df.empty:
+        return relevant_genes
     for gene_id in annotations_df.gene_id.unique():
         if gene_id == 0:
             continue
