@@ -1,10 +1,12 @@
 import random
 from utilities.common_data_structues import MutType, Region
+from utilities.logger import Logger
 
 
 class RandomMutationsPool:
     def __init__(self, indels_per_region: dict, snps_per_region: dict, max_mutations_in_window: int,
-                 sv_list: list = [], debug: bool = False):
+                 sv_list: list = [], logger: Logger = None):
+        self.logger = logger if logger else Logger()
         # TODO add SVs
         self.indels_per_region = indels_per_region
         self.snps_per_region = snps_per_region
@@ -16,12 +18,10 @@ class RandomMutationsPool:
             if count != 0:
                 self.options[(MutType.SNP.value, region_name)] = count
         self.overall_count = min(max_mutations_in_window, sum(self.options.values()))
-        self.debug = debug
 
-        if self.debug:
-            print(f"Created random mutations pool")
-            print(f"Overall planned random mutations within window: {self.overall_count}")
-            print(f"Mutations distribution: {list(self.options.items())}")
+        self.logger.debug_message(f"Created random mutations pool")
+        self.logger.debug_message(f"Overall planned random mutations within window: {self.overall_count}")
+        self.logger.debug_message(f"Mutations distribution: {list(self.options.items())}")
 
     def has_next(self) -> bool:
         return self.overall_count > 0
@@ -40,7 +40,6 @@ class RandomMutationsPool:
             del self.options[choice]
         mut_type_name, region_name = choice
 
-        if self.debug:
-            print(f"Remained mutations count within window: {self.overall_count}")
+        self.logger.debug_message(f"Remained mutations count within window: {self.overall_count}")
 
         return MutType(mut_type_name), Region(region_name)

@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from common_data_structues import Region, Strand
+from utilities.logger import Logger
 
 
 class AnnotatedSequence:
@@ -21,8 +22,8 @@ class AnnotatedSequence:
     _cached_end = None
     _cached_mask_in_window_per_region = None
 
-    def __init__(self, annotations_df: pd.DataFrame, chromosome: str, is_sorted: bool = False, debug: bool = False):
-        self.debug = debug
+    def __init__(self, annotations_df: pd.DataFrame, chromosome: str, is_sorted: bool = False, logger: Logger = None):
+        self.logger = logger if logger else Logger()
         self._chromosome = chromosome
         self._gene_ids = {}
 
@@ -39,14 +40,14 @@ class AnnotatedSequence:
                 for item in split:
                     if item in self._annotations_df.chrom.unique():
                         self._chromosome = item
-                        print(f"Chromosome {chromosome} was not found in the annotation dataframe. "
-                              f"Instead, found {self._chromosome}, so using it.")
+                        self.logger.message(f"Chromosome {chromosome} was not found in the annotation dataframe. "
+                                            f"Instead, found {self._chromosome}, so using it.")
                         break
 
             self._annotations_df = self._annotations_df[annotations_df['chrom'] == self._chromosome]
             if self._annotations_df.empty:
-                print(f"Chromosome {self._chromosome} was not found in the annotation dataframe."
-                      f"Therefore, ignoring the annotations for this chromosome.")
+                self.logger.message(f"Chromosome {self._chromosome} was not found in the annotation dataframe."
+                                    f"Therefore, ignoring the annotations for this chromosome.")
             del self._annotations_df['chrom']
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
@@ -116,8 +117,7 @@ class AnnotatedSequence:
             return last_cds['start'], strand
 
     def get_encapsulating_codon_positions(self, pos: int) -> (int, int, int):
-        if self.debug:
-            print(f"Trying to find codon positions for nucleotide at position {pos}.")
+        self.logger.debug_message(f"Trying to find codon positions for nucleotide at position {pos}.")
         cds, _ = self._get_annotation_by_position(pos)
         if cds['region'] != Region.CDS.value:
             raise Exception("Codon is only relevant for CDS region")
@@ -125,8 +125,8 @@ class AnnotatedSequence:
         cds_end = cds['end']
         cds_gene = cds['gene_id']
         cds_strand = cds['strand']
-        if self.debug:
-            print(f"CDS details: start={cds_start}, CDS end={cds_end}, gene={cds_gene}, strand={cds_strand}.")
+        self.logger.debug_message(f"CDS details: "
+                                  f"start={cds_start}, CDS end={cds_end}, gene={cds_gene}, strand={cds_strand}.")
 
         # find positions of 3 nucleotides
         if cds_strand == Strand.FORWARD.value:
@@ -147,18 +147,16 @@ class AnnotatedSequence:
             third = reversed_first
         else:
             raise Exception("Unknown strand for CDS element")
-        if self.debug:
-            print(f"Found this positions: {first}-{third}.")
+        self.logger.debug_message(f"Found this positions: {first}-{third}.")
 
         # get previous CDS (which is actually next if reverse strand...) if needed
         if first < cds_start or second < cds_start:
-            if self.debug:
-                print(f"Getting previous CDS because current CDS start is {cds_start}.")
+            self.logger.debug_message(f"Getting previous CDS because current CDS start is {cds_start}.")
             prev_cds = self._annotations_df[(self._annotations_df['gene_id'] == cds_gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (self._annotations_df['end'] <= cds_start)]
-            if len(prev_cds) == 0 and self.debug:
-                print(f"No previous CDS element is available.")
+            if len(prev_cds) == 0:
+                self.logger.debug_message(f"No previous CDS element is available.")
             prev_cds_end = prev_cds.iloc[-1]['end']
             if second < cds_start:
                 second = prev_cds_end - 1
@@ -168,13 +166,12 @@ class AnnotatedSequence:
 
         # get next CDS (which is actually previous if reverse strand...) if needed
         if cds_end <= second or cds_end <= third:
-            if self.debug:
-                print(f"Getting next CDS because current CDS end is {cds_end}.")
+            self.logger.debug_message(f"Getting next CDS because current CDS end is {cds_end}.")
             next_cds = self._annotations_df[(self._annotations_df['gene_id'] == cds_gene) &
                                             (self._annotations_df['region'] == Region.CDS.value) &
                                             (cds_end <= self._annotations_df['start'])]
-            if len(next_cds) == 0 and self.debug:
-                print(f"No next CDS element is available.")
+            if len(next_cds) == 0:
+                self.logger.debug_message(f"No next CDS element is available.")
             next_cds_start = next_cds.iloc[0]['start']
             if cds_end <= second:
                 second = next_cds_start
@@ -197,8 +194,7 @@ class AnnotatedSequence:
             return
 
         start = time.time()
-        if self.debug:
-            print(f"Trying to mute gene {gene_id}")
+        self.logger.debug_message(f"Trying to mute gene {gene_id}")
 
         gene_annotations_indices = self._annotations_df.index[(self._annotations_df['gene_id'] == gene_id)].tolist()
         first_index = gene_annotations_indices[0]
@@ -236,12 +232,13 @@ class AnnotatedSequence:
 
         self._gene_ids.remove(gene_id)
 
-        if self.debug:
-            end = time.time()
-            print(f"Gene muting took {0:.3f} seconds.".format(end-start))
-            print(f"New intergenic region is now from start={intergenic_start} to end={intergenic_end}.")
-            print(f"Merged the (current) annotation indexes: first_index={first_index} to last_index={last_index}.")
-            print(f"The result: lost {last_index-first_index} annotations.")
+        end = time.time()
+        self.logger.debug_message(f"Gene muting took {0:.3f} seconds.".format(end-start))
+        self.logger.debug_message(f"New intergenic region is now from start={intergenic_start} to "
+                                  f"end={intergenic_end}.")
+        self.logger.debug_message(f"Merged the (current) annotation indexes: first_index={first_index} to "
+                                  f"last_index={last_index}.")
+        self.logger.debug_message(f"The result: lost {last_index-first_index} annotations.")
 
     def handle_insertion(self, pos: int, insertion_len: int) -> None:
         start = time.time()
@@ -251,12 +248,10 @@ class AnnotatedSequence:
         if index + 1 != len(self._annotations_df):
             self._annotations_df.iloc[index + 1:, self._annotations_df.columns.get_loc('start')] += insertion_len
             self._annotations_df.iloc[index + 1:, self._annotations_df.columns.get_loc('end')] += insertion_len
-            if self.debug:
-                print(f"Shifted forward annotations from index {index + 1} by {insertion_len}.")
+            self.logger.debug_message(f"Shifted forward annotations from index {index + 1} by {insertion_len}.")
 
-        if self.debug:
-            end = time.time()
-            print(f"handle_insertion took {0:.3f} seconds.".format(end-start))
+        end = time.time()
+        self.logger.debug_message(f"handle_insertion took {0:.3f} seconds.".format(end-start))
 
     def handle_deletion(self, pos: int, deletion_len: int) -> None:
         """
@@ -290,15 +285,13 @@ class AnnotatedSequence:
         if index != len(self._annotations_df):
             self._annotations_df.iloc[index:, self._annotations_df.columns.get_loc('start')] -= deletion_len
             self._annotations_df.iloc[index:, self._annotations_df.columns.get_loc('end')] -= deletion_len
-            if self.debug:
-                print(f"Shifted backwards annotations from index {index + 1} by {deletion_len}.")
+            self.logger.debug_message(f"Shifted backwards annotations from index {index + 1} by {deletion_len}.")
 
         if len(annotations_to_delete):
             self._annotations_df = self._annotations_df.drop(annotations_to_delete).reset_index(drop=True)
 
-        if self.debug:
-            end = time.time()
-            print(f"handle_deletion took {0:.3f} seconds.".format(end-start))
+        end = time.time()
+        self.logger.debug_message(f"handle_deletion took {0:.3f} seconds.".format(end-start))
 
     def get_nucleotides_counts_per_region(self, start: int = -1, end: int = -1) -> dict:
         if self._annotations_df is None or self._annotations_df.empty:

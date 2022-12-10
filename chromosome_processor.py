@@ -12,6 +12,7 @@ from mutation_model import MODEL_AVG_MUT_RATE, MODEL_P_INDEL, MODEL_P_INSERTION,
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.common_data_structues import Region, MutType, Strand, STOP_CODONS_FORWARD_STRAND, \
     STOP_CODONS_REVERSE_STRAND, VALID_NUCL, TRI_IND, NUC_IND, ALL_IND, Mutation
+from utilities.logger import Logger
 from utilities.probability import DiscreteDistribution, poisson_list
 from utilities.random_mutations_pool import RandomMutationsPool
 from utilities.simulation_window import SimulationWindow
@@ -32,20 +33,20 @@ class ChromosomeProcessor:
     """
 
     def __init__(self, chromosome_name: str, chromosome_sequence: Seq, annotations_df: pd.DataFrame,
-                 annotations_sorted: bool = False, mut_model=None, mut_scalar=None, dist=None, debug: bool = False):
-        self.debug = debug
+                 annotations_sorted: bool = False, mut_model=None, mut_scalar=None, dist=None, logger: Logger = None):
+        self.logger = logger if logger else Logger()
         self.chrom_name = chromosome_name
         self.chrom_sequence = MutableSeq(str(chromosome_sequence))
         # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
         self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted,
-                                               debug=self.debug)
+                                               logger=self.logger)
         if self.annotated_seq.len() and len(chromosome_sequence) != self.annotated_seq.len():
-            print(f'Chromosome {chromosome_name} in the reference is {len(chromosome_sequence)},'
-                  f' while in the annotations file it is {self.annotated_seq.len()}.\n'
-                  f'Currently continue normally and hope for the best...')
+            self.logger.message(f'Chromosome {chromosome_name} in the reference is {len(chromosome_sequence)},'
+                                f' while in the annotations file it is {self.annotated_seq.len()}.\n'
+                                f'Currently continue normally and hope for the best...')
         self._load_mutation_model(mut_model, mut_scalar, dist)
-        self.window_unit = SimulationWindow(self.debug)
+        self.window_unit = SimulationWindow(self.logger)
 
     def get_annotations_df(self) -> pd.DataFrame:
         return self.annotated_seq.get_annotations_df()
@@ -109,7 +110,7 @@ class ChromosomeProcessor:
             self._get_planned_snps_and_indels_in_window_per_region()
         max_mutations_in_window = round(MAX_MUTFRAC * (self.window_unit.end - self.window_unit.start))
         return RandomMutationsPool(indels_to_add_window_per_region, snps_to_add_window_per_region,
-                                   max_mutations_in_window, debug=self.debug)
+                                   max_mutations_in_window, logger=self.logger)
 
     def _get_planned_snps_and_indels_in_window_per_region(self) -> (dict, dict):
         indel_poisson_per_region = self._init_poisson(type_is_indel=True)
@@ -155,8 +156,7 @@ class ChromosomeProcessor:
                 DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value], range(window_seq_len))
             # from initialization, the probability of the first and the last element is 0
         t_end = time.time()
-        if self.debug:
-            print(f"Initializing window trinuc bias took {0:.3f} seconds.".format(t_end-t_start))
+        self.logger.debug_message(f"Initializing window trinuc bias took {0:.3f} seconds.".format(t_end-t_start))
 
     def _update_trinuc_bias_of_window(self, mut: Mutation):
         """
@@ -192,8 +192,7 @@ class ChromosomeProcessor:
             self.trinuc_bias_per_region[region.value] = DiscreteDistribution(new_weights, range(window_seq_len))
 
         t_end = time.time()
-        if self.debug:
-            print(f"Updating window trinuc bias took {0:.3f} seconds.".format(t_end-t_start))
+        self.logger.debug_message(f"Updating window trinuc bias took {0:.3f} seconds.".format(t_end-t_start))
 
     def _insert_random_mutation(self, mut_type: MutType, region: Region) -> (Optional[Mutation], int):
         window_shift = 0
@@ -286,9 +285,8 @@ class ChromosomeProcessor:
             if indel_len < 0:
                 # shouldn't occure
                 indel_len = 0
-                if self.debug:
-                    print(f"Deletion length is less than 0, changing to 0. "
-                          f"This is a program error, and need further investigation")
+                self.logger.debug_message(f"Deletion length is less than 0, changing to 0. "
+                                          f"This is a program error, and need further investigation")
 
             if indel_len == 0:
                 indel_seq = ''
@@ -300,24 +298,25 @@ class ChromosomeProcessor:
         return indel
 
     def _mutate_sequence(self, mutation: Mutation):
-        if self.debug:
-            print(f"Trying to insert mutation of type {mutation.mut_type.value} at position {mutation.position}.")
+        self.logger.debug_message(f"Trying to insert mutation of type {mutation.mut_type.value} "
+                                  f"at position {mutation.position}.")
 
         ref_start = mutation.position
         ref_end = ref_start + len(mutation.ref_nucl)
         window_shift = mutation.get_offset_change()
 
         if mutation.ref_nucl != str(self.chrom_sequence[ref_start:ref_end]):
-            print('\nError: Something went wrong!\n', mutation, [ref_start, ref_end],
-                  str(self.chrom_sequence[ref_start:ref_end]), '\n')
+            self.logger.message(f'\nError: Something went wrong!\n'
+                                f'mutation={mutation}, '
+                                f'[ref_start, ref_end]={[ref_start, ref_end]}, '
+                                f'{str(self.chrom_sequence[ref_start:ref_end])}\n')
             sys.exit(1)
         else:
             # alter reference sequence
             self.chrom_sequence = self.chrom_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
                                   self.chrom_sequence[ref_end:]
 
-        if self.debug:
-            print(f"Inserted mutation successfully. Window shift is {window_shift}")
+        self.logger.debug_message(f"Inserted mutation successfully. Window shift is {window_shift}")
         return window_shift
 
     def _handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation):
@@ -460,7 +459,7 @@ class ChromosomeProcessor:
         return self.annotated_seq.get_genes()
 
 
-def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:
+def is_stop_codon(codon: str, strand: Strand, logger: Logger) -> bool:
     stop = False
 
     if strand.value == Strand.FORWARD.value:
@@ -469,7 +468,6 @@ def is_stop_codon(codon: str, strand: Strand, debug: bool = False) -> bool:
     if strand.value == Strand.REVERSE.value:
         stop = codon in STOP_CODONS_REVERSE_STRAND
 
-    if debug:
-        print("Encountered stop codon")
+    logger.debug_message("Encountered stop codon")
 
     return stop

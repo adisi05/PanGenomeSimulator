@@ -1,11 +1,14 @@
+from utilities.logger import Logger
+
+
 class SimulationWindow:
-    def __init__(self, debug: bool = False):
+    def __init__(self, logger: Logger = None):
 
         self.windows_start_offset: int = 0
         self.start: int = 0
         self.end: int = 0
         self.original_end: int = 0
-        self.debug = debug
+        self.logger = logger if logger else Logger()
 
     def next_window(self, new_start: int = -1, new_end: int = -1):
         last_window_offset = self.end - self.original_end
@@ -20,11 +23,10 @@ class SimulationWindow:
         self.start = new_start
         self.end = new_end
         self.original_end = self.end
-        if self.debug:
-            print(f"Updated window. Overall windows offset is {self.windows_start_offset}"
-                  f" and therefore the adjusted parameters are window: start={self.start}, end={self.end}")
+        self.logger.debug_message(f"Updated window. Overall windows offset is {self.windows_start_offset}"
+                                  f" and therefore the adjusted parameters are window: "
+                                  f"start={self.start}, end={self.end}")
 
     def adjust_window(self, end_shift: int = 0):
-        if self.debug:
-            print(f"Adjusting window, end shift is {end_shift}")
+        self.logger.debug_message(f"Adjusting window, end shift is {end_shift}")
         self.end += end_shift
