@@ -37,7 +37,7 @@ def workflow(input_path: str, output_path: str, legend_output_path: str):
 def extract_data_frames(file_path: str) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
     if file_path is not None:
         try:
-            using_bed = file_path.lower().endswith('.bed')
+            bed_format = file_path.lower().endswith('.bed')
             annotations = pybedtools.example_bedtool(file_path)
 
             # genes
@@ -49,7 +49,7 @@ def extract_data_frames(file_path: str) -> (pd.DataFrame, pd.DataFrame, pd.DataF
             gene_elements_df['gene_id'] = gene_elements_df.apply(
                 lambda x: extract_gene_id_from_gene(x['attributes']), axis=1, result_type='expand')
             del gene_elements_df['attributes']
-            if not using_bed:
+            if not bed_format:
                 gene_elements_df['start'] -= 1
 
             # CDS elements
@@ -61,7 +61,7 @@ def extract_data_frames(file_path: str) -> (pd.DataFrame, pd.DataFrame, pd.DataF
             cds_elements_df[['gene_id', 'variant_id']] = cds_elements_df.apply(
                 lambda x: extract_gene_id_variant_id_from_cds(x['attributes']), axis=1, result_type='expand')
             del cds_elements_df['attributes']
-            if not using_bed:
+            if not bed_format:
                 cds_elements_df['start'] -= 1
 
             # chromosomes
@@ -70,13 +70,13 @@ def extract_data_frames(file_path: str) -> (pd.DataFrame, pd.DataFrame, pd.DataF
             chrom_elements_df = chrom_elements.to_dataframe()
             chrom_elements_df = chrom_elements_df[['seqname', 'start', 'end']]
             chrom_elements_df.rename(columns={'seqname': 'chrom'}, inplace=True)
-            if not using_bed:
+            if not bed_format:
                 chrom_elements_df['start'] -= 1
 
             return gene_elements_df, cds_elements_df, chrom_elements_df
 
         except IOError:
-            print("\nProblem reading annotation (BED/GFF) file.\n")
+            print("\nProblem reading annotations file.\n")
 
 
 def extract_gene_id_from_gene(gff_attributes: str) -> str:
@@ -275,16 +275,16 @@ def gene_ids_to_numbers(all_annotations_df: pd.DataFrame) -> (pd.DataFrame, pd.D
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description='Genome annotations to CSV format',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
-    parser.add_argument('-a', type=str, required=True, metavar='/path/to/annotations.gff',
-                        help="Annotations file in one of the next formats: bed, gff, gtf, gff3")
-    parser.add_argument('-o', type=str, required=False, metavar='/path/to/output.csv',
+    parser.add_argument('--gff', type=str, required=True, metavar='/path/to/annotations.gff',
+                        help="Annotations file in one of the next formats: gff, gtf, gff3")
+    parser.add_argument('--csv', type=str, required=False, metavar='/path/to/output.csv',
                         help="Path to output csv file")
     parser.add_argument('--test', required=False, default=False, help="Output overlapping genes",
                         action='store_true')
     args = parser.parse_args(raw_args)
 
-    input_file = args.a if args.a else DEFAULT_INPUT_FILE
-    output_file = args.o if args.o else DEFAULT_OUTPUT_FILE
+    input_file = args.gff if args.gff else DEFAULT_INPUT_FILE
+    output_file = args.csv if args.csv else DEFAULT_OUTPUT_FILE
     output_file = output_file if output_file.lower().endswith('.csv') else DEFAULT_OUTPUT_FILE
     legend_file = re.split('.csv', output_file, flags=re.IGNORECASE)[0] + '_legend.csv'
     test_mode = args.test
@@ -427,7 +427,7 @@ def external_sanity_check(raw_args=None):
 def test_overlapping_genes(in_file: str = DEFAULT_INPUT_FILE):
     if in_file is not None:
         try:
-            using_bed = in_file.lower().endswith('.bed')
+            bed_format = in_file.lower().endswith('.bed')
             annotations = pybedtools.example_bedtool(in_file)
             gene_elements = annotations.filter(lambda x: x.fields[2] == 'gene')
             gene_elements = gene_elements.sort()
@@ -435,7 +435,7 @@ def test_overlapping_genes(in_file: str = DEFAULT_INPUT_FILE):
             gene_elements_df['gene_id'] = gene_elements_df.apply(
                 lambda x: extract_gene_id_from_gene(x['attributes']), axis=1, result_type='expand')
             del gene_elements_df['attributes']
-            if not using_bed:
+            if not bed_format:
                 gene_elements_df['start'] -= 1
 
             overlap_count = 0
@@ -485,7 +485,7 @@ def test_overlapping_genes(in_file: str = DEFAULT_INPUT_FILE):
             gene_elements_df.to_csv('overlapping_genes.csv')
 
         except IOError:
-            print("\nProblem reading annotation (BED/GFF) file.\n")
+            print("\nProblem reading annotations file.\n")
 
 
 if __name__ == "__main__":
@@ -496,7 +496,7 @@ def read_annotations_csv(file_path: str, logger: Logger = None):
     logger = logger if logger else Logger()
     annotations_df = None
     if file_path:
-        logger.message('Loading csv...')
+        logger.message('Loading annotations CSV file...')
         try:
             _, extension = os.path.splitext(file_path)
             if extension != '.csv':

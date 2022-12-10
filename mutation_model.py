@@ -20,7 +20,7 @@ VCF_CHROM_COL = 0
 
 
 class Stats(Enum):
-    # how many times do we observe each trinucleotide in the reference (and input bed region, if present)?
+    # how many times do we observe each trinucleotide in the reference (or genomic region)?
     TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
     # [(trinuc_ref, trinuc_alt)] = # of times we observed a mutation from trinuc_ref into trinuc_alt
     TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
@@ -107,7 +107,7 @@ class RegionsStats:
 def main():
     args = parse_arguments()
     (ref, vcf, out_pickle, save_trinuc, skip_common, annotations_file) = (
-        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.b)
+        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.a)
 
     chrom_sequences_dict, chrom_names = process_reference(ref)
 
@@ -143,10 +143,8 @@ def parse_arguments():
                         help="Mutation file for organism in VCF format")
     parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/and/prefix',
                         help="Name of output file (final model will append \'.p\')")
-    parser.add_argument('-b', type=str, required=False, metavar='Bed file of regions to include '
-                                                                '(use bedtools complement if you have a '
-                                                                'bed of exclusion areas)', default=None,
-                        help="only_use_these_regions.bed")
+    parser.add_argument('-a', type=str, required=False, metavar='/path/to/annotations.csv',
+                        help='Annotations CSV file of regions to consider', default=None)
     parser.add_argument('--save-trinuc', required=False, action='store_true', default=False,
                         help='save trinucleotide counts for reference')
     parser.add_argument('--skip-common', required=False, action='store_true', default=False,

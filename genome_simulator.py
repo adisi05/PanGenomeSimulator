@@ -58,7 +58,7 @@ class GenomeSimulator:
 
     def _extract_args(self, args):
         self._input_reference = args.r
-        self._annotations_file = args.Mb
+        self._annotations_file = args.a
         self._relative_distance = args.dist
         self._output_accession = args.name
         self._output_prefix = args.o + '_' + args.name

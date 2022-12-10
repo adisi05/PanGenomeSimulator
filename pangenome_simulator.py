@@ -23,10 +23,10 @@ def main(raw_args=None):
     args = parse_args(raw_args)
     print(f"Got the next args from the user: {args}")
     load_default_args(args)
-    all_genes = get_all_genes(args.Mb)
+    all_genes = get_all_genes(args.a)
 
     # Single simulation
-    if not args.newick:
+    if not args.t:
         print("No phylogenetic tree supplied")
         print("Generating sequence started")
         start = time.time()
@@ -38,7 +38,7 @@ def main(raw_args=None):
         return
 
     # Tree simulation
-    t = ete3.Tree(args.newick, format=1)
+    t = ete3.Tree(args.t, format=1)
     internal_count = 0
     for node in t.traverse("preorder"):
         if not node.name:
@@ -49,7 +49,7 @@ def main(raw_args=None):
     args.total_dist = tree_total_dist(t)
 
     # Relate to one of the accessions (given by -a param) as the reference
-    args.root_to_ref_dist = set_ref_as_accession(args.a, t)
+    args.root_to_ref_dist = set_ref_as_accession(args.l, t)
 
     args.root_fasta = args.r
 
@@ -67,19 +67,23 @@ def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='PanGenomeSimulator',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
+    parser.add_argument('-m', type=str, required=False, metavar='model.p', default=None,
+                        help="Mutation model pickle file")
+    parser.add_argument('-M', type=float, required=False, metavar='avg mut rate scalar', default=-1,
+                        help="Rescale avg mutation rate to this (1/bp), must be larger than 0")
+    parser.add_argument('-a', type=str, required=False, metavar='annotations_file.csv', default=None,
+                        help="CSV file contains annotations data")
+    parser.add_argument('-t', type=str, required=False, metavar='newick tree', help="Path to reference newick")
+    parser.add_argument('-l', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
+    parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1,
+                        help='maximum threads number')
+    parser.add_argument('-w', type=int, required=False, metavar='<int>', default=10000,
+                        help='Window size of simulation. Choose an integer number larger than 10')
     parser.add_argument('-R', type=int, required=True, metavar='read length', help="The desired read length")
     parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
                         help="Prefix for the output files (can be a path)")
     parser.add_argument('-c', type=float, required=False, metavar='coverage', default=10.0,
                         help="Average coverage, default is 10.0")
-    parser.add_argument('-m', type=str, required=False, metavar='model.p', default=None,
-                        help="Mutation model pickle file")
-    parser.add_argument('-M', type=float, required=False, metavar='avg mut rate scalar', default=-1,
-                        help="Rescale avg mutation rate to this (1/bp), must be larger than 0")
-    parser.add_argument('-Mb', type=str, required=False, metavar='annotations_file.csv', default=None,
-                        help="CSV file contains annotations data")
-    parser.add_argument('-ws', type=int, required=False, metavar='<int>', default=10000,
-                        help='Window size of simulation. Choose an integer number larger than 10')
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
                         help='Paired-end fragment length mean and std')
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
@@ -90,10 +94,6 @@ def parse_args(raw_args=None):
     parser.add_argument('--no-fastq', required=False, action='store_true', default=False,
                         help='bypass fastq generation')
     parser.add_argument('-d', required=False, action='store_true', default=False, help='Activate Debug Mode')
-    parser.add_argument('-newick', type=str, required=False, metavar='newick tree', help="Path to reference newick")
-    parser.add_argument('-a', type=str, required=False, metavar='leaf.name', default=None, help='reference accession')
-    parser.add_argument('--max-threads', type=int, required=False, metavar='maximum threads number', default=1,
-                        help='maximum threads number')
 
     return parser.parse_args(raw_args)
 
@@ -167,7 +167,7 @@ def get_node_args_for_simulation(node, args):
         new_args.parent_name = node.up.name
         new_args.dist = node.dist / new_args.total_dist
         new_args.r = FastaFileWriter.get_output_filenames(new_args.o, new_args.parent_name)[0]
-        new_args.Mb = ANNOTATIONS_FILE_FORMAT.format(new_args.o + '_' + new_args.parent_name)
+        new_args.a = ANNOTATIONS_FILE_FORMAT.format(new_args.o + '_' + new_args.parent_name)
     return new_args
 
 
