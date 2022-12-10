@@ -27,7 +27,7 @@ class AnnotatedSequence:
         self._gene_ids = {}
 
         if annotations_df is None or annotations_df.empty:
-            self._relevant_regions.append(Region.ALL)
+            self._relevant_regions = [Region.ALL]
             return
 
         self._annotations_df = annotations_df.copy()
@@ -66,6 +66,9 @@ class AnnotatedSequence:
         return self._annotations_df.iloc[-1]['end']
 
     def get_annotations_df(self) -> pd.DataFrame:
+        if self._annotations_df is None or self._annotations_df.empty:
+            return pd.DataFrame()
+
         annotations_df = self._annotations_df.copy()
         if 'chrom' not in annotations_df.columns:
             annotations_df['chrom'] = self._chromosome
@@ -79,7 +82,7 @@ class AnnotatedSequence:
 
     def get_region_by_position(self, pos) -> (Region, Strand):
         if self._annotations_df is None or self._annotations_df.empty:
-            return Region.ALL
+            return Region.ALL, Strand.UNKNOWN
         annotation, _ = self._get_annotation_by_position(pos)
         return Region(annotation['region']), Strand(annotation['strand'])
 

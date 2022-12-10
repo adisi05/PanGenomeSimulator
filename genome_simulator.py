@@ -21,6 +21,7 @@ import time
 import pandas as pd
 from typing import List, Dict, Tuple
 
+from utilities import logger
 from writers.fastq_file_writer import FastqFileWriter
 from chromosome_processor import ChromosomeProcessor
 from mutation_model import load_mutation_model_from_file
@@ -43,6 +44,8 @@ MIN_WINDOW_SIZE = 100
 
 class GenomeSimulator:
     def __init__(self, args):
+        self.logger = logger.Logger((args.max_threads is not None and args.max_threads > 1))
+
         self._extract_args(args)
         self._params_sanity_check()
 
@@ -82,7 +85,7 @@ class GenomeSimulator:
                         required=True)
         if (self._sequencing_fragment_size is None and self._sequencing_fragment_std is not None) \
                 or (self._sequencing_fragment_size is not None and self._sequencing_fragment_std is None):
-            print('\nERROR: --pe argument takes 2 space-separated arguments.\n')
+            self.logger.message('\nERROR: --pe argument takes 2 space-separated arguments.\n')
             sys.exit(1)
         if self._rng_seed == -1:
             self._rng_seed = random.randint(1, 99999999)
@@ -100,7 +103,7 @@ class GenomeSimulator:
             self._mutation_scalar = None
 
     def _index_reference(self):
-        print('Indexing reference started:', self._input_reference)
+        self.logger.message(f'Indexing reference started: {self._input_reference}')
         start = time.time()
         # index reference: [(0: chromosome name, 1: byte index where the contig seq begins,
         #                    2: byte index where the next contig begins, 3: contig seq length),
@@ -112,7 +115,7 @@ class GenomeSimulator:
         self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index}
         self._output_line_width = line_width
         end = time.time()
-        print('Indexing reference took {} seconds.'.format(int(end - start)))
+        self.logger.message('Indexing reference took {} seconds.'.format(int(end - start)))
 
     def simulate(self) -> set:
         inserted_mutations = {}
@@ -145,8 +148,8 @@ class GenomeSimulator:
                                                    mut_model=self._mutation_model, mut_scalar=self._mutation_scalar,
                                                    dist=self._relative_distance, debug=self._debug)
 
-        print('--------------------------------')
-        print('Simulating chromosome {} of sequence started...'.format(chrom))
+        self.logger.message('--------------------------------')
+        self.logger.message('Simulating chromosome {} of sequence started...'.format(chrom))
         t_start = time.time()
         inserted_mutations = []
         total_snps_count = 0
@@ -159,7 +162,7 @@ class GenomeSimulator:
                 inserted_mutations.extend(window_mutations)
                 total_snps_count += snps_count
                 total_indels_count += indels_count
-        print(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
+        self.logger.message(f'Simulating chromosome {chrom} took {int(time.time() - t_start)} seconds.')
 
         return chromosome_processor, inserted_mutations, total_snps_count, total_indels_count
 
@@ -179,7 +182,7 @@ class GenomeSimulator:
     def _simulate_window(self, chromosome_processor: ChromosomeProcessor, start: int, end: int) ->\
             (List[Tuple], int, int):
         if self._debug:
-            print(f"New simulation window: start={start}, end={end}")
+            self.logger.message(f"New simulation window: start={start}, end={end}")
         chromosome_processor.next_window(start=start, end=end)
         return chromosome_processor.generate_random_mutations()
 
@@ -203,16 +206,16 @@ class GenomeSimulator:
         overall_snps = 0
         overall_indels = 0
         for chrom_name, counts in snps_indels_counts.items():
-            print(f'Chromosome {chrom_name}: {counts[0]} SNPs and {counts[1]} Indels were inserted')
+            self.logger.message(f'Chromosome {chrom_name}: {counts[0]} SNPs and {counts[1]} Indels were inserted')
             overall_snps += counts[0]
             overall_indels += counts[1]
-        print(f'Overall {overall_snps} SNPs and {overall_indels} were inserted for this genome.')
+        self.logger.message(f'Overall {overall_snps} SNPs and {overall_indels} were inserted for this genome.')
 
     def _write_vcf(self, inserted_mutations: Dict[str, List[Tuple]]):
         vcf_header = [self._input_reference]
         vcf_file_writer = VcfFileWriter(self._output_prefix, self._parent_prefix,
                                         self._output_accession, vcf_header)
-        print('Writing output VCF started...')
+        self.logger.message('Writing output VCF started...')
         start = time.time()
         for chrom in inserted_mutations.keys():
             for mutation in inserted_mutations[chrom]:
@@ -224,5 +227,5 @@ class GenomeSimulator:
                                              my_quality, my_filter, 'WP=1')
 
         end = time.time()
-        print('Done. Writing output VCF took {} seconds.'.format(int(end - start)))
+        self.logger.message('Done. Writing output VCF took {} seconds.'.format(int(end - start)))
         vcf_file_writer.close_file(add_parent_variants=True)

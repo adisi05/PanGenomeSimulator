@@ -11,6 +11,7 @@ import os
 
 from genome_simulator import GenomeSimulator, ANNOTATIONS_FILE_FORMAT
 from utilities.genome_annotations import get_all_genes
+from utilities.logger import log_message
 from writers.fasta_file_writer import FastaFileWriter
 from writers.fastq_file_writer import FastqFileWriter
 from writers.vcf_file_writer import VcfFileWriter
@@ -20,7 +21,7 @@ PRESENCE_ABSENCE_MATRIX = '{}_gene_presence_absence_matrix.csv'
 
 def main(raw_args=None):
     args = parse_args(raw_args)
-    print("Got the next args from the user:", args)
+    print(f"Got the next args from the user: {args}")
     load_default_args(args)
     all_genes = get_all_genes(args.Mb)
 
@@ -43,7 +44,7 @@ def main(raw_args=None):
         if not node.name:
             internal_count += 1
             node.name = f"internal_{internal_count}"
-    print("Using the next phylogenetic tree:\n", t.get_ascii(show_internal=True))
+    print(f"Using the next phylogenetic tree:\n{t.get_ascii(show_internal=True)}")
     clear_previous_tree_output(args.o, t)
     args.total_dist = tree_total_dist(t)
 
@@ -128,7 +129,7 @@ def tree_total_dist(t):
     total_dist = 0
     for node in t.traverse("preorder"):
         total_dist += node.dist
-    print("Total branches distance =", total_dist)
+    print(f"Total branches distance = {total_dist}")
     return total_dist
 
 
@@ -183,19 +184,18 @@ def generate_concurrently(ncpu, task_list) -> Dict[str, set]:
 
 def process_handler(params_with_cond) -> (str, set):
     simulation_params, cond = params_with_cond
-    curr_proc = multiprocessing.current_process()
-    print('MULTIPROCESS LOG - current process:', curr_proc.name, curr_proc._identity)
+    log_message('started a new thread', is_concurrent=True)
     # When ancestor is ready - then start simulating
     ancestor_path = simulation_params.r
     while not os.path.exists(ancestor_path):
-        print("MULTIPROCESS LOG: ", curr_proc.name, 'checking if ancestor exists')
+        log_message('checking if ancestor exists', is_concurrent=True)
         with cond:
             cond.wait()
-            print("MULTIPROCESS LOG: ", curr_proc.name, 'checking again if ancestor exists')
-    print("MULTIPROCESS LOG: ", curr_proc, ", ancestor_path=", ancestor_path, "is ready")
+            log_message('checking again if ancestor exists', is_concurrent=True)
+    log_message(f'ancestor path ({ancestor_path}) is ready', is_concurrent=True)
     accession_genes = generate_for_node(simulation_params)
     with cond:
-        print("MULTIPROCESS LOG: ", curr_proc, " has finished simulation for ", simulation_params.name)
+        log_message(f'thread has finished simulation for {simulation_params.name}', is_concurrent=True)
         cond.notify_all()
 
     return simulation_params.name, accession_genes
@@ -211,17 +211,19 @@ def generate_sequentially(task_list) -> Dict[str, set]:
 
 
 def generate_for_node(args) -> set:
-    print('\n')
-    print('==================================================')
-    print("\tGenerating sequence for taxon (node):", args.name)
-    print('==================================================')
-    print('Branch length is {:.3f} of the overall tree branches length'.format(args.dist))
+    is_concurrent = args.max_threads is not None and args.max_threads > 1
+    log_message('\n', is_concurrent)
+    log_message('==================================================', is_concurrent)
+    log_message(f"\tGenerating sequence for taxon (node):{args.name}", is_concurrent)
+    log_message('==================================================', is_concurrent)
+    log_message('Branch length is {:.3f} of the overall tree branches length'.format(args.dist), is_concurrent)
 
     start = time.time()
     genome_simulator = GenomeSimulator(args)
     accession_genes = genome_simulator.simulate()
     end = time.time()
-    print("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)))
+    log_message("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)),
+                is_concurrent)
     return accession_genes
 
 
