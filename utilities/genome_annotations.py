@@ -11,6 +11,7 @@ import pandas as pd
 import pybedtools
 
 from common_data_structues import Strand, Region
+from utilities.logger import Logger
 
 DEFAULT_INPUT_FILE = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3'
 DEFAULT_OUTPUT_FILE = 'all_chroms_annotations.csv'
@@ -491,14 +492,15 @@ if __name__ == "__main__":
     main()
 
 
-def read_annotations_csv(file_path: str):
+def read_annotations_csv(file_path: str, logger: Logger = None):
+    logger = logger if logger else Logger()
     annotations_df = None
     if file_path:
-        print('Loading csv...')
+        logger.message('Loading csv...')
         try:
             _, extension = os.path.splitext(file_path)
             if extension != '.csv':
-                print(f'Annotations file must be a csv file. Got extension: {extension}')
+                logger.message(f'Annotations file must be a csv file. Got extension: {extension}')
                 raise Exception
             if exists(file_path):
                 annotations_df = pd.read_csv(file_path, index_col=0)
@@ -507,10 +509,10 @@ def read_annotations_csv(file_path: str):
                 annotations_df[['start', 'end', 'gene_id']] = \
                     annotations_df[['start', 'end', 'gene_id']].astype(int)
             else:
-                print(f'Annotations file does not exist. File path = {file_path}')
+                logger.message(f'Annotations file does not exist. File path = {file_path}')
                 raise Exception
         except Exception:
-            print('Problem parsing annotations file')
+            logger.message('Problem parsing annotations file')
     return annotations_df
 
 

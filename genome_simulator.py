@@ -51,7 +51,7 @@ class GenomeSimulator:
         self._output_prefix_name = pathlib.Path(self._output_prefix).name
 
         # Load annotations dataframe
-        self._annotations_df = read_annotations_csv(self._annotations_file)
+        self._annotations_df = read_annotations_csv(self._annotations_file, logger=self._logger)
         self._load_mutation_model_data(args)
 
         self._index_reference()
@@ -80,7 +80,7 @@ class GenomeSimulator:
     def _params_sanity_check(self):
         # Check that files are real, if provided
         check_file_open(self._input_reference, f'ERROR: could not open reference, {self._input_reference}',
-                        required=True)
+                        required=True, logger=self._logger)
         if (self._sequencing_fragment_size is None and self._sequencing_fragment_std is not None) \
                 or (self._sequencing_fragment_size is not None and self._sequencing_fragment_std is None):
             self._logger.message('\nERROR: --pe argument takes 2 space-separated arguments.\n')
@@ -88,10 +88,12 @@ class GenomeSimulator:
         if self._rng_seed == -1:
             self._rng_seed = random.randint(1, 99999999)
         random.seed(self._rng_seed)
-        is_in_range(self._sequencing_read_len, 10, 1000000, 'Error: -R must be between 10 and 1,000,000')
-        is_in_range(self._sequencing_coverage, 0, 1000000, 'Error: -c must be between 0 and 1,000,000')
+        is_in_range(self._sequencing_read_len, 10, 1000000, 'Error: -R must be between 10 and 1,000,000',
+                    logger=self._logger)
+        is_in_range(self._sequencing_coverage, 0, 1000000, 'Error: -c must be between 0 and 1,000,000',
+                    logger=self._logger)
         check_file_open(self._annotations_file, f'ERROR: could not open annotations file, {self._annotations_file}',
-                        required=False)
+                        required=False, logger=self._logger)
 
     def _load_mutation_model_data(self, args):
         self._mutation_model = str(args.m)
@@ -107,7 +109,7 @@ class GenomeSimulator:
         #                    2: byte index where the next contig begins, 3: contig seq length),
         #                    (repeat for every chrom)]
         # TODO check to see if this might work better as a dataframe or biopython object
-        ref_index, line_width = index_ref(self._input_reference)
+        ref_index, line_width = index_ref(self._input_reference, logger=self._logger)
         # TODO check if this index can work, maybe it's faster
         # ref_index2 = SeqIO.index(reference, 'fasta')
         self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index}
@@ -140,7 +142,7 @@ class GenomeSimulator:
     def _simulate_chrom(self, chrom) -> (ChromosomeProcessor, List[Tuple], int, int):
         # read in reference sequence and notate blocks of Ns
         chrom_sequence, n_regions = read_ref(self._input_reference, self._indices_by_ref_name[chrom],
-                                             self._sequencing_n_handling)
+                                             self._sequencing_n_handling, logger=self._logger)
 
         chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
                                                    mut_model=self._mutation_model, mut_scalar=self._mutation_scalar,
@@ -188,9 +190,12 @@ class GenomeSimulator:
 
         # FASTQ
         if not self._output_no_fastq:
+            start = time.time()
             FastqFileWriter.generate_reads([fasta_file_name], self._sequencing_paired_end,
                                            self._sequencing_read_len, self._sequencing_coverage,
                                            self._sequencing_fragment_size, self._sequencing_fragment_std)
+            end = time.time()
+            self._logger.message("ART reads simulation took {} seconds.".format(int(end - start)))
 
         # VCF
         if self._output_vcf:

@@ -1,40 +1,42 @@
 import sys
 import time
-import os
 import gzip
 import pathlib
 import random
 from Bio.Seq import Seq, MutableSeq
 
 from utilities.common_data_structues import VALID_NUCL
+from utilities.logger import Logger
 
 OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
 
 
-def index_ref(reference_path: str) -> [list, int]:
+def index_ref(reference_path: str, logger: Logger = None) -> [list, int]:
     """
     Index reference fasta
+    :param logger:
     :param reference_path: string path to the reference
     :return: reference index in list from
     """
+    logger = logger if logger else Logger()
     tt = time.time()
 
     absolute_reference_location = pathlib.Path(reference_path)
 
     # sanity check
     if not absolute_reference_location.is_file():
-        print("\nProblem reading the reference fasta file.\n")
+        logger.message("\nProblem reading the reference fasta file.\n")
         sys.exit(1)
 
     index_filename = None
 
     # check if the reference file already exists
     if absolute_reference_location.with_suffix('.fai').is_file():
-        print('found index ' + str(absolute_reference_location.with_suffix('.fai')))
+        logger.message('found index ' + str(absolute_reference_location.with_suffix('.fai')))
         index_filename = absolute_reference_location.with_suffix('.fai')
     elif absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai').is_file():
-        print('found index ' +
-              str(absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai')))
+        logger.message('found index ' +
+                       str(absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai')))
         index_filename = absolute_reference_location.with_suffix(absolute_reference_location.suffix + '.fai')
     else:
         pass
@@ -58,7 +60,7 @@ def index_ref(reference_path: str) -> [list, int]:
         fai.close()
         return ref_indices
 
-    print('Index not found, creating one... ')
+    logger.message('Index not found, creating one... ')
     if absolute_reference_location.suffix == ".gz":
         ref_file = gzip.open(absolute_reference_location, 'rt')
     else:
@@ -85,14 +87,16 @@ def index_ref(reference_path: str) -> [list, int]:
             seq_len += len(data) - 1  # -1 is for ignoring the '\n' characters
     ref_file.close()
 
-    print('{0:.3f} (sec)'.format(time.time() - tt))
+    logger.message('{0:.3f} (sec)'.format(time.time() - tt))
     return ref_indices, line_width
 
 
-def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):  # TODO understand how my_dat is computed
+def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False, logger: Logger = None):
+    logger = logger if logger else Logger()
+    # TODO understand how my_dat is computed
     tt = time.time()
     # if not quiet:
-    print('Reading & indexing reference, chromosome:', ref_inds_i[0], '... ')
+    logger.message(f'Reading & indexing reference, chromosome: {ref_inds_i[0]}... ')
 
     absolute_reference_path = pathlib.Path(ref_path)
     if absolute_reference_path.suffix == '.gz':
@@ -147,7 +151,7 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):  #
             n_info['all'].extend(n_region)
             n_info['big'].extend(n_region)
     else:
-        print('\nERROR: UNKNOWN N_HANDLING MODE\n')
+        logger.message('\nERROR: UNKNOWN N_HANDLING MODE\n')
         sys.exit(1)
 
     habitable_regions = []
@@ -167,6 +171,6 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False):  #
     ref_file.close()
 
     # if not quiet:
-    print('Reading reference took {0:.3f} (sec)'.format(time.time() - tt))
+    logger.message('Reading reference took {0:.3f} (sec)'.format(time.time() - tt))
 
     return my_dat, n_info

@@ -22,7 +22,4 @@ class FastqFileWriter:
         for fasta, fastq in zip(fasta_files, fastq_files):
             art_command = "ART/art_bin_MountRainier/art_illumina {} -i {} -l {} -f {} -o {} -m {} -s {}"\
                 .format(paired, fasta, read_length, coverage, fastq, insert_size, insert_std)
-            start = time.time()
             os.system(art_command)
-            end = time.time()
-            print("ART reads simulation took {} seconds.".format(int(end - start)))
