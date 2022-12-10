@@ -17,7 +17,6 @@ from utilities.genome_annotations import read_annotations_csv
 # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
 VCF_DEFAULT_POP_FREQ = 0.00001
 VCF_CHROM_COL = 0
-LOGGER = logger.Logger()
 
 
 class Stats(Enum):
@@ -121,7 +120,7 @@ def main():
     process_trinuc_counts(chrom_sequences_dict, matching_chromosomes, annotations_df, regions_stats)
 
     # Load and process variants in each reference sequence individually, for memory reasons...
-    LOGGER.log('Creating mutational model...')
+    print('Creating mutational model...')
     for chrom_name in matching_chromosomes:
         collect_basic_stats_for_chrom(chrom_sequences_dict, chrom_name, indices_to_indels, matching_variants,
                                       annotations_df, regions_stats)
@@ -158,12 +157,12 @@ def parse_arguments():
 
 def process_reference(ref_filename: str) -> (dict, list):
     # Process reference file
-    LOGGER.log('Processing reference...')
+    print('Processing reference...')
     reference = None
     try:
         reference = SeqIO.to_dict(SeqIO.parse(ref_filename, "fasta"))
     except ValueError:
-        LOGGER.log("Problems parsing reference file. Ensure reference is in proper fasta format")
+        print("Problems parsing reference file. Ensure reference is in proper fasta format")
         exit(1)
     chrom_sequences_dict = {}
     for chrom in reference.keys():
@@ -176,15 +175,15 @@ def process_reference(ref_filename: str) -> (dict, list):
 def process_vcf(chrom_list: list, vcf_filename: str) -> (list, list, pd.DataFrame):
     # Process VCF file. First check if it's been entered as a TSV
     if vcf_filename[-3:] == 'tsv':
-        LOGGER.log("Warning! TSV file must follow VCF specifications.")
+        print("Warning! TSV file must follow VCF specifications.")
     # Pre-parsing to find all the matching chromosomes between ref and vcf
-    LOGGER.log('Processing VCF file...')
+    print('Processing VCF file...')
     variants = []
     try:
         variants = pd.read_csv(vcf_filename, sep='\t', comment='#', index_col=None, header=None)
         variants[VCF_CHROM_COL] = variants[VCF_CHROM_COL].map(str)
     except ValueError:
-        LOGGER.log("VCF must be in standard VCF format with tab-separated columns")
+        print("VCF must be in standard VCF format with tab-separated columns")
     # Narrow chromosomes to those matching the reference
     # This is in part to make sure the names match
     variant_chroms = variants[VCF_CHROM_COL].unique() if not variants.empty else []
@@ -196,7 +195,7 @@ def process_vcf(chrom_list: list, vcf_filename: str) -> (list, list, pd.DataFram
             matching_chromosomes.append(chrom_name)
     # Check to make sure there are some matches
     if not matching_chromosomes:
-        LOGGER.log(
+        print(
             "Found no chromosomes in common between VCF and Fasta. Please fix the chromosome names and try again")
         exit(1)
     # Double check that there are matches
@@ -204,9 +203,9 @@ def process_vcf(chrom_list: list, vcf_filename: str) -> (list, list, pd.DataFram
     try:
         matching_variants = variants[variants[VCF_CHROM_COL].isin(matching_chromosomes)]
     except ValueError:
-        LOGGER.log("Problem matching variants with reference.")
+        print("Problem matching variants with reference.")
     if len(matching_variants) == 0:
-        LOGGER.log("There is no overlap between reference and variant file. This could be a chromosome naming problem")
+        print("There is no overlap between reference and variant file. This could be a chromosome naming problem")
         exit(1)
     # Rename header in dataframe for processing
     matching_variants = matching_variants.rename(columns={0: 'CHROM', 1: 'chr_start', 2: 'ID', 3: 'REF', 4: 'ALT',
@@ -324,7 +323,7 @@ def process_snps(snp_df: pd.DataFrame, chrom_name: str, chrom_sequence: str, reg
                         pop_freq = float(caf_str[5:].split(',')[1])
                 update_vdat_common(chrom_name, snp, pop_freq, regions_stats, region)
             else:
-                LOGGER.log('\nError: ref allele in variant call does not match reference.\n')
+                print('\nError: ref allele in variant call does not match reference.\n')
                 exit(1)
 
 
@@ -364,7 +363,7 @@ def process_common_variants(chrom_sequences_dict: dict, chrom_name: str, regions
             vdat_common_per_chrom[chrom_name] = []
         vdat_common = vdat_common_per_chrom[chrom_name]
         if not len(vdat_common):
-            LOGGER.log(f'Found no variants for chromosome {chrom_name} in region {region_name}.')
+            print(f'Found no variants for chromosome {chrom_name} in region {region_name}.')
             continue
         # identify common mutations
         percentile_var = 95
@@ -435,7 +434,7 @@ def compute_probabilities(regions_stats: RegionsStats):
     total_var_all = regions_stats.get_stat_by_region(Region.ALL, Stats.SNP_COUNT)[0] + \
                     sum(regions_stats.get_stat_by_region(Region.ALL, Stats.INDEL_COUNT).values())
     if total_var_all == 0:
-        LOGGER.log(
+        print(
             '\nError: No valid variants were found, model could not be created. '
             '(Are you using the correct reference?)\n')
         exit(1)
@@ -496,37 +495,37 @@ def compute_probabilities(regions_stats: RegionsStats):
                     curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][(trinuc, trinuc2)] = 0.
                     print_trinuc_warning = True
         if print_trinuc_warning:
-            LOGGER.log(
+            print(
                 'Warning: Some trinucleotides transitions were not encountered in the input dataset, '
                 'probabilities of 0.0 have been assigned to these events.')
 
         #
         # print some stuff
         #
-        LOGGER.log(f'Probabilities for region {region_name}:')
+        print(f'Probabilities for region {region_name}:')
 
         for k in sorted(curr_region_stats[Stats.TRINUC_MUT_PROB.value].keys()):
-            LOGGER.log(f'p({k} mutates) = {curr_region_stats[Stats.TRINUC_MUT_PROB.value][k]}')
+            print(f'p({k} mutates) = {curr_region_stats[Stats.TRINUC_MUT_PROB.value][k]}')
 
         for k in sorted(curr_region_stats[Stats.TRINUC_TRANS_PROBS.value].keys()):
-            LOGGER.log(
+            print(
                 f'p({k[0]} --> {k[1]} | {k[0]} mutates) = {curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][k]}')
 
         for k in sorted(curr_region_stats[Stats.INDEL_FREQ.value].keys()):
             if k > 0:
-                LOGGER.log(
+                print(
                     f'p(ins length = {str(abs(k))} | indel occurs) = {curr_region_stats[Stats.INDEL_FREQ.value][k]}')
             else:
-                LOGGER.log(
+                print(
                     f'p(del length = {str(abs(k))} | indel occurs) = {curr_region_stats[Stats.INDEL_FREQ.value][k]}')
 
         for k in sorted(curr_region_stats[Stats.SNP_TRANS_FREQ.value].keys()):
-            LOGGER.log(f'p({k[0]} --> {k[1]} | SNP occurs) = {curr_region_stats[Stats.SNP_TRANS_FREQ.value][k]}')
+            print(f'p({k[0]} --> {k[1]} | SNP occurs) = {curr_region_stats[Stats.SNP_TRANS_FREQ.value][k]}')
 
-        LOGGER.log(f'p(snp) = {curr_region_stats[Stats.SNP_FREQ.value]}')
-        LOGGER.log(f'p(indel) = {curr_region_stats[Stats.AVG_INDEL_FREQ.value]}')
-        LOGGER.log(f'overall average mut rate: {curr_region_stats[Stats.AVG_MUT_RATE.value]}')
-        LOGGER.log(f'total variants processed: {total_var_region}')
+        print(f'p(snp) = {curr_region_stats[Stats.SNP_FREQ.value]}')
+        print(f'p(indel) = {curr_region_stats[Stats.AVG_INDEL_FREQ.value]}')
+        print(f'overall average mut rate: {curr_region_stats[Stats.AVG_MUT_RATE.value]}')
+        print(f'total variants processed: {total_var_region}')
 
 
 def update_trinuc_ref_count(sub_seq, regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
@@ -688,13 +687,13 @@ def parse_mutation_model(model_file: str = None):
 
             trinuc_mut_prob = pickle_dict[pickel_key(region, Stats.TRINUC_MUT_PROB)]
             parse_mutation_model_trinuc_mut_probs(mut_model, region_name, trinuc_mut_prob)
-        LOGGER.log(f'found the next regions in the model: {region_names_found}')
+        print(f'found the next regions in the model: {region_names_found}')
         for region in Region:
             if region.value not in region_names_found:
                 del mut_model[region.value]
 
     else:
-        LOGGER.log('\nError: No mutation model specified\n')
+        print('\nError: No mutation model specified\n')
         sys.exit(1)
     return mut_model
 
