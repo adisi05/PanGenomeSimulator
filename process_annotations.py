@@ -1,20 +1,15 @@
 import argparse
-import os
 import time
 import re
 import numpy as np
-from os.path import exists
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import operator
 import pandas as pd
 import pybedtools
 
-from common_data_structues import Strand, Region
-from utilities.logger import Logger
-
-DEFAULT_INPUT_FILE = '/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3'
-DEFAULT_OUTPUT_FILE = 'all_chroms_annotations.csv'
+from utilities.common_data_structues import Strand, Region
+from utilities.io.genome_annotations_reader import read_annotations_csv
 
 
 def workflow(input_path: str, output_path: str, legend_output_path: str):
@@ -275,24 +270,33 @@ def gene_ids_to_numbers(all_annotations_df: pd.DataFrame) -> (pd.DataFrame, pd.D
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description='Genome annotations to CSV format',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
-    parser.add_argument('--gff', type=str, required=True, metavar='/path/to/annotations.gff',
+    parser.add_argument('--gff', type=str, required=False, metavar='/path/to/annotations.gff',
                         help="Annotations file in one of the next formats: gff, gtf, gff3")
     parser.add_argument('--csv', type=str, required=False, metavar='/path/to/output.csv',
                         help="Path to output csv file")
-    parser.add_argument('--test', required=False, default=False, help="Output overlapping genes",
-                        action='store_true')
+    parser.add_argument('--test-sanity', required=False, metavar='/path/to/output.csv',
+                        default=False, help="Sanity test on output")
+    parser.add_argument('--test-overlap', required=False, metavar='/path/to/annotations.gff',
+                        default=None, help="Output overlapping genes if exist")
     args = parser.parse_args(raw_args)
 
-    input_file = args.gff if args.gff else DEFAULT_INPUT_FILE
-    output_file = args.csv if args.csv else DEFAULT_OUTPUT_FILE
-    output_file = output_file if output_file.lower().endswith('.csv') else DEFAULT_OUTPUT_FILE
-    legend_file = re.split('.csv', output_file, flags=re.IGNORECASE)[0] + '_legend.csv'
-    test_mode = args.test
+    if args.test_sanity:
+        test_sanity(args.test_sanity)
 
-    if not test_mode:
-        workflow(input_file, output_file, legend_file)
+    elif args.test_overlap:
+        test_overlapping_genes(args.test_overlap)
+
     else:
-        test_overlapping_genes(input_file)
+        input_file = args.gff
+        output_file = args.csv
+        if not input_file:
+            print('Error: Please provide an annotations file in one of the next formats: gff, gtf, gff3.')
+            exit(1)
+        if not output_file or not output_file.lower().endswith('.csv'):
+            print('Error: Please provide a path to an output csv file.')
+            exit(1)
+        legend_file = re.split('.csv', output_file, flags=re.IGNORECASE)[0] + '_legend.csv'
+        workflow(input_file, output_file, legend_file)
 
 
 def assign_frame_to_cds(annotations_df: pd.DataFrame) -> pd.DataFrame:
@@ -406,25 +410,17 @@ def sanity_check_cds_frames_for_strand(annotations_df: pd.DataFrame, strand: Str
     print(f"Out of {count} CDS elements, {invalid_count} have invalid frames")
 
 
-def external_sanity_check(raw_args=None):
-    parser = argparse.ArgumentParser(description='Genome annotations sanity check',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
-    parser.add_argument('-csv', type=str, required=False, metavar='/path/to/output.csv',
-                        help="Path to output csv file")
-    args = parser.parse_args(raw_args)
-
-    output_file = args.csv if args.csv else DEFAULT_OUTPUT_FILE
+def test_sanity(output_file: str):
     annotations_df = read_annotations_csv(output_file)
-
     sanity_check(annotations_df)
 
 
-############
-### Test ###
-############
+##############################
+### Overlapping Genes Test ###
+##############################
 
 
-def test_overlapping_genes(in_file: str = DEFAULT_INPUT_FILE):
+def test_overlapping_genes(in_file: str):
     if in_file is not None:
         try:
             bed_format = in_file.lower().endswith('.bed')
@@ -490,46 +486,3 @@ def test_overlapping_genes(in_file: str = DEFAULT_INPUT_FILE):
 
 if __name__ == "__main__":
     main()
-
-
-def read_annotations_csv(file_path: str, logger: Logger = None):
-    logger = logger if logger else Logger()
-    annotations_df = None
-    if file_path:
-        logger.message('Loading annotations CSV file...')
-        try:
-            _, extension = os.path.splitext(file_path)
-            if extension != '.csv':
-                logger.message(f'Annotations file must be a csv file. Got extension: {extension}')
-                raise Exception
-            if exists(file_path):
-                annotations_df = pd.read_csv(file_path, index_col=0)
-                annotations_df[['chrom', 'region', 'strand']] = \
-                    annotations_df[['chrom', 'region', 'strand']].astype(str)
-                annotations_df[['start', 'end', 'gene_id']] = \
-                    annotations_df[['start', 'end', 'gene_id']].astype(int)
-            else:
-                logger.message(f'Annotations file does not exist. File path = {file_path}')
-                raise Exception
-        except Exception:
-            logger.message('Problem parsing annotations file')
-    return annotations_df
-
-
-def get_all_genes(file_path: str) -> Dict[str, Tuple[str, int, int]]:
-    relevant_genes = {}
-    annotations_df = read_annotations_csv(file_path)
-    if annotations_df is None or annotations_df.empty:
-        return relevant_genes
-    for gene_id in annotations_df.gene_id.unique():
-        if gene_id == 0:
-            continue
-        gene_annotations = annotations_df[annotations_df['gene_id'] == gene_id]
-        chrom = gene_annotations.iloc[0]['chrom']
-        start = gene_annotations.iloc[0]['start']
-        end = gene_annotations.iloc[-1]['end']
-        relevant_genes[gene_id] = (chrom, start, end)
-    return relevant_genes
-
-# if __name__ == "__main__":
-#     external_sanity_check()

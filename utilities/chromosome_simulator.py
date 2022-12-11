@@ -12,7 +12,7 @@ from mutation_model import MODEL_AVG_MUT_RATE, MODEL_P_INDEL, MODEL_P_INSERTION,
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.common_data_structues import Region, MutType, Strand, STOP_CODONS_FORWARD_STRAND, \
     STOP_CODONS_REVERSE_STRAND, VALID_NUCL, TRI_IND, NUC_IND, ALL_IND, Mutation
-from utilities.logger import Logger
+from utilities.io.logger import Logger
 from utilities.probability import DiscreteDistribution, poisson_list
 from utilities.random_mutations_pool import RandomMutationsPool
 from utilities.simulation_window import SimulationWindow
@@ -27,7 +27,7 @@ MAX_MUTFRAC = 0.3
 IGNORE_TRINUC = False
 
 
-class ChromosomeProcessor:
+class ChromosomeSimulator:
     """
     Container for reference sequences, applies mutations
     """
@@ -353,7 +353,7 @@ class ChromosomeProcessor:
             start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
             # assuming sequence has been mutated already!
             codon = self.chrom_sequence[start:end + 1]
-            is_stop = is_stop_codon(codon, strand)
+            is_stop = is_stop_codon(codon, strand, self.logger)
             is_last_codon = self._is_last_coding_position(start, end)
             if (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
                 self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
@@ -459,7 +459,8 @@ class ChromosomeProcessor:
         return self.annotated_seq.get_genes()
 
 
-def is_stop_codon(codon: str, strand: Strand, logger: Logger) -> bool:
+def is_stop_codon(codon: str, strand: Strand, logger: Logger = None) -> bool:
+    logger = logger if logger else Logger()
     stop = False
 
     if strand.value == Strand.FORWARD.value:

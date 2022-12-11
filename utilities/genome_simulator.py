@@ -21,15 +21,15 @@ import time
 import pandas as pd
 from typing import List, Dict, Tuple
 
-from utilities import logger
-from writers.fastq_file_writer import FastqFileWriter
-from chromosome_processor import ChromosomeProcessor
+from utilities.io import logger
+from utilities.io.fastq_file_writer import FastqFileWriter
+from utilities.chromosome_simulator import ChromosomeSimulator
 from mutation_model import load_mutation_model_from_file
-from writers.fasta_file_writer import FastaFileWriter
+from utilities.io.fasta_file_writer import FastaFileWriter
 from utilities.input_checking import check_file_open, is_in_range
 from utilities.ref_func import index_ref, read_ref
-from writers.vcf_file_writer import VcfFileWriter
-from utilities.genome_annotations import read_annotations_csv
+from utilities.io.vcf_file_writer import VcfFileWriter
+from utilities.io.genome_annotations_reader import read_annotations_csv
 
 ANNOTATIONS_FILE_FORMAT = '{}_annotations.csv'
 
@@ -75,7 +75,7 @@ class GenomeSimulator:
             or args.pe_model
         self._sequencing_n_handling = {'method': 'random', 'max_threshold': self._sequencing_fragment_size} \
             if self._sequencing_paired_end else {'method': 'ignore', 'max_threshold': None}
-        self._window_size = args.ws if args.ws > MIN_WINDOW_SIZE else DEFAULT_WINDOW_SIZE
+        self._window_size = args.w if args.w > MIN_WINDOW_SIZE else DEFAULT_WINDOW_SIZE
 
     def _params_sanity_check(self):
         # Check that files are real, if provided
@@ -139,12 +139,12 @@ class GenomeSimulator:
                                      new_annotations_df)
         return accession_genes
 
-    def _simulate_chrom(self, chrom) -> (ChromosomeProcessor, List[Tuple], int, int):
+    def _simulate_chrom(self, chrom) -> (ChromosomeSimulator, List[Tuple], int, int):
         # read in reference sequence and notate blocks of Ns
         chrom_sequence, n_regions = read_ref(self._input_reference, self._indices_by_ref_name[chrom],
                                              self._sequencing_n_handling, logger=self._logger)
 
-        chromosome_processor = ChromosomeProcessor(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
+        chromosome_processor = ChromosomeSimulator(chrom, chrom_sequence, self._annotations_df, annotations_sorted=True,
                                                    mut_model=self._mutation_model, mut_scalar=self._mutation_scalar,
                                                    dist=self._relative_distance, logger=self._logger)
 
@@ -179,7 +179,7 @@ class GenomeSimulator:
             remained_length = next_end - next_start
         return windows_list
 
-    def _simulate_window(self, chromosome_processor: ChromosomeProcessor, start: int, end: int) ->\
+    def _simulate_window(self, chromosome_processor: ChromosomeSimulator, start: int, end: int) ->\
             (List[Tuple], int, int):
         self._logger.debug_message(f"New simulation window: start={start}, end={end}")
         chromosome_processor.next_window(start=start, end=end)

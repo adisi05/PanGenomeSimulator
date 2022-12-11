@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 from Bio import SeqIO
 
-from utilities import DiscreteDistribution, logger
+from utilities import DiscreteDistribution
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.common_data_structues import Region, VALID_TRINUC, TRI_IND, NUC_IND, ALL_TRI, ALL_IND, VALID_NUCL
-from utilities.genome_annotations import read_annotations_csv
+from utilities.io.genome_annotations_reader import read_annotations_csv
 
 # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
 VCF_DEFAULT_POP_FREQ = 0.00001

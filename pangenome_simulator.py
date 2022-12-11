@@ -9,12 +9,12 @@ import ete3
 import time
 import os
 
-from genome_simulator import GenomeSimulator, ANNOTATIONS_FILE_FORMAT
-from utilities.genome_annotations import get_all_genes
-from utilities.logger import log_message
-from writers.fasta_file_writer import FastaFileWriter
-from writers.fastq_file_writer import FastqFileWriter
-from writers.vcf_file_writer import VcfFileWriter
+from utilities.genome_simulator import GenomeSimulator, ANNOTATIONS_FILE_FORMAT
+from utilities.io.genome_annotations_reader import get_all_genes
+from utilities.io.logger import log_message
+from utilities.io.fasta_file_writer import FastaFileWriter
+from utilities.io.fastq_file_writer import FastqFileWriter
+from utilities.io.vcf_file_writer import VcfFileWriter
 
 PRESENCE_ABSENCE_MATRIX = '{}_gene_presence_absence_matrix.csv'
 

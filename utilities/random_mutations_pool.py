@@ -1,6 +1,6 @@
 import random
 from utilities.common_data_structues import MutType, Region
-from utilities.logger import Logger
+from utilities.io.logger import Logger
 
 
 class RandomMutationsPool:

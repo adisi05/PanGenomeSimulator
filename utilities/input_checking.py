@@ -6,7 +6,7 @@ and issues an error if there is something wrong.
 import pathlib
 import sys
 
-from utilities.logger import Logger
+from utilities.io.logger import Logger
 
 
 def check_file_open(filename: str, err_string: str, required: bool = False, logger: Logger = None) -> None:

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from common_data_structues import Region, Strand
-from utilities.logger import Logger
+from utilities.io.logger import Logger
 
 
 class AnnotatedSequence:

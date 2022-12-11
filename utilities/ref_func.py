@@ -6,7 +6,7 @@ import random
 from Bio.Seq import Seq, MutableSeq
 
 from utilities.common_data_structues import VALID_NUCL
-from utilities.logger import Logger
+from utilities.io.logger import Logger
 
 OK_CHR_ORD = {'A': True, 'C': True, 'G': True, 'T': True, 'U': True}
 

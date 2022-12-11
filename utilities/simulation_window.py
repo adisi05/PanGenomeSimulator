@@ -1,4 +1,4 @@
-from utilities.logger import Logger
+from utilities.io.logger import Logger
 
 
 class SimulationWindow:
