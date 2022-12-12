@@ -49,3 +49,32 @@ class Strand(Enum):
     FORWARD = '+'
     REVERSE = '-'
     UNKNOWN = '.'
+
+
+class ModelStats(Enum):
+    # how many times do we observe each trinucleotide in the reference (or genomic region)?
+    TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
+    # [(trinuc_ref, trinuc_alt)] = # of times we observed a mutation from trinuc_ref into trinuc_alt
+    TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
+    # total count of SNPs
+    SNP_COUNT = 'SNP_COUNT'
+    # overall SNP transition probabilities
+    SNP_TRANSITION_COUNT = 'SNP_TRANSITION_COUNT'
+    # total count of indels, indexed by length
+    INDEL_COUNT = 'INDEL_COUNT'
+    # tabulate how much non-N reference sequence we've eaten through
+    TOTAL_REFLEN = 'TOTAL_REFLEN'
+    # the number of SNPs divided to the overall number of mutations
+    SNP_FREQ = 'SNP_FREQ'
+    # the number of indels divided to the overall number of mutations (1 - SNP_FREQ)
+    AVG_INDEL_FREQ = 'AVG_INDEL_FREQ'
+    # number of a specific indel divided to the number of the overall indels
+    INDEL_FREQ = 'INDEL_FREQ'
+    # the number of mutations divided to the overall length
+    AVG_MUT_RATE = 'AVG_MUT_RATE'
+    # frequency of snp transitions, given a snp occurs.
+    SNP_TRANS_FREQ = 'SNP_TRANS_FREQ'
+    # frequency that each trinuc mutated into anything else
+    TRINUC_MUT_PROB = 'TRINUC_MUT_PROB'
+    # frequency that a trinuc mutates into another trinuc, given that it mutated
+    TRINUC_TRANS_PROBS = 'TRINUC_TRANS_PROBS'

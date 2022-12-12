@@ -1,51 +1,16 @@
 import argparse
 import pickle
-import re
-import sys
-from enum import Enum
-from typing import Union
 
-import numpy as np
 import pandas as pd
 from Bio import SeqIO
 
-from utilities import DiscreteDistribution
 from utilities.annotated_sequence import AnnotatedSequence
-from utilities.common_data_structues import Region, VALID_TRINUC, TRI_IND, NUC_IND, ALL_TRI, ALL_IND, VALID_NUCL
+from utilities.common_data_structues import Region, VALID_TRINUC, VALID_NUCL, ModelStats
 from utilities.io.genome_annotations_reader import read_annotations_csv
 
 # if parsing a dbsnp vcf, and no CAF= is found in info tag, use this as default val for population freq
 VCF_DEFAULT_POP_FREQ = 0.00001
 VCF_CHROM_COL = 0
-
-
-class Stats(Enum):
-    # how many times do we observe each trinucleotide in the reference (or genomic region)?
-    TRINUC_REF_COUNT = 'TRINUC_REF_COUNT'
-    # [(trinuc_ref, trinuc_alt)] = # of times we observed a mutation from trinuc_ref into trinuc_alt
-    TRINUC_TRANSITION_COUNT = 'TRINUC_TRANSITION_COUNT'
-    # total count of SNPs
-    SNP_COUNT = 'SNP_COUNT'
-    # overall SNP transition probabilities
-    SNP_TRANSITION_COUNT = 'SNP_TRANSITION_COUNT'
-    # total count of indels, indexed by length
-    INDEL_COUNT = 'INDEL_COUNT'
-    # tabulate how much non-N reference sequence we've eaten through
-    TOTAL_REFLEN = 'TOTAL_REFLEN'
-    # the number of SNPs divided to the overall number of mutations
-    SNP_FREQ = 'SNP_FREQ'
-    # the number of indels divided to the overall number of mutations (1 - SNP_FREQ)
-    AVG_INDEL_FREQ = 'AVG_INDEL_FREQ'
-    # number of a specific indel divided to the number of the overall indels
-    INDEL_FREQ = 'INDEL_FREQ'
-    # the number of mutations divided to the overall length
-    AVG_MUT_RATE = 'AVG_MUT_RATE'
-    # frequency of snp transitions, given a snp occurs.
-    SNP_TRANS_FREQ = 'SNP_TRANS_FREQ'
-    # frequency that each trinuc mutated into anything else
-    TRINUC_MUT_PROB = 'TRINUC_MUT_PROB'
-    # frequency that a trinuc mutates into another trinuc, given that it mutated
-    TRINUC_TRANS_PROBS = 'TRINUC_TRANS_PROBS'
 
 
 class RegionsStats:
@@ -65,10 +30,10 @@ class RegionsStats:
         region, _ = self._annotated_sequence_per_chrom[chrom].get_region_by_position(pos)
         return region
 
-    def get_stat_by_region(self, region: Region, stat: Stats):
+    def get_stat_by_region(self, region: Region, stat: ModelStats):
         return self._regions_stats[region.value][stat.value]
 
-    def get_stat_by_location(self, chrom: str, pos: int, stat: Stats):
+    def get_stat_by_location(self, chrom: str, pos: int, stat: ModelStats):
         region = self.get_region_by_chrom_and_pos(chrom, pos)
         return self.get_stat_by_region(region, stat)
 
@@ -78,15 +43,15 @@ class RegionsStats:
     @staticmethod
     def create_stats_dict():
         return {
-            Stats.TRINUC_REF_COUNT.value: {},
-            Stats.TRINUC_TRANSITION_COUNT.value: {},
-            Stats.SNP_COUNT.value: [0],
-            Stats.SNP_TRANSITION_COUNT.value: {},
-            Stats.INDEL_COUNT.value: {},
-            Stats.TOTAL_REFLEN.value: [0],
-            Stats.TRINUC_MUT_PROB.value: {},
-            Stats.TRINUC_TRANS_PROBS.value: {},
-            Stats.SNP_TRANS_FREQ.value: {}
+            ModelStats.TRINUC_REF_COUNT.value: {},
+            ModelStats.TRINUC_TRANSITION_COUNT.value: {},
+            ModelStats.SNP_COUNT.value: [0],
+            ModelStats.SNP_TRANSITION_COUNT.value: {},
+            ModelStats.INDEL_COUNT.value: {},
+            ModelStats.TOTAL_REFLEN.value: [0],
+            ModelStats.TRINUC_MUT_PROB.value: {},
+            ModelStats.TRINUC_TRANS_PROBS.value: {},
+            ModelStats.SNP_TRANS_FREQ.value: {}
         }
 
 
@@ -130,10 +95,10 @@ def parse_arguments():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
                         help="Reference file for organism in fasta format")
-    parser.add_argument('-m', type=str, required=True, metavar='/path/to/mutations.vcf',
+    parser.add_argument('-m', type=str, required=True, metavar='/path/to/variants.vcf',
                         help="Mutation file for organism in VCF format")
-    parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/and/prefix',
-                        help="Name of output file (final model will append \'.p\')")
+    parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/model.p',
+                        help="Path of output model")
     parser.add_argument('-a', type=str, required=False, metavar='/path/to/annotations.csv',
                         help='Annotations CSV file of regions to consider', default=None)
     args = parser.parse_args()
@@ -302,8 +267,8 @@ def process_indels(indel_df: pd.DataFrame, chrom_name: str, regions_stats: Regio
 
 def compute_probabilities(regions_stats: RegionsStats):
     # if for some reason we didn't find any valid input variants AT ALL, exit gracefully...
-    total_var_all = regions_stats.get_stat_by_region(Region.ALL, Stats.SNP_COUNT)[0] + \
-                    sum(regions_stats.get_stat_by_region(Region.ALL, Stats.INDEL_COUNT).values())
+    total_var_all = regions_stats.get_stat_by_region(Region.ALL, ModelStats.SNP_COUNT)[0] + \
+                    sum(regions_stats.get_stat_by_region(Region.ALL, ModelStats.INDEL_COUNT).values())
     if total_var_all == 0:
         print(
             '\nError: No valid variants were found, model could not be created. '
@@ -311,59 +276,60 @@ def compute_probabilities(regions_stats: RegionsStats):
         exit(1)
 
     for region_name, curr_region_stats in regions_stats.get_all_stats().items():
-        for trinuc in sorted(curr_region_stats[Stats.TRINUC_REF_COUNT.value].keys()):
+        for trinuc in sorted(curr_region_stats[ModelStats.TRINUC_REF_COUNT.value].keys()):
             count = 0
 
             # TRINUC_MUT_PROB
-            for k in sorted(curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value].keys()):
+            for k in sorted(curr_region_stats[ModelStats.TRINUC_TRANSITION_COUNT.value].keys()):
                 if k[0] == trinuc:
-                    count += curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value][k]
-            curr_region_stats[Stats.TRINUC_MUT_PROB.value][trinuc] = \
-                count / float(curr_region_stats[Stats.TRINUC_REF_COUNT.value][trinuc])
+                    count += curr_region_stats[ModelStats.TRINUC_TRANSITION_COUNT.value][k]
+            curr_region_stats[ModelStats.TRINUC_MUT_PROB.value][trinuc] = \
+                count / float(curr_region_stats[ModelStats.TRINUC_REF_COUNT.value][trinuc])
 
             # TRINUC_TRANS_PROBS
-            for k in sorted(curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value].keys()):
+            for k in sorted(curr_region_stats[ModelStats.TRINUC_TRANSITION_COUNT.value].keys()):
                 if k[0] == trinuc:
-                    curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][k] = \
-                        curr_region_stats[Stats.TRINUC_TRANSITION_COUNT.value][k] / float(count)
+                    curr_region_stats[ModelStats.TRINUC_TRANS_PROBS.value][k] = \
+                        curr_region_stats[ModelStats.TRINUC_TRANSITION_COUNT.value][k] / float(count)
 
         # SNP_TRANS_FREQ
         for n1 in VALID_NUCL:
-            rolling_tot = sum([curr_region_stats[Stats.SNP_TRANSITION_COUNT.value][(n1, n2)]
+            rolling_tot = sum([curr_region_stats[ModelStats.SNP_TRANSITION_COUNT.value][(n1, n2)]
                                for n2 in VALID_NUCL if (n1, n2)
-                               in curr_region_stats[Stats.SNP_TRANSITION_COUNT.value]])
+                               in curr_region_stats[ModelStats.SNP_TRANSITION_COUNT.value]])
             for n2 in VALID_NUCL:
                 key2 = (n1, n2)
-                if key2 in curr_region_stats[Stats.SNP_TRANSITION_COUNT.value]:
-                    curr_region_stats[Stats.SNP_TRANS_FREQ.value][key2] = \
-                        curr_region_stats[Stats.SNP_TRANSITION_COUNT.value][key2] / float(rolling_tot)
+                if key2 in curr_region_stats[ModelStats.SNP_TRANSITION_COUNT.value]:
+                    curr_region_stats[ModelStats.SNP_TRANS_FREQ.value][key2] = \
+                        curr_region_stats[ModelStats.SNP_TRANSITION_COUNT.value][key2] / float(rolling_tot)
 
         # compute average snp and indel frequencies
-        total_indels_region = sum(curr_region_stats[Stats.INDEL_COUNT.value].values())
-        total_var_region = curr_region_stats[Stats.SNP_COUNT.value][0] + total_indels_region
+        total_indels_region = sum(curr_region_stats[ModelStats.INDEL_COUNT.value].values())
+        total_var_region = curr_region_stats[ModelStats.SNP_COUNT.value][0] + total_indels_region
         if total_var_region != 0:
-            curr_region_stats[Stats.SNP_FREQ.value] = \
-                curr_region_stats[Stats.SNP_COUNT.value][0] / float(total_var_region)
-            curr_region_stats[Stats.AVG_INDEL_FREQ.value] = 1. - curr_region_stats[Stats.SNP_FREQ.value]
-            curr_region_stats[Stats.INDEL_FREQ.value] = \
-                {k: curr_region_stats[Stats.INDEL_COUNT.value][k] / total_indels_region
-                 for k in curr_region_stats[Stats.INDEL_COUNT.value].keys()}
+            curr_region_stats[ModelStats.SNP_FREQ.value] = \
+                curr_region_stats[ModelStats.SNP_COUNT.value][0] / float(total_var_region)
+            curr_region_stats[ModelStats.AVG_INDEL_FREQ.value] = 1. - curr_region_stats[ModelStats.SNP_FREQ.value]
+            curr_region_stats[ModelStats.INDEL_FREQ.value] = \
+                {k: curr_region_stats[ModelStats.INDEL_COUNT.value][k] / total_indels_region
+                 for k in curr_region_stats[ModelStats.INDEL_COUNT.value].keys()}
         else:
-            curr_region_stats[Stats.SNP_FREQ.value] = 0.
-            curr_region_stats[Stats.AVG_INDEL_FREQ.value] = 1.
-            curr_region_stats[Stats.INDEL_FREQ.value] = {}
-        curr_region_stats[Stats.AVG_MUT_RATE.value] = total_var_region / curr_region_stats[Stats.TOTAL_REFLEN.value][0]
+            curr_region_stats[ModelStats.SNP_FREQ.value] = 0.
+            curr_region_stats[ModelStats.AVG_INDEL_FREQ.value] = 1.
+            curr_region_stats[ModelStats.INDEL_FREQ.value] = {}
+        curr_region_stats[ModelStats.AVG_MUT_RATE.value] = total_var_region / curr_region_stats[
+            ModelStats.TOTAL_REFLEN.value][0]
 
         # if values weren't found in data, appropriately append null entries
         print_trinuc_warning = False
         for trinuc in VALID_TRINUC:
             trinuc_mut = [trinuc[0] + n + trinuc[2] for n in VALID_NUCL if n != trinuc[1]]
-            if trinuc not in curr_region_stats[Stats.TRINUC_MUT_PROB.value]:
-                curr_region_stats[Stats.TRINUC_MUT_PROB.value][trinuc] = 0.
+            if trinuc not in curr_region_stats[ModelStats.TRINUC_MUT_PROB.value]:
+                curr_region_stats[ModelStats.TRINUC_MUT_PROB.value][trinuc] = 0.
                 print_trinuc_warning = True
             for trinuc2 in trinuc_mut:
-                if (trinuc, trinuc2) not in curr_region_stats[Stats.TRINUC_TRANS_PROBS.value]:
-                    curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][(trinuc, trinuc2)] = 0.
+                if (trinuc, trinuc2) not in curr_region_stats[ModelStats.TRINUC_TRANS_PROBS.value]:
+                    curr_region_stats[ModelStats.TRINUC_TRANS_PROBS.value][(trinuc, trinuc2)] = 0.
                     print_trinuc_warning = True
         if print_trinuc_warning:
             print(
@@ -375,27 +341,27 @@ def compute_probabilities(regions_stats: RegionsStats):
         #
         print(f'Probabilities for region {region_name}:')
 
-        for k in sorted(curr_region_stats[Stats.TRINUC_MUT_PROB.value].keys()):
-            print(f'p({k} mutates) = {curr_region_stats[Stats.TRINUC_MUT_PROB.value][k]}')
+        for k in sorted(curr_region_stats[ModelStats.TRINUC_MUT_PROB.value].keys()):
+            print(f'p({k} mutates) = {curr_region_stats[ModelStats.TRINUC_MUT_PROB.value][k]}')
 
-        for k in sorted(curr_region_stats[Stats.TRINUC_TRANS_PROBS.value].keys()):
+        for k in sorted(curr_region_stats[ModelStats.TRINUC_TRANS_PROBS.value].keys()):
             print(
-                f'p({k[0]} --> {k[1]} | {k[0]} mutates) = {curr_region_stats[Stats.TRINUC_TRANS_PROBS.value][k]}')
+                f'p({k[0]} --> {k[1]} | {k[0]} mutates) = {curr_region_stats[ModelStats.TRINUC_TRANS_PROBS.value][k]}')
 
-        for k in sorted(curr_region_stats[Stats.INDEL_FREQ.value].keys()):
+        for k in sorted(curr_region_stats[ModelStats.INDEL_FREQ.value].keys()):
             if k > 0:
                 print(
-                    f'p(ins length = {str(abs(k))} | indel occurs) = {curr_region_stats[Stats.INDEL_FREQ.value][k]}')
+                    f'p(ins length = {str(abs(k))} | indel occurs) = {curr_region_stats[ModelStats.INDEL_FREQ.value][k]}')
             else:
                 print(
-                    f'p(del length = {str(abs(k))} | indel occurs) = {curr_region_stats[Stats.INDEL_FREQ.value][k]}')
+                    f'p(del length = {str(abs(k))} | indel occurs) = {curr_region_stats[ModelStats.INDEL_FREQ.value][k]}')
 
-        for k in sorted(curr_region_stats[Stats.SNP_TRANS_FREQ.value].keys()):
-            print(f'p({k[0]} --> {k[1]} | SNP occurs) = {curr_region_stats[Stats.SNP_TRANS_FREQ.value][k]}')
+        for k in sorted(curr_region_stats[ModelStats.SNP_TRANS_FREQ.value].keys()):
+            print(f'p({k[0]} --> {k[1]} | SNP occurs) = {curr_region_stats[ModelStats.SNP_TRANS_FREQ.value][k]}')
 
-        print(f'p(snp) = {curr_region_stats[Stats.SNP_FREQ.value]}')
-        print(f'p(indel) = {curr_region_stats[Stats.AVG_INDEL_FREQ.value]}')
-        print(f'overall average mut rate: {curr_region_stats[Stats.AVG_MUT_RATE.value]}')
+        print(f'p(snp) = {curr_region_stats[ModelStats.SNP_FREQ.value]}')
+        print(f'p(indel) = {curr_region_stats[ModelStats.AVG_INDEL_FREQ.value]}')
+        print(f'overall average mut rate: {curr_region_stats[ModelStats.AVG_MUT_RATE.value]}')
         print(f'total variants processed: {total_var_region}')
 
 
@@ -403,9 +369,9 @@ def update_trinuc_ref_count(sub_seq, regions_stats, region: Region = Region.ALL,
     regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for trinuc in VALID_TRINUC:
         for current_region in regions_to_update:
-            if trinuc not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT):
-                regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT)[trinuc] = 0
-            regions_stats.get_stat_by_region(current_region, Stats.TRINUC_REF_COUNT)[trinuc] += sub_seq.count_overlap(
+            if trinuc not in regions_stats.get_stat_by_region(current_region, ModelStats.TRINUC_REF_COUNT):
+                regions_stats.get_stat_by_region(current_region, ModelStats.TRINUC_REF_COUNT)[trinuc] = 0
+            regions_stats.get_stat_by_region(current_region, ModelStats.TRINUC_REF_COUNT)[trinuc] += sub_seq.count_overlap(
                 trinuc)
 
 
@@ -422,7 +388,7 @@ def update_total_reflen(chrom_sequences_dict, chrom_name, regions_stats, annotat
 
 
 def update_total_reflen_for_region(total_reflen_region_chrom, regions_stats, region: Region = Region.ALL):
-    total_reflen_region = regions_stats.get_stat_by_region(region, Stats.TOTAL_REFLEN)
+    total_reflen_region = regions_stats.get_stat_by_region(region, ModelStats.TOTAL_REFLEN)
     total_reflen_region[0] += total_reflen_region_chrom
 
 
@@ -431,209 +397,47 @@ def update_trinuc_transition_count(trinuc_ref, trinuc_alt, regions_stats, region
     regions_to_update = {region, Region.ALL} if also_update_all else {region}
     key = (trinuc_ref, trinuc_alt)
     for current_region in regions_to_update:
-        if key not in regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT):
-            regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT)[key] = 0
-        regions_stats.get_stat_by_region(current_region, Stats.TRINUC_TRANSITION_COUNT)[key] += 1
+        if key not in regions_stats.get_stat_by_region(current_region, ModelStats.TRINUC_TRANSITION_COUNT):
+            regions_stats.get_stat_by_region(current_region, ModelStats.TRINUC_TRANSITION_COUNT)[key] = 0
+        regions_stats.get_stat_by_region(current_region, ModelStats.TRINUC_TRANSITION_COUNT)[key] += 1
 
 
 def update_snp_transition_count(ref, alt, regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
     regions_to_update = {region, Region.ALL} if also_update_all else {region}
     key2 = (ref, alt)
     for current_region in regions_to_update:
-        if key2 not in regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT):
-            regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] = 0
-        regions_stats.get_stat_by_region(current_region, Stats.SNP_TRANSITION_COUNT)[key2] += 1
+        if key2 not in regions_stats.get_stat_by_region(current_region, ModelStats.SNP_TRANSITION_COUNT):
+            regions_stats.get_stat_by_region(current_region, ModelStats.SNP_TRANSITION_COUNT)[key2] = 0
+        regions_stats.get_stat_by_region(current_region, ModelStats.SNP_TRANSITION_COUNT)[key2] += 1
 
 
 def update_snp_count(regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
     regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for current_region in regions_to_update:
-        regions_stats.get_stat_by_region(current_region, Stats.SNP_COUNT)[0] += 1
+        regions_stats.get_stat_by_region(current_region, ModelStats.SNP_COUNT)[0] += 1
 
 
 def update_indel_count(indel_len, regions_stats, region: Region = Region.ALL, also_update_all: bool = True):
     regions_to_update = {region, Region.ALL} if also_update_all else {region}
     for current_region in regions_to_update:
-        if indel_len not in regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT):
-            regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] = 0
-        regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] += 1
+        if indel_len not in regions_stats.get_stat_by_region(current_region, ModelStats.INDEL_COUNT):
+            regions_stats.get_stat_by_region(current_region, ModelStats.INDEL_COUNT)[indel_len] = 0
+        regions_stats.get_stat_by_region(current_region, ModelStats.INDEL_COUNT)[indel_len] += 1
 
 
 def save_stats_to_file(out_pickle: str, regions_stats: RegionsStats):
     out_dict = {}
     for region_name, region_stats in regions_stats.get_all_stats().items():
-        out_dict[f'{region_name}.{Stats.TOTAL_REFLEN.value}'] = region_stats[Stats.TOTAL_REFLEN.value][0]
-        out_dict[f'{region_name}.{Stats.AVG_MUT_RATE.value}'] = region_stats[Stats.AVG_MUT_RATE.value]
-        out_dict[f'{region_name}.{Stats.SNP_FREQ.value}'] = region_stats[Stats.SNP_FREQ.value]
-        out_dict[f'{region_name}.{Stats.SNP_TRANS_FREQ.value}'] = region_stats[Stats.SNP_TRANS_FREQ.value]
-        out_dict[f'{region_name}.{Stats.INDEL_FREQ.value}'] = region_stats[Stats.INDEL_FREQ.value]
-        out_dict[f'{region_name}.{Stats.TRINUC_MUT_PROB.value}'] = region_stats[Stats.TRINUC_MUT_PROB.value]
-        out_dict[f'{region_name}.{Stats.TRINUC_TRANS_PROBS.value}'] = region_stats[Stats.TRINUC_TRANS_PROBS.value]
+        out_dict[f'{region_name}.{ModelStats.TOTAL_REFLEN.value}'] = region_stats[ModelStats.TOTAL_REFLEN.value][0]
+        out_dict[f'{region_name}.{ModelStats.AVG_MUT_RATE.value}'] = region_stats[ModelStats.AVG_MUT_RATE.value]
+        out_dict[f'{region_name}.{ModelStats.SNP_FREQ.value}'] = region_stats[ModelStats.SNP_FREQ.value]
+        out_dict[f'{region_name}.{ModelStats.SNP_TRANS_FREQ.value}'] = region_stats[ModelStats.SNP_TRANS_FREQ.value]
+        out_dict[f'{region_name}.{ModelStats.INDEL_FREQ.value}'] = region_stats[ModelStats.INDEL_FREQ.value]
+        out_dict[f'{region_name}.{ModelStats.TRINUC_MUT_PROB.value}'] = region_stats[ModelStats.TRINUC_MUT_PROB.value]
+        out_dict[f'{region_name}.{ModelStats.TRINUC_TRANS_PROBS.value}'] = region_stats[
+            ModelStats.TRINUC_TRANS_PROBS.value]
     pickle.dump(out_dict, open(out_pickle, "wb"))
 
 
 if __name__ == "__main__":
     main()
-
-"""
-MUTATION MODEL KEYS
-"""
-# average mutation rate
-MODEL_AVG_MUT_RATE = 'AVG_MUT_RATE'
-# p(mut is indel | mut occurs)
-MODEL_P_INDEL = 'P_INDEL'
-# p(insertion | indel occurs)
-MODEL_P_INSERTION = 'P_INSERTION'
-# distribution of insertion lengths
-MODEL_INS_LEN_DSTRBTN = 'INS_LEN_DSTRBTN'
-# distribution of deletion lengths
-MODEL_DEL_LEN_DSTRBTN = 'DEL_LEN_DSTRBTN'
-# distribution of trinucleotide SNP transitions
-MODEL_TRINUC_TRANS_DSTRBTN = 'TRINUC_TRANS_DSTRBTN'
-# p(trinuc mutates)
-MODEL_P_TRINUC_MUT = 'P_TRINUC_MUT'
-
-"""
-More data keys relevant for model building
-"""
-INS_LENGTH_VALUES = 'INS_LENGTH_VALUES'
-INS_LENGTH_WEIGHTS = 'INS_LENGTH_WEIGHTS'
-DEL_LENGTH_VALUES = 'DEL_LENGTH_VALUES'
-DEL_LENGTH_WEIGHTS = 'DEL_LENGTH_WEIGHTS'
-TRINUC_FREQS = 'TRINUC_FREQS'
-TRINUC_BIAS = 'TRINUC_BIAS'
-
-
-def load_mutation_model_from_file(model_file: str = None) -> dict:
-    """
-    Parse mutation model from a pickle file, initialize and return it
-    :param model_file: pickle file path
-    :return: mutation model, ready to use
-    """
-    data_from_file = parse_mutation_model(model_file)
-    mutation_model = init_model(data_from_file)
-    return mutation_model
-
-
-def parse_mutation_model(model_file: str = None):
-    """
-    Parse mutation model pickle file
-    """
-
-    mut_model = {region.value: {} for region in Region}
-    if model_file is not None:
-        pickle_dict = pickle.load(open(model_file, "rb"))
-        region_names_found = []
-
-        region_list = list(Region)
-        region_list.append('')
-        for region in region_list:
-            if pickel_key(region, Stats.AVG_MUT_RATE) not in pickle_dict:  # checking that the current region exists
-                continue
-
-            region_name = region.value if region != '' else Region.ALL.value
-            region_names_found.append(region_name)
-
-            mut_model[region_name][MODEL_AVG_MUT_RATE] = pickle_dict[pickel_key(region, Stats.AVG_MUT_RATE)]
-            mut_model[region_name][MODEL_P_INDEL] = 1. - pickle_dict[pickel_key(region, Stats.SNP_FREQ)]
-
-            ins_list = pickle_dict[pickel_key(region, Stats.INDEL_FREQ)]
-            parse_mutation_model_indel_stats(ins_list, mut_model, region_name)
-
-            trinuc_trans_prob = pickle_dict[pickel_key(region, Stats.TRINUC_TRANS_PROBS)]
-            parse_mutation_model_trinuc_trans_probs(mut_model, region_name, trinuc_trans_prob)
-
-            trinuc_mut_prob = pickle_dict[pickel_key(region, Stats.TRINUC_MUT_PROB)]
-            parse_mutation_model_trinuc_mut_probs(mut_model, region_name, trinuc_mut_prob)
-        print(f'found the next regions in the model: {region_names_found}')
-        for region in Region:
-            if region.value not in region_names_found:
-                del mut_model[region.value]
-
-    else:
-        print('\nError: No mutation model specified\n')
-        sys.exit(1)
-    return mut_model
-
-
-def parse_mutation_model_trinuc_mut_probs(mut_model, region_name, trinuc_mut_prob):
-    which_have_we_seen = {n: False for n in ALL_TRI}
-    trinuc_mean = np.mean(list(trinuc_mut_prob.values()))
-    mut_model[region_name][TRINUC_BIAS] = [1. / float(len(ALL_TRI)) for _ in ALL_TRI]
-    for trinuc in trinuc_mut_prob.keys():
-        mut_model[region_name][TRINUC_BIAS][ALL_IND[trinuc]] = trinuc_mut_prob[trinuc]
-        which_have_we_seen[trinuc] = True
-    for trinuc in which_have_we_seen.keys():
-        if not which_have_we_seen[trinuc]:
-            mut_model[region_name][TRINUC_BIAS][ALL_IND[trinuc]] = trinuc_mean
-
-
-def parse_mutation_model_trinuc_trans_probs(mut_model, region_name, trinuc_trans_prob):
-    mut_model[region_name][TRINUC_FREQS] = [np.zeros((4, 4)) for _ in range(16)]
-    for k in sorted(trinuc_trans_prob.keys()):
-        my_ind = TRI_IND[k[0][0] + k[0][2]]
-        (k1, k2) = (NUC_IND[k[0][1]], NUC_IND[k[1][1]])
-        mut_model[region_name][TRINUC_FREQS][my_ind][k1][k2] = trinuc_trans_prob[k]
-    for i in range(len(mut_model[region_name][TRINUC_FREQS])):
-        for j in range(len(mut_model[region_name][TRINUC_FREQS][i])):
-            for k in range(len(mut_model[region_name][TRINUC_FREQS][i][j])):
-                # if trinuc not present in input mutation model, assign it uniform probability
-                if float(sum(mut_model[region_name][TRINUC_FREQS][i][j])) < 1e-12:
-                    mut_model[region_name][TRINUC_FREQS][i][j] = [0.25, 0.25, 0.25, 0.25]
-                else:
-                    mut_model[region_name][TRINUC_FREQS][i][j][k] /= float(
-                        sum(mut_model[region_name][TRINUC_FREQS][i][j]))
-
-
-def parse_mutation_model_indel_stats(ins_list, mut_model, region_name):
-    if len(ins_list):
-        ins_count = sum([ins_list[k] for k in ins_list.keys() if k >= 1])
-        del_count = sum([ins_list[k] for k in ins_list.keys() if k <= -1])
-        ins_vals = [k for k in sorted(ins_list.keys()) if k >= 1]
-        ins_weight = [ins_list[k] / float(ins_count) for k in ins_vals]
-        del_vals = [k for k in sorted([abs(k) for k in ins_list.keys() if k <= -1])]
-        del_weight = [ins_list[-k] / float(del_count) for k in del_vals]
-    else:  # degenerate case where no indel stats are provided
-        ins_count = 1
-        del_count = 1
-        ins_vals = [1]
-        ins_weight = [1.0]
-        del_vals = [1]
-        del_weight = [1.0]
-    mut_model[region_name][MODEL_P_INSERTION] = ins_count / float(ins_count + del_count)
-    mut_model[region_name][INS_LENGTH_VALUES] = ins_vals
-    mut_model[region_name][INS_LENGTH_WEIGHTS] = ins_weight
-    mut_model[region_name][DEL_LENGTH_VALUES] = del_vals
-    mut_model[region_name][DEL_LENGTH_WEIGHTS] = del_weight
-
-
-def pickel_key(region: Union[Region, str], stats: Stats) -> str:
-    return f'{region.value}.{stats.value}' if region != '' else stats.value
-
-
-def init_model(model_from_file: dict) -> dict:
-    """
-    Initialize mutation model, ready to use
-    """
-
-    model_per_region = {}
-    for region_name in model_from_file.keys():
-        data = model_from_file[region_name]
-        model_per_region[region_name] = {}
-        model_per_region[region_name][MODEL_AVG_MUT_RATE] = data[MODEL_AVG_MUT_RATE]
-        model_per_region[region_name][MODEL_P_INDEL] = data[MODEL_P_INDEL]
-        model_per_region[region_name][MODEL_P_INSERTION] = data[MODEL_P_INSERTION]
-        model_per_region[region_name][MODEL_INS_LEN_DSTRBTN] = \
-            DiscreteDistribution(data[INS_LENGTH_WEIGHTS], data[INS_LENGTH_VALUES])
-        model_per_region[region_name][MODEL_DEL_LEN_DSTRBTN] = \
-            DiscreteDistribution(data[DEL_LENGTH_WEIGHTS], data[DEL_LENGTH_VALUES])
-
-        model_per_region[region_name][MODEL_TRINUC_TRANS_DSTRBTN] = []
-        for m in data[TRINUC_FREQS]:
-            # noinspection PyTypeChecker
-            model_per_region[region_name][MODEL_TRINUC_TRANS_DSTRBTN].append(
-                [DiscreteDistribution(m[0], VALID_NUCL), DiscreteDistribution(m[1], VALID_NUCL),
-                 DiscreteDistribution(m[2], VALID_NUCL), DiscreteDistribution(m[3], VALID_NUCL)])
-        model_per_region[region_name][MODEL_P_TRINUC_MUT] = [m for m in data[TRINUC_BIAS]]
-
-    return model_per_region

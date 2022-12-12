@@ -24,7 +24,7 @@ from typing import List, Dict, Tuple
 from utilities.io import logger
 from utilities.io.fastq_file_writer import FastqFileWriter
 from utilities.chromosome_simulator import ChromosomeSimulator
-from mutation_model import load_mutation_model_from_file
+from utilities.io.mutation_model_reader import load_mutation_model_from_file
 from utilities.io.fasta_file_writer import FastaFileWriter
 from utilities.input_checking import check_file_open, is_in_range
 from utilities.ref_func import index_ref, read_ref

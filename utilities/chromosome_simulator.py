@@ -7,8 +7,8 @@ import copy
 from Bio import Seq
 from Bio.Seq import MutableSeq
 
-from mutation_model import MODEL_AVG_MUT_RATE, MODEL_P_INDEL, MODEL_P_INSERTION, MODEL_INS_LEN_DSTRBTN, \
-    MODEL_DEL_LEN_DSTRBTN, MODEL_TRINUC_TRANS_DSTRBTN, MODEL_P_TRINUC_MUT
+from utilities.io.mutation_model_reader import MODEL_AVG_MUT_RATE, MODEL_P_INDEL, MODEL_P_INSERTION, \
+    MODEL_INS_LEN_DSTRBTN, MODEL_DEL_LEN_DSTRBTN, MODEL_TRINUC_TRANS_DSTRBTN, MODEL_P_TRINUC_MUT
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.common_data_structues import Region, MutType, Strand, STOP_CODONS_FORWARD_STRAND, \
     STOP_CODONS_REVERSE_STRAND, VALID_NUCL, TRI_IND, NUC_IND, ALL_IND, Mutation
