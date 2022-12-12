@@ -29,8 +29,9 @@ parser.add_argument('-i', type=str, required=True, metavar='<str>', nargs='+',
 parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
                     help="* legend labels: model1_name [model2_name] [model3_name]...")
 parser.add_argument('-o', type=str, required=True, metavar='<str>', help="* output pdf prefix")
-parser.add_argument('-g', type=str, required=False, metavar='<str>', default=None,
-                    help="genomic region to focus on. default is 'all'")
+parser.add_argument('-g', type=str, required=False, metavar='<str>', nargs='+',
+                    help="* genomic region(s) to focus on, from the next list: CDS, non_coding_gene, intergenic, all. "
+                         "Separate values by space.")
 args = parser.parse_args()
 
 
@@ -80,7 +81,7 @@ OUP = args.o
 INP = args.i
 genomic_regions = [region.value for region in Region]
 if args.g:
-    genomic_regions = [args.g]
+    genomic_regions = args.g
 LABELS = genomic_regions
 if args.l:
     LABELS = []
