@@ -1,53 +1,67 @@
 # PanGenomeSimulator
 Simulator that produces data to benchmark pan genome assembly models.
 
-# genMutModel.py
-
-Takes references genome and TSV file to generate mutation models:
-
+## process_annotations.py
+Process a gff-like annotation file and make it ready to use for the next steps (model building and genome simulation).
 ```
-python gen_mut_model.py               \
-        -r hg19.fa                  \
-        -m inputVariants.tsv        \
-        -o /home/me/models.p
+python process_annotations.py                                   \
+        # Main flow:                                            \
+        --gff /path/to/annotations.gff                          \
+        --csv /path/to/output.csv                               \
+        # Sanity test:                                          \
+        --test-sanity /path/to/post/processed/annotations.csv   \
+        # Overlapping genes test:                               \
+        --test-overlap  /path/to/annotations.gff                \
+                        /path/to/overlap/output.csv
+```
+Two test workflows:
+* Sanity test - runs also as part of the main workflow, this flag is for a stand-alone run.
+* Overlap test - outputs overlapping genes in case they exist.
+
+## generate_mutation_model.py
+gfdjhfhgjf
+```
+python generate_mutation_model.py   \
+        -r /path/to/reference.fasta \
+        -v /path/to/variants.vcf    \
+        -o /path/to/output/model.p  \
+        # Optional:                 \
+        -a /path/to/annotations.csv
+```
+cdfhgvhjgkjhbkljhn;klj;ki;ljknlkjhbgfcghbkjhlmll
+
+## pangenome_simulator.py
+```
+python pangenome_simulator.py           \
+        -r /path/to/reference.fasta     \
+        -m /path/to/mutation/model.p    \
+        -o
+        # Optional:
+        -a /path/to/annotations.csv
+        -M
+        -t
+        -l
+        --max-threads
+        --vcf
+        --no-fastq
+        --rng
+        -w
+        -d
+        -R
+        -c
+        --pe
 ```
 
-Trinucleotides are identified in the reference genome and the variant file. Frequencies of each trinucleotide transition are calculated and output as a pickle (.p) file.
-
-
-# plotMutModel.py
-
-Performs plotting and comparison of mutation models generated from genMutModel.py.
-
+## plot_mutation_model.py
+Performs plotting and comparison of mutation models generated from generate_mutation_model.py.
 ```
-python plotMutModel.py                                        \
-        -i model1.p [model2.p] [model3.p]...                  \
-        -l legend_label1 [legend_label2] [legend_label3]...   \
-        -o path/to/pdf_plot_prefix
+python plot_mutation_model.py                                       \
+        -i model1.p [model2.p] [model3.p]...                        \
+        -l legend_label1 [legend_label2] [legend_label3]...         \
+        -o path/to/pdf_plot_prefix                                  \
+        # The next flag is optional - genomic region(s) to focus on.\
+        # If you use it, choose one or more values from the list:   \
+        -g [CDS] [non_coding_gene] [intergenic] [all]
 ```
 
-# vcf_compare_OLD.py
-
-Tool for comparing VCF files.
-
-```
-python vcf_compare_OLD.py
-        --version          show program's version number and exit      \
-        -h, --help         show this help message and exit             \
-        -r <ref.fa>        * Reference Fasta                           \
-        -g <golden.vcf>    * Golden VCF                                \
-        -w <workflow.vcf>  * Workflow VCF                              \
-        -o <prefix>        * Output Prefix                             \
-        -m <track.bed>     Mappability Track                           \
-        -M <int>           Maptrack Min Len                            \
-        -t <regions.bed>   Targetted Regions                           \
-        -T <int>           Min Region Len                              \
-        -c <int>           Coverage Filter Threshold [15]              \
-        -a <float>         Allele Freq Filter Threshold [0.3]          \
-        --vcf-out          Output Match/FN/FP variants [False]         \
-        --no-plot          No plotting [False]                         \
-        --incl-homs        Include homozygous ref calls [False]        \
-        --incl-fail        Include calls that failed filters [False]   \
-        --fast             No equivalent variant detection [False]     
-```
-Mappability track examples: https://github.com/zstephens/neat-repeat/tree/master/example_mappabilityTracks
+## plot_tree.py

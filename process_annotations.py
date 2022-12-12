@@ -274,19 +274,14 @@ def main(raw_args=None):
                         help="Annotations file in one of the next formats: gff, gtf, gff3")
     parser.add_argument('--csv', type=str, required=False, metavar='/path/to/output.csv',
                         help="Path to output csv file")
-    parser.add_argument('--test-sanity', required=False, metavar='/path/to/output.csv',
+    parser.add_argument('--test-sanity', type=str, required=False, metavar='/path/to/post/processed/annotations.csv',
                         default=False, help="Sanity test on output")
-    parser.add_argument('--test-overlap', required=False, metavar='/path/to/annotations.gff',
-                        default=None, help="Output overlapping genes if exist")
+    parser.add_argument('--test-overlap', nargs=2, type=str, required=False,
+                        metavar=('/path/to/annotations.gff', '/path/to/overlap/output.csv'),
+                        default=(None, None), help="Output overlapping genes if exist")
     args = parser.parse_args(raw_args)
 
-    if args.test_sanity:
-        test_sanity(args.test_sanity)
-
-    elif args.test_overlap:
-        test_overlapping_genes(args.test_overlap)
-
-    else:
+    if args.gff and args.csv:
         input_file = args.gff
         output_file = args.csv
         if not input_file:
@@ -298,6 +293,20 @@ def main(raw_args=None):
         legend_file = re.split('.csv', output_file, flags=re.IGNORECASE)[0] + '_legend.csv'
         workflow(input_file, output_file, legend_file)
 
+    elif args.test_sanity:
+        test_sanity(args.test_sanity)
+
+    elif args.test_overlap:
+        input_file, output_file = args.test_overlap
+        test_overlapping_genes(input_file, output_file)
+
+    else:
+        print('Error - please do either:\n'
+              '1. Use the --gff flag to provide an annotations file in one of the next formats: gff, gtf, gff3.\n'
+              '   Use the --csv flag to provide a path to an output csv file.\n'
+              '2. Use the --test-sanity to provide a path to an output csv to run sanity test on.\n'
+              '3. Use the --test-overlap and provide a (a) gff-like input file and (b) a csv output file, '
+              'to test overlapping genes.')
 
 def assign_frame_to_cds(annotations_df: pd.DataFrame) -> pd.DataFrame:
     annotations_df = assign_frame_to_cds_on_strand(annotations_df, Strand.FORWARD)
@@ -420,7 +429,7 @@ def test_sanity(output_file: str):
 ##############################
 
 
-def test_overlapping_genes(in_file: str):
+def test_overlapping_genes(in_file: str, out_file: str):
     if in_file is not None:
         try:
             bed_format = in_file.lower().endswith('.bed')
@@ -478,7 +487,7 @@ def test_overlapping_genes(in_file: str):
             print(f'On the same strand: {overlap_count_same_strand}')
             print(f'All genes count: {len(gene_elements_df)}')
             gene_elements_df = gene_elements_df.iloc[list(overlapping_indexes), :].reset_index(drop=True)
-            gene_elements_df.to_csv('overlapping_genes.csv')
+            gene_elements_df.to_csv(out_file)
 
         except IOError:
             print("\nProblem reading annotations file.\n")

@@ -63,7 +63,7 @@ class RegionsStats:
 def main():
     args = parse_arguments()
     (ref, vcf, out_pickle, annotations_file) = (
-        args.r, args.m, args.o, args.a)
+        args.r, args.v, args.o, args.a)
 
     chrom_sequences_dict, chrom_names = process_reference(ref)
 
@@ -91,11 +91,11 @@ def main():
 #########################################################
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='mutation_model.source',
+    parser = argparse.ArgumentParser(description='Generate mutation model',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='/path/to/reference.fasta',
                         help="Reference file for organism in fasta format")
-    parser.add_argument('-m', type=str, required=True, metavar='/path/to/variants.vcf',
+    parser.add_argument('-v', type=str, required=True, metavar='/path/to/variants.vcf',
                         help="Mutation file for organism in VCF format")
     parser.add_argument('-o', type=str, required=True, metavar='/path/to/output/model.p',
                         help="Path of output model")

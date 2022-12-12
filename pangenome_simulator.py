@@ -67,8 +67,10 @@ def parse_args(raw_args=None):
     parser = argparse.ArgumentParser(description='PanGenomeSimulator',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
     parser.add_argument('-r', type=str, required=True, metavar='reference', help="Path to reference fasta")
-    parser.add_argument('-m', type=str, required=False, metavar='model.p', default=None,
+    parser.add_argument('-m', type=str, required=True, metavar='model.p', default=None,
                         help="Mutation model pickle file")
+    parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
+                        help="Prefix for the output files (can be a path)")
     parser.add_argument('-M', type=float, required=False, metavar='avg mut rate scalar', default=-1,
                         help="Rescale avg mutation rate to this (1/bp), must be larger than 0")
     parser.add_argument('-a', type=str, required=False, metavar='annotations_file.csv', default=None,
@@ -79,11 +81,10 @@ def parse_args(raw_args=None):
                         help='maximum threads number')
     parser.add_argument('-w', type=int, required=False, metavar='<int>', default=10000,
                         help='Window size of simulation. Choose an integer number larger than 10')
-    parser.add_argument('-R', type=int, required=True, metavar='read length', help="The desired read length")
-    parser.add_argument('-o', type=str, required=True, metavar='output_prefix',
-                        help="Prefix for the output files (can be a path)")
-    parser.add_argument('-c', type=float, required=False, metavar='coverage', default=10.0,
-                        help="Average coverage, default is 10.0")
+    parser.add_argument('-R', type=int, required=False, metavar='read length', default=150,
+                        help="The desired read length, default is 150")
+    parser.add_argument('-c', type=float, required=False, metavar='coverage', default=30.0,
+                        help="Average coverage, default is 30.0")
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
                         help='Paired-end fragment length mean and std')
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
