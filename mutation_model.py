@@ -32,12 +32,6 @@ class Stats(Enum):
     INDEL_COUNT = 'INDEL_COUNT'
     # tabulate how much non-N reference sequence we've eaten through
     TOTAL_REFLEN = 'TOTAL_REFLEN'
-    # detect variants that occur in a significant percentage of the input samples (pos,ref,alt,pop_fraction)
-    COMMON_VARIANTS = 'COMMON_VARIANTS'
-    # identify regions that have significantly higher local mutation rates than the average
-    HIGH_MUT_REGIONS = 'HIGH_MUT_REGIONS'
-    # list to be used for counting variants that occur multiple times in file (i.e. in multiple samples)
-    VDAT_COMMON = 'VDAT_COMMON'
     # the number of SNPs divided to the overall number of mutations
     SNP_FREQ = 'SNP_FREQ'
     # the number of indels divided to the overall number of mutations (1 - SNP_FREQ)
@@ -90,9 +84,6 @@ class RegionsStats:
             Stats.SNP_TRANSITION_COUNT.value: {},
             Stats.INDEL_COUNT.value: {},
             Stats.TOTAL_REFLEN.value: [0],
-            Stats.COMMON_VARIANTS.value: [],
-            Stats.HIGH_MUT_REGIONS.value: [],
-            Stats.VDAT_COMMON.value: {},
             Stats.TRINUC_MUT_PROB.value: {},
             Stats.TRINUC_TRANS_PROBS.value: {},
             Stats.SNP_TRANS_FREQ.value: {}
@@ -106,8 +97,8 @@ class RegionsStats:
 
 def main():
     args = parse_arguments()
-    (ref, vcf, out_pickle, save_trinuc, skip_common, annotations_file) = (
-        args.r, args.m, args.o, args.save_trinuc, args.skip_common, args.a)
+    (ref, vcf, out_pickle, annotations_file) = (
+        args.r, args.m, args.o, args.a)
 
     chrom_sequences_dict, chrom_names = process_reference(ref)
 
@@ -127,7 +118,7 @@ def main():
 
     compute_probabilities(regions_stats)
 
-    save_stats_to_file(out_pickle, skip_common, regions_stats)
+    save_stats_to_file(out_pickle, regions_stats)
 
 
 #########################################################
@@ -145,10 +136,6 @@ def parse_arguments():
                         help="Name of output file (final model will append \'.p\')")
     parser.add_argument('-a', type=str, required=False, metavar='/path/to/annotations.csv',
                         help='Annotations CSV file of regions to consider', default=None)
-    parser.add_argument('--save-trinuc', required=False, action='store_true', default=False,
-                        help='save trinucleotide counts for reference')
-    parser.add_argument('--skip-common', required=False, action='store_true', default=False,
-                        help='Do not save common snps + high mut regions')
     args = parser.parse_args()
     return args
 
@@ -238,27 +225,6 @@ def process_vcf(chrom_list: list, vcf_filename: str) -> (list, list, pd.DataFram
     return list(indices_to_indels), matching_chromosomes, matching_variants
 
 
-def cluster_list(variants_position_list_sorted: list, delta: float) -> list:
-    """
-    Clusters a sorted list
-    :param variants_position_list_sorted: a sorted list
-    :param delta: the value to compare list items to
-    :return: a clustered list of values
-    """
-    list_of_lists = [[variants_position_list_sorted[0]]]
-    previous_value = variants_position_list_sorted[0]
-    current_index = 0
-    for item in variants_position_list_sorted[1:]:
-        if item - previous_value <= delta:
-            list_of_lists[current_index].append(item)
-        else:
-            current_index += 1
-            list_of_lists.append([])
-            list_of_lists[current_index].append(item)
-        previous_value = item
-    return list_of_lists
-
-
 def process_trinuc_counts(chrom_sequences_dict: dict, matching_chromosomes: list, annotations_df: pd.DataFrame,
                           regions_stats: RegionsStats):
     for chrom_name in matching_chromosomes:
@@ -294,8 +260,6 @@ def collect_basic_stats_for_chrom(chrom_sequences_dict: dict, chrom_name: str, i
     indel_df = variants_to_process[variants_to_process.index.isin(indices_to_indels)]
     process_indels(indel_df, chrom_name, regions_stats)
 
-    process_common_variants(chrom_sequences_dict, chrom_name, regions_stats)
-
 
 def process_snps(snp_df: pd.DataFrame, chrom_name: str, chrom_sequence: str, regions_stats: RegionsStats):
     if not snp_df.empty:
@@ -314,12 +278,6 @@ def process_snps(snp_df: pd.DataFrame, chrom_name: str, chrom_sequence: str, reg
                 update_snp_transition_count(str(snp.REF), str(snp.ALT), regions_stats, region)
                 update_snp_count(regions_stats, region)
 
-                pop_freq = VCF_DEFAULT_POP_FREQ
-                if ';CAF=' in snp_df.loc[index, 'INFO']:
-                    caf_str = re.findall(r";CAF=.*?(?=;)", snp.INFO)[0]
-                    if ',' in caf_str:
-                        pop_freq = float(caf_str[5:].split(',')[1])
-                update_vdat_common(chrom_name, snp, pop_freq, regions_stats, region)
             else:
                 print('\nError: ref allele in variant call does not match reference.\n')
                 exit(1)
@@ -340,91 +298,6 @@ def process_indels(indel_df: pd.DataFrame, chrom_name: str, regions_stats: Regio
                 indel_len = len_alt - len_ref
                 region = regions_stats.get_region_by_chrom_and_pos(chrom_name, indel.chr_start)
                 update_indel_count(indel_len, regions_stats, region)
-
-                pop_freq = VCF_DEFAULT_POP_FREQ
-                if ';CAF=' in indel.INFO:
-                    caf_str = re.findall(r";CAF=.*?(?=;)", indel.INFO)[0]
-                    if ',' in caf_str:
-                        pop_freq = float(caf_str[5:].split(',')[1])
-                update_vdat_common(chrom_name, indel, pop_freq, regions_stats, region)
-
-
-def process_common_variants(chrom_sequences_dict: dict, chrom_name: str, regions_stats: RegionsStats):
-    # variant tuple indices:
-    var_pos = 0
-    var_ref = 1
-    var_alt = 2
-    var_freq = 3
-    for region_name, curr_region_stats in regions_stats.get_all_stats().items():
-        vdat_common_per_chrom = curr_region_stats[Stats.VDAT_COMMON.value]
-        if chrom_name not in vdat_common_per_chrom:
-            vdat_common_per_chrom[chrom_name] = []
-        vdat_common = vdat_common_per_chrom[chrom_name]
-        if not len(vdat_common):
-            print(f'Found no variants for chromosome {chrom_name} in region {region_name}.')
-            continue
-        # identify common mutations
-        percentile_var = 95
-        min_value = np.percentile([variant[var_freq] for variant in vdat_common], percentile_var)
-        for variant in sorted(vdat_common):
-            if variant[var_freq] >= min_value:
-                curr_region_stats[Stats.COMMON_VARIANTS.value].append(
-                    (chrom_name, variant[var_pos], variant[var_ref], variant[var_alt], variant[var_freq]))
-        vdat_common_positions = [variant[var_pos] for variant in vdat_common]
-
-        # identify areas that have contained significantly higher random mutation rates
-        identify_high_mutations_regions(chrom_name, chrom_sequences_dict, curr_region_stats, vdat_common_positions)
-
-
-def identify_high_mutations_regions(chrom_name: str, chrom_sequences_dict: dict, curr_region_stats: dict,
-                                    variant_positions):
-    # identify regions with disproportionately more variants in them
-    dist_thresh = 2000
-    percentile_clust = 97
-    scaler = 1000
-    variants_position_list_sorted = sorted(variant_positions)
-    variants_clustered_by_position = cluster_list(variants_position_list_sorted, dist_thresh)
-    variants_clustered_by_len_and_pos = \
-        [(len(variants_clustered_by_position[i]), min(variants_clustered_by_position[i]),
-          max(variants_clustered_by_position[i]), i)
-         for i in range(len(variants_clustered_by_position))]
-
-    # candidate region tuple indices meaning:
-    cnddt_count = 0
-    cnddt_min = 1
-    cnddt_max = 2
-    candidate_regions = []
-    for cnddt in variants_clustered_by_len_and_pos:
-        bi = int((cnddt[cnddt_min] - dist_thresh) / float(scaler)) * scaler
-        bf = int((cnddt[cnddt_max] + dist_thresh) / float(scaler)) * scaler
-        candidate_regions.append(
-            (cnddt[cnddt_count] / float(bf - bi), max([0, bi]), min([len(chrom_sequences_dict[chrom_name]), bf])))
-    minimum_value = np.percentile([cnddt[cnddt_count] for cnddt in candidate_regions], percentile_clust)
-    for cnddt in candidate_regions:
-        if cnddt[cnddt_count] >= minimum_value:
-            curr_region_stats[Stats.HIGH_MUT_REGIONS.value].append(
-                (chrom_name, cnddt[cnddt_min], cnddt[cnddt_max], cnddt[cnddt_count]))
-
-    # high mutation rate region tuple indices:
-    hi_rgn_chrom = 0
-    hi_rgn_min = 1
-    hi_rgn_max = 2
-    hi_rgn_count = 3
-    # collapse overlapping regions
-    for i in range(len(curr_region_stats[Stats.HIGH_MUT_REGIONS.value]) - 1, 0, -1):
-        if curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_max] >= \
-                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_min] and \
-                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_chrom] == \
-                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_chrom]:
-            # Might need to research a more accurate way to get the mutation rate for this region
-            avg_mut_rate = 0.5 * curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_count] + \
-                           0.5 * curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_count]
-            curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1] = (
-                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_chrom],
-                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i - 1][hi_rgn_min],
-                curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i][hi_rgn_max],
-                avg_mut_rate)
-            del curr_region_stats[Stats.HIGH_MUT_REGIONS.value][i]
 
 
 def compute_probabilities(regions_stats: RegionsStats):
@@ -586,17 +459,7 @@ def update_indel_count(indel_len, regions_stats, region: Region = Region.ALL, al
         regions_stats.get_stat_by_region(current_region, Stats.INDEL_COUNT)[indel_len] += 1
 
 
-def update_vdat_common(chrom_name, variant, pop_freq, regions_stats, region: Region = Region.ALL,
-                       also_update_all: bool = True):
-    regions_to_update = {region, Region.ALL} if also_update_all else {region}
-    for current_region in regions_to_update:
-        vdat_common_per_chrom = regions_stats.get_stat_by_region(current_region, Stats.VDAT_COMMON)
-        if chrom_name not in vdat_common_per_chrom:
-            vdat_common_per_chrom[chrom_name] = []
-        vdat_common_per_chrom[chrom_name].append((variant.chr_start, variant.REF, variant.ALT, pop_freq))
-
-
-def save_stats_to_file(out_pickle: str, skip_common: bool, regions_stats: RegionsStats):
+def save_stats_to_file(out_pickle: str, regions_stats: RegionsStats):
     out_dict = {}
     for region_name, region_stats in regions_stats.get_all_stats().items():
         out_dict[f'{region_name}.{Stats.TOTAL_REFLEN.value}'] = region_stats[Stats.TOTAL_REFLEN.value][0]
@@ -606,9 +469,6 @@ def save_stats_to_file(out_pickle: str, skip_common: bool, regions_stats: Region
         out_dict[f'{region_name}.{Stats.INDEL_FREQ.value}'] = region_stats[Stats.INDEL_FREQ.value]
         out_dict[f'{region_name}.{Stats.TRINUC_MUT_PROB.value}'] = region_stats[Stats.TRINUC_MUT_PROB.value]
         out_dict[f'{region_name}.{Stats.TRINUC_TRANS_PROBS.value}'] = region_stats[Stats.TRINUC_TRANS_PROBS.value]
-        if not skip_common:
-            out_dict[f'{region_name}.{Stats.COMMON_VARIANTS.value}'] = region_stats[Stats.COMMON_VARIANTS.value]
-            out_dict[f'{region_name}.{Stats.HIGH_MUT_REGIONS.value}'] = region_stats[Stats.HIGH_MUT_REGIONS.value]
     pickle.dump(out_dict, open(out_pickle, "wb"))
 
 
