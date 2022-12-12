@@ -78,3 +78,20 @@ class ModelStats(Enum):
     TRINUC_MUT_PROB = 'TRINUC_MUT_PROB'
     # frequency that a trinuc mutates into another trinuc, given that it mutated
     TRINUC_TRANS_PROBS = 'TRINUC_TRANS_PROBS'
+
+
+class ModelKeys(Enum):
+    # average mutation rate
+    AVG_MUT_RATE = 'AVG_MUT_RATE'
+    # p(mut is indel | mut occurs)
+    P_INDEL = 'P_INDEL'
+    # p(insertion | indel occurs)
+    P_INSERTION = 'P_INSERTION'
+    # distribution of insertion lengths
+    INS_LEN_DSTRBTN = 'INS_LEN_DSTRBTN'
+    # distribution of deletion lengths
+    DEL_LEN_DSTRBTN = 'DEL_LEN_DSTRBTN'
+    # distribution of trinucleotide SNP transitions
+    TRINUC_TRANS_DSTRBTN = 'TRINUC_TRANS_DSTRBTN'
+    # p(trinuc mutates)
+    P_TRINUC_MUT = 'P_TRINUC_MUT'

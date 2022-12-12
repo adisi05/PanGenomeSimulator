@@ -24,7 +24,7 @@ from typing import List, Dict, Tuple
 from utilities.io import logger
 from utilities.io.fastq_file_writer import FastqFileWriter
 from utilities.chromosome_simulator import ChromosomeSimulator
-from utilities.io.mutation_model_reader import load_mutation_model_from_file
+from utilities.io.mutation_model_reader import load_model_from_file
 from utilities.io.fasta_file_writer import FastaFileWriter
 from utilities.input_checking import check_file_open, is_in_range
 from utilities.ref_func import index_ref, read_ref
@@ -97,7 +97,7 @@ class GenomeSimulator:
 
     def _load_mutation_model_data(self, args):
         self._mutation_model = str(args.m)
-        self._mutation_model = load_mutation_model_from_file(self._mutation_model)
+        self._mutation_model = load_model_from_file(self._mutation_model)
         self._mutation_scalar = args.M
         if self._mutation_scalar <= 0.:
             self._mutation_scalar = None

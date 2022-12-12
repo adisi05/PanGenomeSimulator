@@ -7,11 +7,9 @@ import copy
 from Bio import Seq
 from Bio.Seq import MutableSeq
 
-from utilities.io.mutation_model_reader import MODEL_AVG_MUT_RATE, MODEL_P_INDEL, MODEL_P_INSERTION, \
-    MODEL_INS_LEN_DSTRBTN, MODEL_DEL_LEN_DSTRBTN, MODEL_TRINUC_TRANS_DSTRBTN, MODEL_P_TRINUC_MUT
 from utilities.annotated_sequence import AnnotatedSequence
 from utilities.common_data_structues import Region, MutType, Strand, STOP_CODONS_FORWARD_STRAND, \
-    STOP_CODONS_REVERSE_STRAND, VALID_NUCL, TRI_IND, NUC_IND, ALL_IND, Mutation
+    STOP_CODONS_REVERSE_STRAND, VALID_NUCL, TRI_IND, NUC_IND, ALL_IND, Mutation, ModelKeys
 from utilities.io.logger import Logger
 from utilities.probability import DiscreteDistribution, poisson_list
 from utilities.random_mutations_pool import RandomMutationsPool
@@ -92,9 +90,9 @@ class ChromosomeSimulator:
             if region.value not in model_regions:
                 self.model_per_region[region.value] = self.model_per_region[Region.ALL.value]
             if dist:
-                self.model_per_region[region.value][MODEL_AVG_MUT_RATE] *= dist
+                self.model_per_region[region.value][ModelKeys.AVG_MUT_RATE] *= dist
             if mut_scalar:
-                self.model_per_region[region.value][MODEL_AVG_MUT_RATE] *= mut_scalar
+                self.model_per_region[region.value][ModelKeys.AVG_MUT_RATE] *= mut_scalar
 
         relevant_regions = [region.value for region in self.annotated_seq.get_regions()]
         redundant_regions = []
@@ -126,10 +124,10 @@ class ChromosomeSimulator:
         window_counts_per_region = self.annotated_seq.get_nucleotides_counts_per_region(self.window_unit.start,
                                                                                         self.window_unit.end)
         for region in self.annotated_seq.get_regions():
-            param = self.model_per_region[region.value][MODEL_P_INDEL] if type_is_indel else (
-                    1. - self.model_per_region[region.value][MODEL_P_INDEL])
+            param = self.model_per_region[region.value][ModelKeys.P_INDEL] if type_is_indel else (
+                    1. - self.model_per_region[region.value][ModelKeys.P_INDEL])
             poisson_lambda = \
-                window_counts_per_region[region.value] * param * self.model_per_region[region.value][MODEL_AVG_MUT_RATE]
+                window_counts_per_region[region.value] * param * self.model_per_region[region.value][ModelKeys.AVG_MUT_RATE]
             k_range = range(int(window_counts_per_region[region.value] * MAX_MUTFRAC))
             poisson_per_region[region.value] = poisson_list(k_range, poisson_lambda)
         return poisson_per_region
@@ -151,7 +149,7 @@ class ChromosomeSimulator:
             for i in range(0 + 1, window_seq_len - 1):
                 codon = str(self.chrom_sequence[self.window_unit.start + i - 1:self.window_unit.start + i + 2])
                 trinuc_snp_bias_of_window_per_region[region.value][i] = \
-                    region_mask[i] * self.model_per_region[region.value][MODEL_P_TRINUC_MUT][ALL_IND[codon]]
+                    region_mask[i] * self.model_per_region[region.value][ModelKeys.P_TRINUC_MUT][ALL_IND[codon]]
             self.trinuc_bias_per_region[region.value] = \
                 DiscreteDistribution(trinuc_snp_bias_of_window_per_region[region.value], range(window_seq_len))
             # from initialization, the probability of the first and the last element is 0
@@ -246,7 +244,7 @@ class ChromosomeSimulator:
         ref_nucl = self.chrom_sequence[position]
         context = str(self.chrom_sequence[position - 1]) + str(self.chrom_sequence[position + 1])
         # sample from tri-nucleotide substitution matrices to get SNP alt allele
-        new_nucl = self.model_per_region[region.value][MODEL_TRINUC_TRANS_DSTRBTN][TRI_IND[context]][NUC_IND[ref_nucl]]\
+        new_nucl = self.model_per_region[region.value][ModelKeys.TRINUC_TRANS_DSTRBTN][TRI_IND[context]][NUC_IND[ref_nucl]]\
             .sample()
         snp = Mutation(position, ref_nucl, new_nucl, MutType.SNP)
         return snp
@@ -258,8 +256,8 @@ class ChromosomeSimulator:
 
     def _get_specific_indel(self, position: int, region: Region):
         # insertion
-        if random.random() <= self.model_per_region[region.value][MODEL_P_INSERTION]:
-            indel_len = self.model_per_region[region.value][MODEL_INS_LEN_DSTRBTN].sample()
+        if random.random() <= self.model_per_region[region.value][ModelKeys.P_INSERTION]:
+            indel_len = self.model_per_region[region.value][ModelKeys.INS_LEN_DSTRBTN].sample()
             # sequence content of random insertions is uniformly random (change this later, maybe)
             indel_seq = ''.join([random.choice(VALID_NUCL) for _ in range(indel_len)])
             ref_nucl = self.chrom_sequence[position]
@@ -267,7 +265,7 @@ class ChromosomeSimulator:
 
         # deletion
         else:
-            indel_len = self.model_per_region[region.value][MODEL_DEL_LEN_DSTRBTN].sample()
+            indel_len = self.model_per_region[region.value][ModelKeys.DEL_LEN_DSTRBTN].sample()
 
             # skip if deletion too close to boundary
             if position + indel_len >= self.window_unit.end:
