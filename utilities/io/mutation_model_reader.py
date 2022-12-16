@@ -74,8 +74,8 @@ def parse_indel_stats(mut_model, region_name, ins_list):
 
 
 def parse_trinuc_stats(mut_model, region_name, region_trinuc_mut_prob: dict, region_trinuc_trans_prob: dict):
-    region_trinuc_bias = parse_trinuc_trans_probs(region_trinuc_trans_prob)
-    region_trinuc_freqs = parse_trinuc_mut_probs(region_trinuc_mut_prob)
+    region_trinuc_freqs = parse_trinuc_trans_probs(region_trinuc_trans_prob)
+    region_trinuc_bias = parse_trinuc_mut_probs(region_trinuc_mut_prob)
     mut_model[region_name][ModelKeys.TRINUC_TRANS_DSTRBTN] = []
     for m in region_trinuc_freqs:
         mut_model[region_name][ModelKeys.TRINUC_TRANS_DSTRBTN].append(
