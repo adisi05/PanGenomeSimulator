@@ -18,11 +18,9 @@ def read_annotations_csv(file_path: str, logger: Logger = None):
                 logger.message(f'Annotations file must be a csv file. Got extension: {extension}')
                 raise Exception
             if exists(file_path):
-                annotations_df = pd.read_csv(file_path, index_col=0)
-                annotations_df[['chrom', 'region', 'strand']] = \
-                    annotations_df[['chrom', 'region', 'strand']].astype(str)
-                annotations_df[['start', 'end', 'gene_id']] = \
-                    annotations_df[['start', 'end', 'gene_id']].astype(int)
+                annotations_df = pd.read_csv(file_path, index_col=0,
+                                             dtype={'chrom': 'str', 'gene_id': 'int', 'region': 'str',
+                                                    'start': 'int', 'end': 'int', 'strand': 'str', 'frame': 'int'})
             else:
                 logger.message(f'Annotations file does not exist. File path = {file_path}')
                 raise Exception
