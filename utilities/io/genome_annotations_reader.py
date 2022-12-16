@@ -20,12 +20,12 @@ def read_annotations_csv(file_path: str, logger: Logger = None):
             if exists(file_path):
                 annotations_df = pd.read_csv(file_path, index_col=0,
                                              dtype={'chrom': 'str', 'gene_id': 'int', 'region': 'str',
-                                                    'start': 'int', 'end': 'int', 'strand': 'str', 'frame': 'int'})
+                                                    'start': 'int', 'end': 'int', 'strand': 'str', 'frame': 'Int8'})
             else:
                 logger.message(f'Annotations file does not exist. File path = {file_path}')
                 raise Exception
-        except Exception:
-            logger.message('Problem parsing annotations file')
+        except Exception as e:
+            logger.message(f'Problem parsing annotations file. Error details: {e}')
     return annotations_df
 
 
