@@ -42,7 +42,7 @@ It is recommended to use the same genomic annotation file (csv) that was used du
 python pangenome_simulator.py                                               \
         -r /path/to/reference.fasta                                         \
         -m /path/to/mutation/model.p                                        \
-        -o /output/prefix_                                                  \
+        -o /output/prefix                                                  \
                                                                             \
         # Optional:                                                         \
         -a /path/to/annotations.csv                                         \
@@ -62,7 +62,10 @@ python pangenome_simulator.py                                               \
         # Sequencing parameters:                                            \
         -R <int> # read length, default is 150                              \
         -c <float> # coverage, default is 30.0                              \
-        --pe <int> <int> # paired-end fragment length mean and std
+        --pe <int> <int> # paired-end fragment length mean and std          \
+        --art-path <str> # path to ART binary, default is:
+        # ART/art_bin_MountRainier/art_illumina
+
 ```
 
 ## plot_mutation_model.py

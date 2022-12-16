@@ -75,6 +75,7 @@ class GenomeSimulator:
         self._sequencing_n_handling = {'method': 'random', 'max_threshold': self._sequencing_fragment_size} \
             if self._sequencing_paired_end else {'method': 'ignore', 'max_threshold': None}
         self._window_size = args.w if args.w > MIN_WINDOW_SIZE else DEFAULT_WINDOW_SIZE
+        self.art_path = args.art_path
 
     def _params_sanity_check(self):
         # Check that files are real, if provided
@@ -192,7 +193,7 @@ class GenomeSimulator:
             start = time.time()
             FastqFileWriter.generate_reads([fasta_file_name], self._sequencing_paired_end,
                                            self._sequencing_read_len, self._sequencing_coverage,
-                                           self._sequencing_fragment_size, self._sequencing_fragment_std)
+                                           self._sequencing_fragment_size, self._sequencing_fragment_std, self.art_path)
             end = time.time()
             self._logger.message("ART reads simulation took {} seconds.".format(int(end - start)))
 

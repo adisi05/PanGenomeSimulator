@@ -87,6 +87,8 @@ def parse_args(raw_args=None):
                         help="Average coverage, default is 30.0")
     parser.add_argument('--pe', nargs=2, type=int, required=False, metavar=('<int>', '<int>'), default=(None, None),
                         help='Paired-end fragment length mean and std')
+    parser.add_argument('--art-path', type=str, required=False, metavar='path to ART binary', default=None,
+                        help='Path to ART binary, by default ART/art_bin_MountRainier/art_illumina')
     parser.add_argument('--vcf', required=False, action='store_true', default=False, help='output golden VCF file')
     parser.add_argument('--rng', type=int, required=False, metavar='<int>', default=-1,
                         help='rng seed value; identical RNG value should produce identical runs of the program, so '
