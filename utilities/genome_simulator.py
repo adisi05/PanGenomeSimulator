@@ -66,7 +66,8 @@ class GenomeSimulator:
         self._output_vcf = args.vcf
         self._output_no_fastq = args.no_fastq or args.internal
         self._rng_seed = args.rng
-        self._logger = logger.Logger((args.max_threads is not None and args.max_threads > 1), args.d)
+        logger_name = args.name if args.max_threads is not None and args.max_threads > 1 else ''
+        self._logger = logger.Logger(logger_name, args.d)
         self._sequencing_read_len = args.R
         self._sequencing_coverage = args.c
         self._sequencing_fragment_size, self._sequencing_fragment_std = args.pe

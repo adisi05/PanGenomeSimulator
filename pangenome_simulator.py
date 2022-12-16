@@ -185,18 +185,19 @@ def generate_concurrently(ncpu, task_list) -> Dict[str, set]:
 
 def process_handler(params_with_cond) -> (str, set):
     simulation_params, cond = params_with_cond
-    log_message('started a new thread', is_concurrent=True)
+    curr_proc = multiprocessing.current_process()
+    log_message(f'started a new thread: {curr_proc.name}', name=simulation_params.name)
     # When ancestor is ready - then start simulating
     ancestor_path = simulation_params.r
     while not os.path.exists(ancestor_path):
-        log_message('checking if ancestor exists', is_concurrent=True)
+        log_message('checking if ancestor exists', name=simulation_params.name)
         with cond:
             cond.wait()
-            log_message('checking again if ancestor exists', is_concurrent=True)
-    log_message(f'ancestor path ({ancestor_path}) is ready', is_concurrent=True)
+            log_message('checking again if ancestor exists', name=simulation_params.name)
+    log_message(f'ancestor path ({ancestor_path}) is ready', name=simulation_params.name)
     accession_genes = generate_for_node(simulation_params)
     with cond:
-        log_message(f'thread has finished simulation for {simulation_params.name}', is_concurrent=True)
+        log_message(f'thread has finished simulation for {simulation_params.name}', name=simulation_params.name)
         cond.notify_all()
 
     return simulation_params.name, accession_genes
@@ -212,19 +213,20 @@ def generate_sequentially(task_list) -> Dict[str, set]:
 
 
 def generate_for_node(args) -> set:
-    is_concurrent = args.max_threads is not None and args.max_threads > 1
-    log_message('\n', is_concurrent)
-    log_message('==================================================', is_concurrent)
-    log_message(f"\tGenerating sequence for taxon (node):{args.name}", is_concurrent)
-    log_message('==================================================', is_concurrent)
-    log_message('Branch length is {:.3f} of the overall tree branches length'.format(args.dist), is_concurrent)
+    name = ''
+    if args.max_threads is not None and args.max_threads > 1:
+        name = args.name
+    log_message('\n', name)
+    log_message('==================================================', name)
+    log_message(f"\tGenerating sequence for taxon (node):{args.name}", name)
+    log_message('==================================================', name)
+    log_message('Branch length is {:.3f} of the overall tree branches length'.format(args.dist), name)
 
     start = time.time()
     genome_simulator = GenomeSimulator(args)
     accession_genes = genome_simulator.simulate()
     end = time.time()
-    log_message("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)),
-                is_concurrent)
+    log_message("Done. Generating sequence for taxon {} took {} seconds.".format(args.name, int(end - start)), name)
     return accession_genes
 
 
