@@ -233,6 +233,7 @@ class AnnotatedSequence:
         self._gene_ids.remove(gene_id)
 
         end = time.time()
+        self.logger.message(f"Muted gene {gene_id}")
         self.logger.debug_message(f"Gene muting took {0:.3f} seconds.".format(end-start))
         self.logger.debug_message(f"New intergenic region is now from start={intergenic_start} to "
                                   f"end={intergenic_end}.")

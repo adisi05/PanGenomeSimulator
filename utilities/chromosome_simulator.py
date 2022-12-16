@@ -296,25 +296,24 @@ class ChromosomeSimulator:
         return indel
 
     def _mutate_sequence(self, mutation: Mutation):
-        self.logger.debug_message(f"Trying to insert mutation of type {mutation.mut_type.value} "
-                                  f"at position {mutation.position}.")
 
         ref_start = mutation.position
         ref_end = ref_start + len(mutation.ref_nucl)
         window_shift = mutation.get_offset_change()
 
         if mutation.ref_nucl != str(self.chrom_sequence[ref_start:ref_end]):
-            self.logger.message(f'\nError: Something went wrong!\n'
-                                f'mutation={mutation}, '
-                                f'[ref_start, ref_end]={[ref_start, ref_end]}, '
-                                f'{str(self.chrom_sequence[ref_start:ref_end])}\n')
+            self.logger.message(f'Error: Failed to insert the next mutation: {mutation}\n'
+                                f'[ref_start, ref_end]='
+                                f'{[ref_start, ref_end]}, {str(self.chrom_sequence[ref_start:ref_end])}')
             sys.exit(1)
         else:
             # alter reference sequence
             self.chrom_sequence = self.chrom_sequence[:ref_start] + MutableSeq(mutation.new_nucl) + \
                                   self.chrom_sequence[ref_end:]
 
-        self.logger.debug_message(f"Inserted mutation successfully. Window shift is {window_shift}")
+        self.logger.message(f"Inserted mutation: "
+                            f"{mutation.mut_type.value} at position {mutation.position}. "
+                            f"Window shift: {window_shift}")
         return window_shift
 
     def _handle_annotations_after_mutated_sequence(self, inserted_mutation: Mutation):
@@ -351,9 +350,13 @@ class ChromosomeSimulator:
             start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
             # assuming sequence has been mutated already!
             codon = self.chrom_sequence[start:end + 1]
-            is_stop = is_stop_codon(codon, strand, self.logger)
+            is_stop = is_stop_codon(codon, strand)
             is_last_codon = self._is_last_coding_position(start, end)
             if (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
+                if is_stop and not is_last_codon:
+                    self.logger.message('SNP caused stop codon gain')
+                elif not is_stop and is_last_codon:
+                    self.logger.message('SNP caused stop codon loss')
                 self.annotated_seq.mute_gene(position_on_gene=inserted_mutation.position)
         else:
             raise Exception("unknown annotation")
@@ -373,6 +376,7 @@ class ChromosomeSimulator:
         elif region.value == Region.CDS.value:
             frameshift = (len(inserted_mutation.new_nucl) - 1) % 3 != 0
             if frameshift:
+                self.logger.message('Insertion caused frame shift')
                 return True
             else:
                 first_codon_start, _, first_codon_end = \
@@ -382,6 +386,7 @@ class ChromosomeSimulator:
                     # assuming sequence has been mutated already!
                     codon = self.chrom_sequence[first_codon_start + (3 * i): first_codon_end + 1 + (3 * i)]
                     if is_stop_codon(codon, strand):
+                        self.logger.message('Insertion caused stop codon gain')
                         return True
             return False
 
@@ -420,6 +425,7 @@ class ChromosomeSimulator:
         elif region.value == Region.CDS.value:
             frameshift = (len(inserted_mutation.ref_nucl) - 1) % 3 != 0
             if frameshift:
+                self.logger.message('Deletion caused frame shift')
                 return True
             else:
                 start, _, end = self.annotated_seq.get_encapsulating_codon_positions(inserted_mutation.position)
@@ -427,7 +433,11 @@ class ChromosomeSimulator:
                 codon = self.chrom_sequence[start:end + 1]
                 is_stop = is_stop_codon(codon, strand)
                 is_last_codon = self._is_last_coding_position(start, end)
-                if (is_stop and not is_last_codon) or (not is_stop and is_last_codon):
+                if is_stop and not is_last_codon:
+                    self.logger.message('Deletion caused stop codon gain')
+                    return True
+                elif not is_stop and is_last_codon:
+                    self.logger.message('Deletion caused stop codon loss')
                     return True
             return False
 
@@ -457,8 +467,7 @@ class ChromosomeSimulator:
         return self.annotated_seq.get_genes()
 
 
-def is_stop_codon(codon: str, strand: Strand, logger: Logger = None) -> bool:
-    logger = logger if logger else Logger()
+def is_stop_codon(codon: str, strand: Strand) -> bool:
     stop = False
 
     if strand.value == Strand.FORWARD.value:
@@ -466,7 +475,4 @@ def is_stop_codon(codon: str, strand: Strand, logger: Logger = None) -> bool:
 
     if strand.value == Strand.REVERSE.value:
         stop = codon in STOP_CODONS_REVERSE_STRAND
-
-    logger.debug_message("Encountered stop codon")
-
     return stop
