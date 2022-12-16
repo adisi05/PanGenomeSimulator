@@ -12,18 +12,18 @@
 ###############
 # Parameters: #
 ###############
-code_dir=/groups/itay_mayrose/adisivan/PanGenomeSimulator
+base_dir=/groups/itay_mayrose/adisivan/PanGenomeSimulator
+code_dir=$base_dir/Simulator
 job_dir=/groups/itay_mayrose/adisivan/PanGenomeSimulator/Panoramic/$PBS_JOBNAME
-accessions_vcf_files=$code_dir/vcf_inputs/intersection_*
-vcf_file=$code_dir/vcf_inputs/all_accessions.vcf
+accessions_vcf_files=$base_dir/vcf_inputs/intersection_*
+vcf_file=$job_dir/all_accessions.vcf
 #vcf_file=$job_dir/all.snp.filter.ref.variable.rename.vcf
-tree_file=$code_dir/vcf_inputs/tree.newick
+tree_file=$job_dir/tree.newick
 #tree_file=$job_dir/all.snp.filter.ref.variable.rename.min9.phy.treefile
 gff_file=/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3
 #gff_file=/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3
-annotations_file=$code_dir/test_arabidopsis/test_all_chroms_annotations.csv
-#annotations_file=$job_dir/all_chroms_annotations.csv
-fasta_ref=$code_dir/test_arabidopsis/Arabidopsis_3_chroms_1000.f
+annotations_file=$job_dir/all_chroms_annotations.csv
+fasta_ref=$base_dir/test_arabidopsis/Arabidopsis_3_chroms_1000.fa
 #fasta_ref=/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa
 model_file=$job_dir/mut_model.p
 
@@ -36,7 +36,6 @@ source ~/.bashrc
 hostname
 conda activate PanGenomeSimulator
 export PATH="$CONDA_PREFIX/bin:$PATH"
-cd $code_dir
 echo "Job Name: $PBS_JOBNAME"
 touch $job_dir/logs/out.txt
 if [[ ! -e $job_dir/logs/out.txt ]]; then
@@ -44,28 +43,28 @@ if [[ ! -e $job_dir/logs/out.txt ]]; then
     touch $job_dir/logs/out.txt
 fi
 date >> $job_dir/logs/out.txt
+cd $code_dir
 
-## 1. Process VCF files to infer tree and build a merged VCF file
-start=`date +%s`
-sh ./merge_accesion_vcfs_and_create_tree.sh $vcf_file $tree_file $accessions_vcf_files
-end=`date +%s`
-runtime=$((end-start))
-echo "VCF merging and tree generation took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
-
-## 2. Process annotation file
-python process_annotations.py --gff $gff_file --csv $annotations_file
+### 1. Process VCF files to infer tree and build a merged VCF file
+#start=`date +%s`
+#sh merge_accesion_vcfs_and_create_tree.sh $vcf_file $tree_file $accessions_vcf_files
+#end=`date +%s`
+#runtime=$((end-start))
+#echo "VCF merging and tree generation took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
+#
+### 2. Process annotation file
+#python process_annotations.py --gff $gff_file --csv $annotations_file
 
 ## 3. Build model
 start=`date +%s`
-python /groups/itay_mayrose/adisivan/PanGenomeSimulator/mutation_model.py \
--r $fasta_ref -v $vcf_file -o $model_file -a $annotations_file
+python generate_mutation_model.py -r $fasta_ref -v $vcf_file -o $model_file -a $annotations_file
 end=`date +%s`
 runtime=$((end-start))
 echo "Model building took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
 
 ## 4. Simulate pan-genome
 start=`date +%s`
-python /groups/itay_mayrose/adisivan/PanGenomeSimulator/pangenome_simulator.py \
+python pangenome_simulator.py \
 -r $fasta_ref -m $model_file -o $job_dir/output -a $annotations_file -t $tree_file --vcf --max-threads 3 \
 -R 150 --pe 250 20 -c 30
 end=`date +%s`
