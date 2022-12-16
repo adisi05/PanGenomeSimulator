@@ -25,7 +25,7 @@ class RegionsStats:
                 self._annotated_sequence_per_chrom[chrom] = AnnotatedSequence(annotations_df, chrom)
 
     def get_region_by_chrom_and_pos(self, chrom: str, pos: int) -> Region:
-        if not self._annotated_sequence_per_chrom:
+        if not self._annotated_sequence_per_chrom or chrom not in self._annotated_sequence_per_chrom:
             return Region.ALL
         region, _ = self._annotated_sequence_per_chrom[chrom].get_region_by_position(pos)
         return region
