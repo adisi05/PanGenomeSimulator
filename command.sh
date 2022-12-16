@@ -4,10 +4,10 @@
 #PBS -r y
 #PBS -q itaym
 #PBS -v PBS_O_SHELL=bash,PBS_ENVIRONMENT=PBS_BATCH
-#PBS -N simulation_01
-#PBS -e /groups/itay_mayrose/adisivan/PanGenomeSimulator/Panoramic/simulation_01/logs
-#PBS -o /groups/itay_mayrose/adisivan/PanGenomeSimulator/Panoramic/simulation_01/logs
-#PBS -l select=ncpus=4:mem=40gb
+#PBS -N simulation_00
+#PBS -e /groups/itay_mayrose/adisivan/PanGenomeSimulator/Panoramic/simulation_00/logs
+#PBS -o /groups/itay_mayrose/adisivan/PanGenomeSimulator/Panoramic/simulation_00/logs
+#PBS -l select=ncpus=4:mem=10gb
 
 ###############
 # Parameters: #
@@ -19,9 +19,12 @@ vcf_file=$code_dir/vcf_inputs/all_accessions.vcf
 #vcf_file=$job_dir/all.snp.filter.ref.variable.rename.vcf
 tree_file=$code_dir/vcf_inputs/tree.newick
 #tree_file=$job_dir/all.snp.filter.ref.variable.rename.min9.phy.treefile
-gff_file=/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3
-annotations_file=$job_dir/all_chroms_annotations.csv
-fasta_ref=/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa
+gff_file=/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53_1000.gff3
+#gff_file=/groups/itay_mayrose/adisivan/arabidopsis/ensemblgenomes/gff3/Arabidopsis_thaliana.TAIR10.53.gff3
+annotations_file=$code_dir/test_arabidopsis/test_all_chroms_annotations.csv
+#annotations_file=$job_dir/all_chroms_annotations.csv
+fasta_ref=$code_dir/test_arabidopsis/Arabidopsis_3_chroms_1000.f
+#fasta_ref=/groups/itay_mayrose/adisivan/PanGenomeSimulator/test_arabidopsis/Arabidopsis_thaliana.TAIR10.dna.toplevel.fa
 model_file=$job_dir/mut_model.p
 
 ########
