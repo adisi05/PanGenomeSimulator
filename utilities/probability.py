@@ -26,9 +26,7 @@ class DiscreteDistribution:
             self.degenerate = values[0]
         else:
             self.weights = [n / sum_weight for n in weights]
-            # TODO This line is slowing things down and seems unnecessary. Are these "values
-            # possibly some thing from another class?
-            self.values = copy.deepcopy(values)
+            self.values = values
             if len(self.values) != len(self.weights):
                 print('\nError: length and weights and values vectors must be the same.\n')
                 exit(1)
