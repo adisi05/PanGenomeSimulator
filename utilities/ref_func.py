@@ -91,12 +91,10 @@ def index_ref(reference_path: str, logger: Logger = None) -> [list, int]:
     return ref_indices, line_width
 
 
-def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False, logger: Logger = None):
+def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, logger: Logger = None):
     logger = logger if logger else Logger()
-    # TODO understand how my_dat is computed
     tt = time.time()
-    # if not quiet:
-    logger.message(f'Reading & indexing reference, chromosome: {ref_inds_i[0]}... ')
+    logger.debug_message(f'Reading & indexing reference, chromosome: {ref_inds_i[0]}... ')
 
     absolute_reference_path = pathlib.Path(ref_path)
     if absolute_reference_path.suffix == '.gz':
@@ -104,15 +102,15 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False, log
     else:
         ref_file = open(absolute_reference_path, 'r')
 
-    # TODO convert to SeqIO containers
-    # for seq_record in SeqIO.parse(ref_file, "fasta"):
-    #     pass
+    # TODO convert to SeqIO containers?
+    #  for seq_record in SeqIO.parse(ref_file, "fasta"):
+    #     ...
 
     ref_file.seek(ref_inds_i[1])
     my_dat = ''.join(ref_file.read(ref_inds_i[2] - ref_inds_i[1]).split('\n'))
     my_dat = Seq(my_dat.upper())
-    # Mutable seqs have a number of disadvantages. I'm going to try making them immutable and see if that helps
-    # my_dat = MutableSeq(my_dat)
+    # TODO Mutable seqs have a number of disadvantages. Convert to immutable and see if that helps?
+    #  my_dat = MutableSeq(my_dat)
 
     # find N regions
     # data explanation: my_dat[n_atlas[0][0]:n_atlas[0][1]] = solid block of Ns
@@ -170,7 +168,6 @@ def read_ref(ref_path, ref_inds_i, n_handling, n_unknowns=True, quiet=False, log
 
     ref_file.close()
 
-    # if not quiet:
-    logger.message('Reading reference took {0:.3f} (sec)'.format(time.time() - tt))
+    logger.debug_message('Reading reference took {0:.3f} (sec)'.format(time.time() - tt))
 
     return my_dat, n_info

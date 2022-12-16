@@ -71,9 +71,7 @@ class GenomeSimulator:
         self._sequencing_read_len = args.R
         self._sequencing_coverage = args.c
         self._sequencing_fragment_size, self._sequencing_fragment_std = args.pe
-        # TODO try use args.pe not null? :
-        self._sequencing_paired_end = (self._sequencing_fragment_size and self._sequencing_fragment_std) \
-            or args.pe_model
+        self._sequencing_paired_end = self._sequencing_fragment_size and self._sequencing_fragment_std
         self._sequencing_n_handling = {'method': 'random', 'max_threshold': self._sequencing_fragment_size} \
             if self._sequencing_paired_end else {'method': 'ignore', 'max_threshold': None}
         self._window_size = args.w if args.w > MIN_WINDOW_SIZE else DEFAULT_WINDOW_SIZE
@@ -112,7 +110,7 @@ class GenomeSimulator:
         # TODO check to see if this might work better as a dataframe or biopython object
         ref_index, line_width = index_ref(self._input_reference, logger=self._logger)
         # TODO check if this index can work, maybe it's faster
-        # ref_index2 = SeqIO.index(reference, 'fasta')
+        #  ref_index2 = SeqIO.index(reference, 'fasta')
         self._indices_by_ref_name = {chrom[0]: chrom for chrom in ref_index}
         self._output_line_width = line_width
         end = time.time()

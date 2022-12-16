@@ -34,8 +34,8 @@ class ChromosomeSimulator:
                  annotations_sorted: bool = False, mut_model=None, mut_scalar=None, dist=None, logger: Logger = None):
         self.logger = logger if logger else Logger()
         self.chrom_name = chromosome_name
+        # TODO consider using Seq class to benefit from the class-supported methods:
         self.chrom_sequence = MutableSeq(str(chromosome_sequence))
-        # TODO consider using Seq class to benefit from the class-supported methods
         self.seq_len = len(chromosome_sequence)
         self.annotated_seq = AnnotatedSequence(annotations_df, chromosome_name, is_sorted=annotations_sorted,
                                                logger=self.logger)
@@ -225,13 +225,11 @@ class ChromosomeSimulator:
                 event_pos = random.choices(
                     range(self.window_unit.start + 1, self.window_unit.end - 1), weights=region_mask[1:-1], k=1)[0]
                 # https://pynative.com/python-weighted-random-choices-with-probability/
-                # TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
             else:
                 event_pos = self.window_unit.start + self.trinuc_bias_per_region[region.value].sample()
                 if event_pos <= self.window_unit.start or self.window_unit.end - 1 <= event_pos:
                     continue
-                # TODO if event_pos is ok return it, otherwise keep trying
                 return event_pos
         return -1
 
