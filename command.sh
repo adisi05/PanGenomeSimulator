@@ -45,17 +45,24 @@ fi
 date >> $job_dir/logs/out.txt
 cd $code_dir
 
-### 1. Process VCF files to infer tree and build a merged VCF file
-#start=`date +%s`
-#sh merge_accesion_vcfs_and_create_tree.sh $vcf_file $tree_file $accessions_vcf_files
-#end=`date +%s`
-#runtime=$((end-start))
-#echo "VCF merging and tree generation took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
-#
-### 2. Process annotation file
-#python process_annotations.py --gff $gff_file --csv $annotations_file
+## 1. Process VCF files to infer tree and build a merged VCF file
+echo "Starting VCF merging and tree generation" >> $job_dir/logs/out.txt 2>&1
+start=`date +%s`
+sh merge_accesion_vcfs_and_create_tree.sh $vcf_file $tree_file $accessions_vcf_files
+end=`date +%s`
+runtime=$((end-start))
+echo "VCF merging and tree generation took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
+
+## 2. Process annotation
+echo "Starting annotation processing" >> $job_dir/logs/out.txt 2>&1
+start=`date +%s`
+python process_annotations.py --gff $gff_file --csv $annotations_file
+end=`date +%s`
+runtime=$((end-start))
+echo "Annotation processing took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
 
 ## 3. Build model
+echo "Starting model building" >> $job_dir/logs/out.txt 2>&1
 start=`date +%s`
 python generate_mutation_model.py -r $fasta_ref -v $vcf_file -o $model_file -a $annotations_file
 end=`date +%s`
@@ -63,6 +70,7 @@ runtime=$((end-start))
 echo "Model building took $runtime seconds" >> $job_dir/logs/out.txt 2>&1
 
 ## 4. Simulate pan-genome
+echo "Starting simulation" >> $job_dir/logs/out.txt 2>&1
 start=`date +%s`
 python pangenome_simulator.py \
 -r $fasta_ref -m $model_file -o $job_dir/output -a $annotations_file -t $tree_file --vcf --max-threads 3 \
