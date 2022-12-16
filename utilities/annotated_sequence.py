@@ -49,6 +49,7 @@ class AnnotatedSequence:
                 self.logger.message(f"Chromosome {self._chromosome} was not found in the annotation dataframe."
                                     f"Therefore, ignoring the annotations for this chromosome.")
             del self._annotations_df['chrom']
+
         if not is_sorted:
             self._annotations_df.sort_values('start', inplace=True)
         self._annotations_df.reset_index(drop=True, inplace=True)
@@ -59,7 +60,8 @@ class AnnotatedSequence:
             self._relevant_regions.append(Region.ALL)
 
         self._gene_ids = set(self._annotations_df.gene_id.unique())
-        self._gene_ids.remove(0)
+        if 0 in self._gene_ids:
+            self._gene_ids.remove(0)
 
     def len(self):
         if self._annotations_df is None or self._annotations_df.empty:
