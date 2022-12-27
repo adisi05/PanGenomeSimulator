@@ -1,4 +1,5 @@
 import argparse
+import pandas as pd
 
 import csv
 import sys
@@ -7,7 +8,10 @@ REF_LABEL = 'TAIR10'
 NO_GENE = '0'
 GENE_PREF = 'transcript_'
 NOVEL_GENE = 'PanGene'
-parser = argparse.ArgumentParser(description='Plot and compare gene stats',
+ACCESSION_NAMES = ['A-lyrata', 'Cvi', 'C24', 'An-1', 'Col-0', 'Sha', 'Ler', 'Kyo', 'Eri']
+SIMULATOR_PAV_COLUMNS = ['gene_id'] + ACCESSION_NAMES
+PANORAMIC_PAV_COLUMNS = [f'{name}_{name}' for name in ACCESSION_NAMES] + [REF_LABEL, 'gene']
+parser = argparse.ArgumentParser(description='Plot and compare gene stats]',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
 parser.add_argument('-f', type=str, required=True, metavar='<str>', nargs='+',
                     help="* pan_PAV_1.tsv [pan_PAV_2.tsv] [pan_PAV_3.tsv] ...")
@@ -18,20 +22,25 @@ parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
 
 args = parser.parse_args()
 panoramic_pav_files = args.f
-simulator_pav_files = args.s
+simulator_pav_dfs = []
+simulator_raw_pav_files = args.s
 simulator_legend_files = args.l
-if len(panoramic_pav_files) != len(simulator_pav_files) or len(simulator_pav_files) != len(simulator_legend_files):
+if len(panoramic_pav_files) != len(simulator_raw_pav_files) or len(simulator_raw_pav_files) != len(simulator_legend_files):
     print("Number of parameters incorrect")
     sys.exit(1)
 
-for i in range(len(simulator_pav_files)):
-    # TODO read simulator_legend_files[i] and simulator_pav_files[i] and see which genes are really presence in each
-    #  accession and which aren't
-    pass
+for i in range(len(simulator_raw_pav_files)):
+    raw_pav_df = pd.read_csv(simulator_raw_pav_files[i], index_col=0,
+                             dtype={'gene_id': 'int', 'chrom': 'str', 'ref_start': 'int', 'ref_end': 'int'})
+    legend_df = pd.read_csv(simulator_legend_files[i], index_col=0, dtype={'Name': 'str', 'ID': 'int'})
+    legend_df = legend_df.rename(columns={'ID': 'gene_id', 'oldName2': 'newName2'})
+    pav_df = pd.merge(raw_pav_df, legend_df, how='inner', on=['gene_id'])
+    pav_df = pav_df[SIMULATOR_PAV_COLUMNS]
+    simulator_pav_dfs.append(pav_df)
 
-for panoramic_pav in panoramic_pav_files:
+for i in range(len(panoramic_pav_files)):
     missing_genes = []
-    with open(panoramic_pav) as file:
+    with open(panoramic_pav_files[i]) as file:
 
         tsv_file = csv.reader(file, delimiter="\t")
 
@@ -47,13 +56,9 @@ for panoramic_pav in panoramic_pav_files:
                 continue
 
             line.pop(ref_index)
-            # print(line)  # TEST
             if NO_GENE in line:
                 missing_genes.append(line[0])
-            # i += 1  # TEST
-            # print(line)  # TEST
-            # if i == 5:  # TEST
-            #     break
+                # TODO test per accession against simulator_pav_dfs[i]
     print(missing_genes)
 
     # TODO compute which genes are also absent in the simulator PAVs.
