@@ -1,10 +1,8 @@
 import argparse
-
-import os
 import pandas as pd
-
 import csv
 import sys
+import matplotlib.pyplot as plt
 
 REF_LABEL = 'TAIR10'
 NO_GENE = '0'
@@ -32,7 +30,8 @@ simulator_legend_files = args.l
 file_tags = args.t
 
 simulator_pav_dfs = []
-stats_per_file = {}
+stats_per_file = {tag: {} for tag in file_tags}
+
 if len(panoramic_pav_files) != len(simulator_raw_pav_files) or len(simulator_raw_pav_files) != len(simulator_legend_files):
     print("Number of parameters incorrect")
     sys.exit(1)
@@ -45,12 +44,18 @@ for i in range(len(simulator_raw_pav_files)):
     pav_df = pd.merge(raw_pav_df, legend_df, how='inner', on=['gene_id'])
     pav_df[['Name', 'Transcript']] = pav_df.apply(lambda x: x['Name'].split('.'), axis=1, result_type='expand')
     pav_df = pav_df.loc[:, pav_df.columns.isin(SIMULATOR_PAV_COLUMNS)]  # select this columns if exist
-
     simulator_pav_dfs.append(pav_df)
+
+    file_stats = stats_per_file[file_tags[i]]
+    file_stats['All'] = {'Simulator': len(pav_df[pav_df.isin([False]).any(axis=1)])}
+    for column in pav_df:
+        if column in ['Name', 'Transcript']:
+            continue
+        file_stats[column] = {'Simulator': len(pav_df[pav_df[column] == False])}
 
 for i in range(len(panoramic_pav_files)):
     with open(panoramic_pav_files[i]) as file:
-        file_stats = {}
+        file_stats = stats_per_file[file_tags[i]]
         missing_genes = {}
         relevant_accessions = []
         ref_index = None
@@ -88,13 +93,18 @@ for i in range(len(panoramic_pav_files)):
                             accession_dict[a_name] = True
                 missing_genes[gene_name] = accession_dict
 
-    print("Total missing genes by Panoramic:", len(missing_genes))
+    print("======================================")
+    print(file_tags[i])
+    print("======================================")
     simulator_agree_count = 0
     for _, v in missing_genes.items():
         if v['All']:
             simulator_agree_count += 1
-    print("The numbers of missing genes that are defined missing also by the simulator:", simulator_agree_count)
-    file_stats['All'] = {'Overall': len(missing_genes), 'Agreed': simulator_agree_count}
+    file_stats['All'].update({'Panoramic': len(missing_genes), 'Agreed': simulator_agree_count})
+    print("Num of genes missing by Simulator:", file_stats['All']['Simulator'])
+    print("Num of genes missing by Panoramic:", file_stats['All']['Panoramic'])
+    print("Num of genes agreed on both:", file_stats['All']['Agreed'])
+
     for a_name in relevant_accessions:
         missing_genes_in_accession = 0
         simulator_agree_count_accession = 0
@@ -103,23 +113,21 @@ for i in range(len(panoramic_pav_files)):
                 missing_genes_in_accession += 1
                 if v[a_name]:
                     simulator_agree_count_accession += 1
+        print("----------")
         print("For accession:", a_name)
-        print("Total missing genes by Panoramic:", missing_genes_in_accession)
-        print("The numbers of missing genes that are defined missing also by the simulator:",
-              simulator_agree_count_accession)
-        file_stats[a_name] = {'Overall': missing_genes_in_accession, 'Agreed': simulator_agree_count_accession}
+        file_stats[a_name].update({'Panoramic': missing_genes_in_accession, 'Agreed': simulator_agree_count_accession})
+        print("Num of genes missing by Simulator:", file_stats[a_name]['Simulator'])
+        print("Num of genes missing by Panoramic:", file_stats[a_name]['Panoramic'])
+        print("Num of genes agreed on both:", file_stats[a_name]['Agreed'])
 
-    file_name = file_tags[i]
-    stats_per_file[file_name] = file_stats
 
-import matplotlib.pyplot as plt
-
-bar_width = 0.35
+bar_width = 0.25
 for file_name, file_stats in stats_per_file.items():
     # Set the number of groups and the values for each group
     N = len(file_stats)
-    values1 = [v['Overall'] for _, v in file_stats.items()]
-    values2 = [v['Agreed'] for _, v in file_stats.items()]
+    values1 = [v['Simulator'] for _, v in file_stats.items()]
+    values2 = [v['Panoramic'] for _, v in file_stats.items()]
+    values3 = [v['Agreed'] for _, v in file_stats.items()]
 
     # Set the labels for each group and the bar width
     labels = [k for k, _ in file_stats.items()]
@@ -128,17 +136,20 @@ for file_name, file_stats in stats_per_file.items():
     x_pos = [i for i in range(N)]
 
     # Build the first set of bars
-    plt.bar(x_pos, values1, bar_width, alpha=0.5, color='b')
+    plt.bar(x_pos, values1, bar_width, alpha=0.5, color='#4682B4')
 
     # Build the second set of bars, positioned slightly to the right of the first set
-    plt.bar([i+bar_width for i in x_pos], values2, bar_width, alpha=0.5, color='r')
+    plt.bar([i + bar_width for i in x_pos], values2, bar_width, alpha=0.5, color='#FA8072')
+
+    # Build the third set of bars, positioned slightly to the right of the second set
+    plt.bar([i + bar_width * 2 for i in x_pos], values3, bar_width, alpha=0.5, color='#808000')
 
     # Set the x-axis tick marks and labels
-    plt.xticks([i+bar_width/2 for i in x_pos], labels)
+    plt.xticks([i + bar_width for i in x_pos], labels)
 
     # Add a legend and title
-    plt.legend(['Overall', 'Agreed'])
-    plt.title(f'{file_name}: Missing genes, overall and agreed')
+    plt.legend(['Simulator', 'Panoramic', 'Agreed'])
+    plt.title(f'{file_name}: Missing genes - Simulator, Panoramic and agreed')
 
     # Show the plot
     plt.show()
@@ -148,8 +159,9 @@ for file_name, file_stats in stats_per_file.items():
 
 # Set the number of groups and the values for each group
 N = len(stats_per_file)
-values1 = [v['All']['Overall'] for _, v in stats_per_file.items()]
-values2 = [v['All']['Agreed'] for _, v in stats_per_file.items()]
+values1 = [v['All']['Simulator'] for _, v in stats_per_file.items()]
+values2 = [v['All']['Panoramic'] for _, v in stats_per_file.items()]
+values3 = [v['All']['Agreed'] for _, v in stats_per_file.items()]
 
 # Set the labels for each group and the bar width
 labels = [k for k, _ in stats_per_file.items()]
@@ -158,17 +170,20 @@ labels = [k for k, _ in stats_per_file.items()]
 x_pos = [i for i in range(N)]
 
 # Build the first set of bars
-plt.bar(x_pos, values1, bar_width, alpha=0.5, color='b')
+plt.bar(x_pos, values1, bar_width, alpha=0.5, color='#4682B4')
 
 # Build the second set of bars, positioned slightly to the right of the first set
-plt.bar([i + bar_width for i in x_pos], values2, bar_width, alpha=0.5, color='r')
+plt.bar([i + bar_width for i in x_pos], values2, bar_width, alpha=0.5, color='#FA8072')
+
+# Build the third set of bars, positioned slightly to the right of the second set
+plt.bar([i + bar_width * 2 for i in x_pos], values3, bar_width, alpha=0.5, color='#808000')
 
 # Set the x-axis tick marks and labels
-plt.xticks([i + bar_width / 2 for i in x_pos], labels)
+plt.xticks([i + bar_width for i in x_pos], labels)
 
 # Add a legend and title
-plt.legend(['Overall', 'Agreed'])
-plt.title('Missing genes, overall and agreed')
+plt.legend(['Simulator', 'Panoramic', 'Agreed'])
+plt.title('Missing genes - Simulator, Panoramic and agreed')
 
 # Show the plot
 plt.show()
