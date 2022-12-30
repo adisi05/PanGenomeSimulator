@@ -44,25 +44,28 @@ for i in range(len(simulator_raw_pav_files)):
     legend_df = legend_df.rename(columns={'ID': 'gene_id'})
     pav_df = pd.merge(raw_pav_df, legend_df, how='inner', on=['gene_id'])
     pav_df[['Name', 'Transcript']] = pav_df.apply(lambda x: x['Name'].split('.'), axis=1, result_type='expand')
-    pav_df = pav_df[SIMULATOR_PAV_COLUMNS]
+    pav_df = pav_df.loc[:, pav_df.columns.isin(SIMULATOR_PAV_COLUMNS)]  # select this columns if exist
+
     simulator_pav_dfs.append(pav_df)
 
 for i in range(len(panoramic_pav_files)):
-    file_stats = {}
-    missing_genes = {}
     with open(panoramic_pav_files[i]) as file:
-        simulator_pav_df = simulator_pav_dfs[i]
-        tsv_file = csv.reader(file, delimiter="\t")
-
+        file_stats = {}
+        missing_genes = {}
+        relevant_accessions = []
         ref_index = None
         accession_indices = {}
-        # i = 0
+        simulator_pav_df = simulator_pav_dfs[i]
+
+        tsv_file = csv.reader(file, delimiter="\t")
         for line in tsv_file:
 
             if not ref_index:
                 ref_index = line.index(REF_LABEL)
                 for a_name in ACCESSION_NAMES:
-                    accession_indices[a_name] = line.index(f'{a_name}_{a_name}')
+                    if f'{a_name}_{a_name}' in line:
+                        accession_indices[a_name] = line.index(f'{a_name}_{a_name}')
+                relevant_accessions = list(accession_indices.keys())
                 continue
 
             if line[0].startswith(NOVEL_GENE):
@@ -74,13 +77,13 @@ for i in range(len(panoramic_pav_files)):
                 simulator_result = simulator_pav_df[simulator_pav_df['Name'] == gene_name]
                 accession_dict = {}
                 if not simulator_result.empty:
-                    accession_dict['All'] = False in simulator_result[ACCESSION_NAMES].values[0]
-                    for a_name in ACCESSION_NAMES:
+                    accession_dict['All'] = False in simulator_result[relevant_accessions].values[0]
+                    for a_name in relevant_accessions:
                         if NO_GENE == line[accession_indices[a_name]]:
                             accession_dict[a_name] = not simulator_result[a_name].item()
                 else:
                     accession_dict['All'] = True
-                    for a_name in ACCESSION_NAMES:
+                    for a_name in relevant_accessions:
                         if NO_GENE == line[accession_indices[a_name]]:
                             accession_dict[a_name] = True
                 missing_genes[gene_name] = accession_dict
@@ -92,7 +95,7 @@ for i in range(len(panoramic_pav_files)):
             simulator_agree_count += 1
     print("The numbers of missing genes that are defined missing also by the simulator:", simulator_agree_count)
     file_stats['All'] = {'Overall': len(missing_genes), 'Agreed': simulator_agree_count}
-    for a_name in ACCESSION_NAMES:
+    for a_name in relevant_accessions:
         missing_genes_in_accession = 0
         simulator_agree_count_accession = 0
         for _, v in missing_genes.items():
