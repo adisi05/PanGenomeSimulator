@@ -32,67 +32,66 @@ simulator_legend_files = args.l
 file_tags = args.t
 graph_title = args.T
 
-simulator_pav_dfs = []
 stats_per_file = {tag: {} for tag in file_tags}
 
 if len(panoramic_pav_files) != len(simulator_raw_pav_files) or len(simulator_raw_pav_files) != len(simulator_legend_files):
     print("Number of parameters incorrect")
     sys.exit(1)
 
-for i in range(len(simulator_raw_pav_files)):
-    raw_pav_df = pd.read_csv(simulator_raw_pav_files[i], index_col=0,
+for i in range(len(file_tags)):
+    relevant_accessions = []
+    file_stats = stats_per_file[file_tags[i]]
+
+    # Simulator "true" values
+    sim_pav_df = pd.read_csv(simulator_raw_pav_files[i], index_col=0,
                              dtype={'gene_id': 'int', 'chrom': 'str', 'ref_start': 'int', 'ref_end': 'int'})
     legend_df = pd.read_csv(simulator_legend_files[i], index_col=0, dtype={'Name': 'str', 'ID': 'int'})
     legend_df = legend_df.rename(columns={'ID': 'gene_id'})
-    pav_df = pd.merge(raw_pav_df, legend_df, how='inner', on=['gene_id'])
-    pav_df[['Name', 'Transcript']] = pav_df.apply(lambda x: x['Name'].split('.'), axis=1, result_type='expand')
-    pav_df = pav_df.loc[:, pav_df.columns.isin(SIMULATOR_PAV_COLUMNS)]  # select this columns if exist
-    simulator_pav_dfs.append(pav_df)
+    sim_pav_df = pd.merge(sim_pav_df, legend_df, how='inner', on=['gene_id'])
+    sim_pav_df[['Name', 'Transcript']] = sim_pav_df.apply(lambda x: x['Name'].split('.'), axis=1, result_type='expand')
+    sim_pav_df = sim_pav_df.loc[:, sim_pav_df.columns.isin(SIMULATOR_PAV_COLUMNS)]  # select this columns if exist
 
-    file_stats = stats_per_file[file_tags[i]]
-    file_stats['All'] = {'Simulator': len(pav_df[pav_df.isin([False]).any(axis=1)])}
-    for column in pav_df:
-        if column in ['Name', 'Transcript']:
-            continue
-        file_stats[column] = {'Simulator': len(pav_df[pav_df[column] == False])}
+    file_stats['All'] = {'Simulator': len(sim_pav_df[sim_pav_df.isin([False]).any(axis=1)])}
+    for column in sim_pav_df:
+        if column in ACCESSION_NAMES:
+            file_stats[column] = {'Simulator': len(sim_pav_df[sim_pav_df[column] == False])}
+            relevant_accessions.append(column)
 
-for i in range(len(panoramic_pav_files)):
     with open(panoramic_pav_files[i]) as file:
-        file_stats = stats_per_file[file_tags[i]]
+        pano_pav_index = {}
         missing_genes = {}
-        relevant_accessions = []
-        ref_index = None
-        accession_indices = {}
-        simulator_pav_df = simulator_pav_dfs[i]
 
         tsv_file = csv.reader(file, delimiter="\t")
         for line in tsv_file:
 
-            if not ref_index:
-                ref_index = line.index(REF_LABEL)
-                for a_name in ACCESSION_NAMES:
-                    if f'{a_name}_{a_name}' in line:
-                        accession_indices[a_name] = line.index(f'{a_name}_{a_name}')
-                relevant_accessions = list(accession_indices.keys())
+            # Indices
+            if not bool(pano_pav_index):
+                pano_pav_index[REF_LABEL] = line.index(REF_LABEL)
+                for a_name in relevant_accessions:
+                    if f'{a_name}_{a_name}' not in line:
+                        raise Exception(f"Accession named {a_name} was not found in {panoramic_pav_files[i]}")
+                    pano_pav_index[a_name] = line.index(f'{a_name}_{a_name}')
                 continue
 
+            # Novel genes
             if line[0].startswith(NOVEL_GENE):
                 continue
 
-            line.pop(ref_index)
+            # Known genes
+            line.pop(pano_pav_index[REF_LABEL])
             if NO_GENE in line:
                 gene_name = line[0].strip(GENE_PREF).split('.')[0]
-                simulator_result = simulator_pav_df[simulator_pav_df['Name'] == gene_name]
+                simulator_result = sim_pav_df[sim_pav_df['Name'] == gene_name]
                 accession_dict = {}
                 if not simulator_result.empty:
                     accession_dict['All'] = False in simulator_result[relevant_accessions].values[0]
                     for a_name in relevant_accessions:
-                        if NO_GENE == line[accession_indices[a_name]]:
+                        if NO_GENE == line[pano_pav_index[a_name]]:
                             accession_dict[a_name] = not simulator_result[a_name].item()
                 else:
                     accession_dict['All'] = True
                     for a_name in relevant_accessions:
-                        if NO_GENE == line[accession_indices[a_name]]:
+                        if NO_GENE == line[pano_pav_index[a_name]]:
                             accession_dict[a_name] = True
                 missing_genes[gene_name] = accession_dict
 
