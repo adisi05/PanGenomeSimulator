@@ -3,10 +3,11 @@ import pandas as pd
 import csv
 import sys
 import matplotlib.pyplot as plt
+import re
 
 REF_LABEL = 'TAIR10'
 NO_GENE = '0'
-GENE_PREF = 'transcript_'
+GENE_PREF = r'transcript[_:]'
 NOVEL_GENE = 'PanGene'
 ACCESSION_NAMES = ['A-lyrata', 'Cvi', 'C24', 'An-1', 'Col-0', 'Sha', 'Ler', 'Kyo', 'Eri']
 SIMULATOR_PAV_COLUMNS = ['Name', 'Transcript'] + ACCESSION_NAMES
@@ -83,7 +84,8 @@ for i in range(len(file_tags)):
 
             # Known genes
             line.pop(pano_pav_index[REF_LABEL])
-            gene_name = line[0].strip(GENE_PREF).split('.')[0]
+            gene_name = re.sub(GENE_PREF, '', line[0])
+            gene_name = gene_name.split('.')[0]
             simulator_result = sim_pav_df[sim_pav_df['Name'] == gene_name]
             if not simulator_result.empty:
                 for a_name in relevant_accessions:
@@ -118,29 +120,35 @@ for i in range(len(file_tags)):
     print("======================================")
     print(file_tags[i])
     print("======================================")
+    print("Num of genes absent by the simulator (real absent):", file_stats['All']['Real Absent'])
+    print("Num of genes absent by the simulator (real present):", file_stats['All']['Real Present'])
     print("Num of genes absent by Panoramic (predicted absent):", file_stats['All']['Predicted Absent'])
     print("Num of genes absent by Panoramic (predicted present):", file_stats['All']['Predicted Present'])
     print("Num of genes predicted absent correctly (TP):", file_stats['All']['Correct Absent'])
     print("Num of genes predicted present correctly (TN):", file_stats['All']['Correct Present'])
-    file_stats['All']['accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
+    file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
                                     (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
-    file_stats['All']['precision'] = file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent']
-    print("Accuracy:", file_stats['All']['accuracy'])
-    print("Precision:", file_stats['All']['precision'])
+    file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
+        file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent']
+    print("Accuracy:", file_stats['All']['Accuracy'])
+    print("Precision:", file_stats['All']['Precision'])
 
     for a_name in relevant_accessions:
         print("----------")
         print("For accession:", a_name)
+        print("Num of genes absent by the simulator (real absent):", file_stats[a_name]['Real Absent'])
+        print("Num of genes absent by the simulator (real present):", file_stats[a_name]['Real Present'])
         print("Num of genes absent by Panoramic (predicted absent):", file_stats[a_name]['Predicted Absent'])
         print("Num of genes absent by Panoramic (predicted present):", file_stats[a_name]['Predicted Present'])
         print("Num of genes predicted absent correctly (TP):", file_stats[a_name]['Correct Absent'])
         print("Num of genes predicted present correctly (TN):", file_stats[a_name]['Correct Present'])
-        file_stats[a_name]['accuracy'] = \
+        file_stats[a_name]['Accuracy'] = \
             (file_stats[a_name]['Correct Absent'] + file_stats[a_name]['Correct Present']) / \
             (file_stats[a_name]['Predicted Absent'] + file_stats[a_name]['Predicted Present'])
-        file_stats[a_name]['precision'] = file_stats[a_name]['Correct Absent'] / file_stats[a_name]['Predicted Absent']
-        print("Accuracy:", file_stats[a_name]['accuracy'])
-        print("Precision:", file_stats[a_name]['precision'])
+        file_stats[a_name]['Precision'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
+            file_stats[a_name]['Correct Absent'] / file_stats[a_name]['Predicted Absent']
+        print("Accuracy:", file_stats[a_name]['Accuracy'])
+        print("Precision:", file_stats[a_name]['Precision'])
 
 bar_width = 0.25
 for file_name, file_stats in stats_per_file.items():
