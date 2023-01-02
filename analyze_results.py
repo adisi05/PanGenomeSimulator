@@ -21,6 +21,8 @@ parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
                     help="* simulator_legend_1.csv [simulator_legend_2.csv] [simulator_legend_3.tsv] ...")
 parser.add_argument('-t', type=str, required=True, metavar='<str>', nargs='+',
                     help="* 'De-novo 01' ['Map-to-pan 01'] ['De-novo 02'] ...")
+parser.add_argument('-T', type=str, required=True, metavar='<str>', help="Graph Title")
+
 
 
 args = parser.parse_args()
@@ -28,6 +30,7 @@ panoramic_pav_files = args.f
 simulator_raw_pav_files = args.s
 simulator_legend_files = args.l
 file_tags = args.t
+graph_title = args.T
 
 simulator_pav_dfs = []
 stats_per_file = {tag: {} for tag in file_tags}
@@ -149,7 +152,7 @@ for file_name, file_stats in stats_per_file.items():
 
     # Add a legend and title
     plt.legend(['Simulator', 'Panoramic', 'Agreed'])
-    plt.title(f'{file_name}: Missing genes - Simulator, Panoramic and agreed')
+    plt.title(graph_title + f'\n{file_name}')
 
     # Show the plot
     plt.show()
@@ -183,7 +186,7 @@ plt.xticks([i + bar_width for i in x_pos], labels)
 
 # Add a legend and title
 plt.legend(['Simulator', 'Panoramic', 'Agreed'])
-plt.title('Missing genes - Simulator, Panoramic and agreed')
+plt.title(graph_title+'\nComparison')
 
 # Show the plot
 plt.show()
