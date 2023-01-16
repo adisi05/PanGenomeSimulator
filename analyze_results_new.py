@@ -5,6 +5,7 @@ import sys
 import matplotlib.pyplot as plt
 import re
 
+GENES_START_NUMBER = 27655
 REF_LABEL = 'TAIR10'
 NO_GENE = '0'
 GENE_PREF = r'transcript[_:]'
@@ -13,7 +14,7 @@ ACCESSION_NAMES = ['A-lyrata', 'Cvi', 'C24', 'An-1', 'Col-0', 'Sha', 'Ler', 'Kyo
 SIMULATOR_PAV_COLUMNS = ['Name', 'Transcript'] + ACCESSION_NAMES
 PANORAMIC_PAV_COLUMNS = [f'{name}_{name}' for name in ACCESSION_NAMES] + [REF_LABEL, 'gene']
 parser = argparse.ArgumentParser(description='Plot and compare gene stats]',
-                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,)
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter, )
 parser.add_argument('-f', type=str, required=True, metavar='<str>', nargs='+',
                     help="* pan_PAV_1.tsv [pan_PAV_2.tsv] [pan_PAV_3.tsv] ...")
 parser.add_argument('-s', type=str, required=True, metavar='<str>', nargs='+',
@@ -23,8 +24,6 @@ parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
 parser.add_argument('-t', type=str, required=True, metavar='<str>', nargs='+',
                     help="* 'De-novo 01' ['Map-to-pan 01'] ['De-novo 02'] ...")
 parser.add_argument('-T', type=str, required=True, metavar='<str>', help="Graph Title")
-
-
 
 args = parser.parse_args()
 panoramic_pav_files = args.f
@@ -36,13 +35,16 @@ graph_title = args.T
 stats_per_file = {tag: {} for tag in file_tags}
 new_stats_per_file = {tag: {} for tag in file_tags}
 
-if len(panoramic_pav_files) != len(simulator_raw_pav_files) or len(simulator_raw_pav_files) != len(simulator_legend_files):
+if len(panoramic_pav_files) != len(simulator_raw_pav_files) or len(simulator_raw_pav_files) != len(
+        simulator_legend_files):
     print("Number of parameters incorrect")
     sys.exit(1)
 
 for i in range(len(file_tags)):
 
-    # Simulator "true" values
+    ###############################
+    ### Simulator "true" values ###
+    ###############################
     sim_pav_df = pd.read_csv(simulator_raw_pav_files[i], index_col=0,
                              dtype={'gene_id': 'int', 'chrom': 'str', 'ref_start': 'int', 'ref_end': 'int'})
     legend_df = pd.read_csv(simulator_legend_files[i], index_col=0, dtype={'Name': 'str', 'ID': 'int'})
@@ -50,13 +52,20 @@ for i in range(len(file_tags)):
     sim_pav_df = pd.merge(sim_pav_df, legend_df, how='inner', on=['gene_id'])
     sim_pav_df[['Name', 'Transcript']] = sim_pav_df.apply(lambda x: x['Name'].split('.'), axis=1, result_type='expand')
     sim_pav_df = sim_pav_df.loc[:, sim_pav_df.columns.isin(SIMULATOR_PAV_COLUMNS)]  # select this columns if exist
+    sim_known_genes = len(sim_pav_df)
 
     relevant_accessions = [column for column in sim_pav_df if column in ACCESSION_NAMES]
 
+
+    ###################################
+    ### Panoramic "positive" values ###
+    ###################################
     with open(panoramic_pav_files[i]) as file:
         file_stats = stats_per_file[file_tags[i]]
         pano_pav_index = {}
-        missing_genes = {}
+        common_known_genes = 0
+        pano_known_genes = 0
+        pano_new_genes = 0
 
         tsv_file = csv.reader(file, delimiter="\t")
         for line in tsv_file:
@@ -80,14 +89,17 @@ for i in range(len(file_tags)):
 
             # Novel genes
             if line[0].startswith(NOVEL_GENE):
+                pano_new_genes += 1
                 continue
 
             # Known genes
+            pano_known_genes += 1
             line.pop(pano_pav_index[REF_LABEL])
             gene_name = re.sub(GENE_PREF, '', line[0])
             gene_name = gene_name.split('.')[0]
             simulator_result = sim_pav_df[sim_pav_df['Name'] == gene_name]
             if not simulator_result.empty:
+                common_known_genes += 1
                 for a_name in relevant_accessions:
                     if NO_GENE == line[pano_pav_index[a_name]]:
                         file_stats[a_name]['Predicted Absent'] += 1
@@ -114,24 +126,47 @@ for i in range(len(file_tags)):
         'Correct Absent': sum([file_stats[a_name]['Correct Absent'] for a_name in relevant_accessions]),
         'Real Present': sum([file_stats[a_name]['Real Present'] for a_name in relevant_accessions]),
         'Predicted Present': sum([file_stats[a_name]['Predicted Present'] for a_name in relevant_accessions]),
-        'Correct Present': sum([file_stats[a_name]['Correct Present'] for a_name in relevant_accessions])
+        'Correct Present': sum([file_stats[a_name]['Correct Present'] for a_name in relevant_accessions]),
+        'Simulator Known': sim_known_genes,
+        'Panoramic Known': pano_known_genes,
+        'Common Known': common_known_genes,
+        'Panoramic New': pano_new_genes
     }
 
     print("======================================")
     print(file_tags[i])
     print("======================================")
+    print("Simulator\'s known genes:", file_stats['All']['Simulator Known'], "which are the 'true' pan-genes")
+    simulation_discarded = GENES_START_NUMBER - file_stats['All']['Simulator Known']
+    print(f"{simulation_discarded} genes were discarded before simulation even started, "
+          f"which are {simulation_discarded/GENES_START_NUMBER} of the genes.")
+    print("Panoramic\'s known genes:", file_stats['All']['Panoramic Known'])
+    print("Common known genes:", file_stats['All']['Common Known'])
+    common_percentage = file_stats['All']['Common Known'] / file_stats['All']['Panoramic Known']
+    print(f"Out of Panoramic known genes, only {common_percentage} are relevant")
+    print("Panoramic\'s new genes:", file_stats['All']['Panoramic New'])
+    print("--------------------------------------")
     print("Num of genes absent by the simulator (real absent):", file_stats['All']['Real Absent'])
-    print("Num of genes absent by the simulator (real present):", file_stats['All']['Real Present'])
+    print("Num of genes present by the simulator (real present):", file_stats['All']['Real Present'])
     print("Num of genes absent by Panoramic (predicted absent):", file_stats['All']['Predicted Absent'])
-    print("Num of genes absent by Panoramic (predicted present):", file_stats['All']['Predicted Present'])
+    print("Num of genes present by Panoramic (predicted present):", file_stats['All']['Predicted Present'])
     print("Num of genes predicted absent correctly (TP):", file_stats['All']['Correct Absent'])
     print("Num of genes predicted present correctly (TN):", file_stats['All']['Correct Present'])
     file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
                                     (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
     file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
         file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent']
+    file_stats['All']['Recall'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
+        file_stats['All']['Correct Absent'] / \
+        (file_stats['All']['Correct Absent'] +
+         (file_stats['All']['Predicted Present'] - file_stats['All']['Correct Present']))
+    file_stats['All']['F1'] = 'N/A' if 'N/A' == file_stats['All']['Recall'] or 'N/A' == file_stats['All']['Precision'] \
+        else 2 * file_stats['All']['Recall'] * file_stats['All']['Precision'] / \
+        (file_stats['All']['Recall'] + file_stats['All']['Precision'])
     print("Accuracy:", file_stats['All']['Accuracy'])
     print("Precision:", file_stats['All']['Precision'])
+    print("Recall:", file_stats['All']['Recall'])
+    print("F1:", file_stats['All']['F1'])
 
     for a_name in relevant_accessions:
         print("----------")
@@ -147,10 +182,20 @@ for i in range(len(file_tags)):
             (file_stats[a_name]['Predicted Absent'] + file_stats[a_name]['Predicted Present'])
         file_stats[a_name]['Precision'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
             file_stats[a_name]['Correct Absent'] / file_stats[a_name]['Predicted Absent']
+        file_stats[a_name]['Recall'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
+            file_stats[a_name]['Correct Absent'] / \
+            (file_stats[a_name]['Correct Absent'] +
+             (file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Correct Present']))
+        file_stats[a_name]['F1'] = 'N/A'\
+            if 'N/A' == file_stats[a_name]['Recall'] or 'N/A' == file_stats[a_name]['Precision'] \
+            else 2 * file_stats[a_name]['Recall'] * file_stats[a_name]['Precision'] / \
+            (file_stats[a_name]['Recall'] + file_stats[a_name]['Precision'])
         print("Accuracy:", file_stats[a_name]['Accuracy'])
         print("Precision:", file_stats[a_name]['Precision'])
+        print("Recall:", file_stats[a_name]['Recall'])
+        print("F1:", file_stats[a_name]['F1'])
 
-bar_width = 0.25
+bar_width = 0.35
 for file_name, file_stats in stats_per_file.items():
     # Set the number of groups and the values for each group
     N = len(file_stats)
@@ -170,19 +215,18 @@ for file_name, file_stats in stats_per_file.items():
     # Build the second set of bars, positioned slightly to the right of the first set
     plt.bar([i + bar_width for i in x_pos], values2, bar_width, alpha=0.5, color='#FA8072')
 
-    # Build the third set of bars, positioned slightly to the right of the second set
-    plt.bar([i + bar_width * 2 for i in x_pos], values3, bar_width, alpha=0.5, color='#808000')
+    # Build the third set of bars, positioned at the same x-position as the second set of bars
+    plt.bar([i + bar_width for i in x_pos], values3, bar_width, alpha=0.5, color='#808000')
 
     # Set the x-axis tick marks and labels
-    plt.xticks([i + bar_width for i in x_pos], labels)
+    plt.xticks([i + bar_width/2 for i in x_pos], labels)
 
     # Add a legend and title
-    plt.legend(['Real Absent', 'Predicted Absent', 'Correct Absent'])
+    plt.legend(['Real Absent (Simulator)', f'Predicted Absent ({file_name})', 'Correct Absent'])
     plt.title(graph_title + f'\n{file_name}')
 
     # Show the plot
     plt.show()
-
 
 # Set the number of groups and the values for each group
 N = len(stats_per_file)
@@ -202,15 +246,15 @@ plt.bar(x_pos, values1, bar_width, alpha=0.5, color='#4682B4')
 # Build the second set of bars, positioned slightly to the right of the first set
 plt.bar([i + bar_width for i in x_pos], values2, bar_width, alpha=0.5, color='#FA8072')
 
-# Build the third set of bars, positioned slightly to the right of the second set
-plt.bar([i + bar_width * 2 for i in x_pos], values3, bar_width, alpha=0.5, color='#808000')
+# Build the third set of bars, positioned at the same x-position as the second set of bars
+plt.bar([i + bar_width for i in x_pos], values3, bar_width, alpha=0.5, color='#808000')
 
 # Set the x-axis tick marks and labels
-plt.xticks([i + bar_width for i in x_pos], labels)
+plt.xticks([i + bar_width/2 for i in x_pos], labels)
 
 # Add a legend and title
-plt.legend(['Real Absent', 'Predicted Absent', 'Correct Absent'])
-plt.title(graph_title+'\nComparison')
+plt.legend(['Real Absent\n(Simulator)', 'Predicted Absent\n(Panoramic pipeline)', 'Correct Absent'])
+plt.title(graph_title + '\nComparison')
 
 # Show the plot
 plt.show()
