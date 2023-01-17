@@ -155,14 +155,16 @@ for i in range(len(file_tags)):
     file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
                                     (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
     file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
-        file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent']
+        (file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent'])
     file_stats['All']['Recall'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
-        file_stats['All']['Correct Absent'] / \
-        (file_stats['All']['Correct Absent'] +
-         (file_stats['All']['Predicted Present'] - file_stats['All']['Correct Present']))
-    file_stats['All']['F1'] = 'N/A' if 'N/A' == file_stats['All']['Recall'] or 'N/A' == file_stats['All']['Precision'] \
-        else 2 * file_stats['All']['Recall'] * file_stats['All']['Precision'] / \
-        (file_stats['All']['Recall'] + file_stats['All']['Precision'])
+        (file_stats['All']['Correct Absent'] /
+         (file_stats['All']['Correct Absent'] + file_stats['All']['Predicted Present']
+          - file_stats['All']['Correct Present']))
+    file_stats['All']['F1'] = 'N/A'\
+        if file_stats['All']['Correct Absent'] == 0 or 'N/A' == file_stats['All']['Recall'] \
+           or 'N/A' == file_stats['All']['Precision'] \
+        else (2 * file_stats['All']['Recall'] * file_stats['All']['Precision'] /
+              (file_stats['All']['Recall'] + file_stats['All']['Precision']))
     print("Accuracy:", file_stats['All']['Accuracy'])
     print("Precision:", file_stats['All']['Precision'])
     print("Recall:", file_stats['All']['Recall'])
@@ -181,15 +183,16 @@ for i in range(len(file_tags)):
             (file_stats[a_name]['Correct Absent'] + file_stats[a_name]['Correct Present']) / \
             (file_stats[a_name]['Predicted Absent'] + file_stats[a_name]['Predicted Present'])
         file_stats[a_name]['Precision'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
-            file_stats[a_name]['Correct Absent'] / file_stats[a_name]['Predicted Absent']
+            (file_stats[a_name]['Correct Absent'] / file_stats[a_name]['Predicted Absent'])
         file_stats[a_name]['Recall'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
-            file_stats[a_name]['Correct Absent'] / \
-            (file_stats[a_name]['Correct Absent'] +
-             (file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Correct Present']))
+            (file_stats[a_name]['Correct Absent'] /
+             (file_stats[a_name]['Correct Absent'] + file_stats[a_name]['Predicted Present']
+              - file_stats[a_name]['Correct Present']))
         file_stats[a_name]['F1'] = 'N/A'\
-            if 'N/A' == file_stats[a_name]['Recall'] or 'N/A' == file_stats[a_name]['Precision'] \
-            else 2 * file_stats[a_name]['Recall'] * file_stats[a_name]['Precision'] / \
-            (file_stats[a_name]['Recall'] + file_stats[a_name]['Precision'])
+            if file_stats[a_name]['Correct Absent'] == 0 or 'N/A' == file_stats[a_name]['Recall'] \
+               or 'N/A' == file_stats[a_name]['Precision'] \
+            else (2 * file_stats[a_name]['Recall'] * file_stats[a_name]['Precision'] /
+                  (file_stats[a_name]['Recall'] + file_stats[a_name]['Precision']))
         print("Accuracy:", file_stats[a_name]['Accuracy'])
         print("Precision:", file_stats[a_name]['Precision'])
         print("Recall:", file_stats[a_name]['Recall'])
