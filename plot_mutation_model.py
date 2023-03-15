@@ -109,11 +109,11 @@ for fn in INP:
                                                 DATA_DICT[f'{gr}.INDEL_FREQ']]
         mpl.bar([color_ind - 1], [AVG_MUT_RATE], 1., color=my_col)
 mpl.xlim([-1, N_LABELS])
-mpl.grid()
+mpl.grid(visible=False)
 mpl.xticks([], [])
 # mpl.xticks(np.arange(N_LABELS), LABELS)
 mpl.ylabel('Frequency')
-mpl.title('Overall mutation rate (1/bp)')
+mpl.title('(A) Overall mutation rate (1/bp)')
 
 mpl.subplot(2, 3, 2)
 color_ind = 0
@@ -131,13 +131,13 @@ for fn in INP:
         y_max = y_max if y_max > SNP_FREQ else SNP_FREQ
 y_range = y_max - y_min
 mpl.axis([-1, N_LABELS, 0, 1.2])
-mpl.grid()
+mpl.grid(visible=False)
 mpl.xticks([], [])
 # mpl.xticks(np.arange(N_LABELS), LABELS)
 # mpl.yticks([0, .2, .4, .6, .8, 1.], [0, 0.2, 0.4, 0.6, 0.8, 1.0])
 mpl.ylim([y_min-0.1*y_range, y_max+0.1*y_range])
 mpl.ylabel('Frequency')
-mpl.title('SNP freq (given mutation)')
+mpl.title('(B) SNP freq (given mutation)')
 mpl.legend(LABELS, bbox_to_anchor=(1.04, 0.5), loc="center left")
 
 mpl.subplot(2, 1, 2)
@@ -153,7 +153,7 @@ for fn in INP:
         y = [INDEL_FREQ[n] for n in x]
         mpl.plot(x, y, color=my_col)
 # leg_text.append(fn)
-mpl.grid()
+mpl.grid(visible=False)
 mpl.xlabel('Indel size (bp)', fontweight='bold')
 mpl.ylabel('Frequency')
 mpl.title('Indel frequency by size (- deletion, + insertion)')
@@ -174,9 +174,11 @@ for fn in INP:
         my_col = get_color(color_ind, N_LABELS)
         color_ind += 1
         TRINUC_MUT_PROB = DATA_DICT[f'{gr}.TRINUC_MUT_PROB']
-        x = range(color_ind - 1, len(TRINUC_MUT_PROB) * N_LABELS, N_LABELS)
-        xt = sorted(TRINUC_MUT_PROB.keys())
-        y = [TRINUC_MUT_PROB[k] for k in xt]
+        # get a partial dict for this example:
+        trinuc_mut_prob_example = {k: v for k, v in TRINUC_MUT_PROB.items() if k.startswith('A')}
+        x = range(color_ind - 1, len(trinuc_mut_prob_example) * N_LABELS, N_LABELS)
+        xt = sorted(trinuc_mut_prob_example.keys())
+        y = [trinuc_mut_prob_example[k] for k in xt]
         markerline, stemlines, baseline = mpl.stem(x, y, '-.')
         mpl.setp(markerline, 'markerfacecolor', my_col)
         mpl.setp(markerline, 'markeredgecolor', my_col)
@@ -184,7 +186,7 @@ for fn in INP:
         mpl.setp(stemlines, 'color', my_col, 'linewidth', 3)
         if color_ind == 1:
             mpl.xticks(x, xt, rotation=90)
-mpl.grid()
+mpl.grid(visible=False)
 mpl.ylabel('p(trinucleotide mutates)')
 mpl.legend(LABELS, loc='upper center', bbox_to_anchor=(0., 1.02, 1., .102), mode="expand", shadow=True, ncol=N_LABELS)
 # mpl.show()
