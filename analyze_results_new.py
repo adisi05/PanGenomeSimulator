@@ -212,16 +212,18 @@ for i in range(len(file_tags)):
         print("F1:", file_stats[a_name]['F1'])
 
     # TODO remove later
-    if not spreadsheet_input:
-        spreadsheet_input = spreadsheet_input \
-                        + str(file_stats['All']['Real Present']) + '\n' \
-                        + str(file_stats['All']['Real Absent'] - file_stats['All']['Novel']) + '\n' \
-                        + str(file_stats['All']['Novel']) + '\n'
-        for a_name in relevant_accessions:
-            spreadsheet_input = spreadsheet_input \
-                            + str(file_stats[a_name]['Real Present']) + '\n' \
-                            + str(file_stats[a_name]['Real Absent'] - file_stats[a_name]['Novel']) + '\n' \
-                            + str(file_stats[a_name]['Novel']) + '\n'
+    # if not spreadsheet_input:
+    #     spreadsheet_input = spreadsheet_input \
+    #                     + str(file_stats['All']['Real Present']) + '\n' \
+    #                     + str(file_stats['All']['Real Absent'] - file_stats['All']['Novel']) + '\n' #\
+    #                     #+ str(file_stats['All']['Novel']) + '\n'
+    #     for a_name in relevant_accessions:
+    #         spreadsheet_input = spreadsheet_input \
+    #                         + str(file_stats[a_name]['Real Present']) + '\n' \
+    #                         + str(file_stats[a_name]['Real Absent'] - file_stats[a_name]['Novel']) + '\n' #\
+    #                         #+ str(file_stats[a_name]['Novel']) + '\n'
+
+    # numbers
     spreadsheet_input = spreadsheet_input \
                         + str(file_stats['All']['Correct Present']) + '\n' \
                         + str(file_stats['All']['Correct Absent']) + '\n'
@@ -229,6 +231,15 @@ for i in range(len(file_tags)):
         spreadsheet_input = spreadsheet_input \
                         + str(file_stats[a_name]['Correct Present']) + '\n' \
                         + str(file_stats[a_name]['Correct Absent']) + '\n'
+    # percentages
+    spreadsheet_input = spreadsheet_input \
+                        + str(file_stats['All']['Correct Present']/file_stats['All']['Real Present']) + '\n' \
+                        + str(file_stats['All']['Correct Absent']/file_stats['All']['Real Absent']) + '\n'
+    for a_name in relevant_accessions:
+        spreadsheet_input = spreadsheet_input \
+                        + str(file_stats[a_name]['Correct Present']/file_stats[a_name]['Real Present']) + '\n' \
+                        + str(file_stats[a_name]['Correct Absent']/file_stats[a_name]['Real Absent']) + '\n'
+
 
 # TODO remove later
 print("----------")
