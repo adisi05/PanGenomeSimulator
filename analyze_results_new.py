@@ -168,7 +168,10 @@ for i in range(len(file_tags)):
         print("Num of genes absent by Panoramic (predicted P):", file_stats[a_name]['Predicted Present'])
         print("Num of reference genes out of them:", file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Novel'])
         print("Num of genes predicted absent correctly (TN):", file_stats[a_name]['Correct Absent'])
+        print("Num of genes predicted absent wrongly (FN):", file_stats[a_name]['Predicted Absent'] - file_stats[a_name]['Correct Absent'])
         print("Num of genes predicted present correctly (TP):", file_stats[a_name]['Correct Present'])
+        print("Num of genes predicted present wrongly (FP):", file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Correct Present'])
+        print("Among them reference genes:", file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Correct Present'] - file_stats[a_name]['Novel'])
 
         # Accuracy = (TP + TN) / (TP + FP + TN + FN)
         # note that Predicted Absent is (TN + FN) while as Predicted Present is TP + FP
@@ -235,7 +238,11 @@ for i in range(len(file_tags)):
     print("Num of genes present by Panoramic (predicted P):", file_stats['All']['Predicted Present'])
     print("Num of reference genes out of them:", file_stats['All']['Predicted Present'] - file_stats['All']['Novel'])
     print("Num of genes predicted absent correctly (TN):", file_stats['All']['Correct Absent'])
+    print("Num of genes predicted absent wrongly (FN):", file_stats['All']['Predicted Absent'] - file_stats['All']['Correct Absent'])
     print("Num of genes predicted present correctly (TP):", file_stats['All']['Correct Present'])
+    print("Num of genes predicted present wrongly (FP):", file_stats['All']['Predicted Present'] - file_stats['All']['Correct Present'])
+    print("Among them reference genes:", file_stats['All']['Predicted Present'] - file_stats['All']['Correct Present'] - file_stats['All']['Novel'])
+
     # file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
     #                                 (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
     # file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
