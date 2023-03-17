@@ -160,15 +160,15 @@ for i in range(len(file_tags)):
     f1_count = 0
     for a_name in relevant_accessions:
         print("For accession:", a_name)
-        print("Num of genes absent by the simulator (real absent):", file_stats[a_name]['Real Absent'])
+        print("Num of genes absent by the simulator (actual N):", file_stats[a_name]['Real Absent'])
         print("Num of reference genes out of them:", file_stats[a_name]['Real Absent'] - file_stats[a_name]['Novel'])
         print("Num of novel genes out of them:", file_stats[a_name]['Novel'])
-        print("Num of genes absent by the simulator (real present):", file_stats[a_name]['Real Present'])
-        print("Num of genes absent by Panoramic (predicted absent):", file_stats[a_name]['Predicted Absent'])
-        print("Num of genes absent by Panoramic (predicted present):", file_stats[a_name]['Predicted Present'])
+        print("Num of genes absent by the simulator (actual P):", file_stats[a_name]['Real Present'])
+        print("Num of genes absent by Panoramic (predicted N):", file_stats[a_name]['Predicted Absent'])
+        print("Num of genes absent by Panoramic (predicted P):", file_stats[a_name]['Predicted Present'])
         print("Num of reference genes out of them:", file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Novel'])
-        print("Num of genes predicted absent correctly (TP):", file_stats[a_name]['Correct Absent'])
-        print("Num of genes predicted present correctly (TN):", file_stats[a_name]['Correct Present'])
+        print("Num of genes predicted absent correctly (TN):", file_stats[a_name]['Correct Absent'])
+        print("Num of genes predicted present correctly (TP):", file_stats[a_name]['Correct Present'])
 
         # Accuracy = (TP + TN) / (TP + FP + TN + FN)
         # note that Predicted Absent is (TN + FN) while as Predicted Present is TP + FP
@@ -227,15 +227,15 @@ for i in range(len(file_tags)):
     print(f"Out of Panoramic known genes, only {common_percentage} are relevant")
     print("Panoramic\'s new genes:", file_stats['All']['Panoramic New'])
     print("--------------------------------------")
-    print("Num of genes absent by the simulator (real absent):", file_stats['All']['Real Absent'])
+    print("Num of genes absent by the simulator (actual N):", file_stats['All']['Real Absent'])
     print("Num of novel genes out of them:", file_stats['All']['Novel'])
     print("Num of reference genes out of them:", file_stats['All']['Real Absent'] - file_stats['All']['Novel'])
-    print("Num of genes present by the simulator (real present):", file_stats['All']['Real Present'])
-    print("Num of genes absent by Panoramic (predicted absent):", file_stats['All']['Predicted Absent'])
-    print("Num of genes present by Panoramic (predicted present):", file_stats['All']['Predicted Present'])
+    print("Num of genes present by the simulator (actual P):", file_stats['All']['Real Present'])
+    print("Num of genes absent by Panoramic (predicted N):", file_stats['All']['Predicted Absent'])
+    print("Num of genes present by Panoramic (predicted P):", file_stats['All']['Predicted Present'])
     print("Num of reference genes out of them:", file_stats['All']['Predicted Present'] - file_stats['All']['Novel'])
-    print("Num of genes predicted absent correctly (TP):", file_stats['All']['Correct Absent'])
-    print("Num of genes predicted present correctly (TN):", file_stats['All']['Correct Present'])
+    print("Num of genes predicted absent correctly (TN):", file_stats['All']['Correct Absent'])
+    print("Num of genes predicted present correctly (TP):", file_stats['All']['Correct Present'])
     # file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
     #                                 (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
     # file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
