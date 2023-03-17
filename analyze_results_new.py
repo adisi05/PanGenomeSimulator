@@ -94,12 +94,16 @@ for i in range(len(file_tags)):
             if line[0].startswith(NOVEL_GENE):  # Novel genes
                 pano_new_genes += 1
                 for a_name in relevant_accessions:
-                    file_stats[a_name]['Real Absent'] += 1
-                    file_stats[a_name]['Novel'] += 1
                     if NO_GENE == line[pano_pav_index[a_name]]:
-                        file_stats[a_name]['Predicted Absent'] += 1
-                        file_stats[a_name]['Correct Absent'] += 1
+                        pass
+                        # 15.03.2023 - Itay decided not to count TN in this case
+                        # file_stats[a_name]['Real Absent'] += 1
+                        # file_stats[a_name]['Novel'] += 1
+                        # file_stats[a_name]['Predicted Absent'] += 1
+                        # file_stats[a_name]['Correct Absent'] += 1
                     else:
+                        file_stats[a_name]['Real Absent'] += 1
+                        file_stats[a_name]['Novel'] += 1
                         file_stats[a_name]['Predicted Present'] += 1
 
             else:  # Known genes
@@ -147,6 +151,72 @@ for i in range(len(file_tags)):
     print("======================================")
     print(file_tags[i])
     print("======================================")
+
+    accuracy_sum = 0
+    accuracy_count = 0
+    precision_sum = 0
+    precision_count = 0
+    f1_sum = 0
+    f1_count = 0
+    for a_name in relevant_accessions:
+        print("For accession:", a_name)
+        print("Num of genes absent by the simulator (real absent):", file_stats[a_name]['Real Absent'])
+        print("Num of reference genes out of them:", file_stats[a_name]['Real Absent'] - file_stats[a_name]['Novel'])
+        print("Num of novel genes out of them:", file_stats[a_name]['Novel'])
+        print("Num of genes absent by the simulator (real present):", file_stats[a_name]['Real Present'])
+        print("Num of genes absent by Panoramic (predicted absent):", file_stats[a_name]['Predicted Absent'])
+        print("Num of genes absent by Panoramic (predicted present):", file_stats[a_name]['Predicted Present'])
+        print("Num of reference genes out of them:", file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Novel'])
+        print("Num of genes predicted absent correctly (TP):", file_stats[a_name]['Correct Absent'])
+        print("Num of genes predicted present correctly (TN):", file_stats[a_name]['Correct Present'])
+
+        # Accuracy = (TP + TN) / (TP + FP + TN + FN)
+        # note that Predicted Absent is (TN + FN) while as Predicted Present is TP + FP
+        file_stats[a_name]['Accuracy'] = \
+            (file_stats[a_name]['Correct Absent'] + file_stats[a_name]['Correct Present']) / \
+            (file_stats[a_name]['Predicted Absent'] + file_stats[a_name]['Predicted Present'])
+        accuracy_sum += file_stats[a_name]['Accuracy']
+        accuracy_count += 1
+
+        # Precision = TP / (TP + FP)
+        # note that Predicted Present is TP + FP
+        if file_stats[a_name]['Predicted Present'] != 0:
+            file_stats[a_name]['Precision'] = \
+                (file_stats[a_name]['Correct Present'] / file_stats[a_name]['Predicted Present'])
+            precision_sum += file_stats[a_name]['Precision']
+            precision_count += 1
+        else:
+            file_stats[a_name]['Precision'] = 'N/A'
+
+        # Recall = TP / (TP + FN)
+        # note that (Predicted Absent - Correct Absent) is FN
+        if file_stats[a_name]['Predicted Present'] != 0:
+            file_stats[a_name]['Recall'] =\
+                (file_stats[a_name]['Correct Present'] / (file_stats[a_name]['Correct Present']
+                + file_stats[a_name]['Predicted Absent'] - file_stats[a_name]['Correct Absent']))
+        else:
+            file_stats[a_name]['Recall'] = 'N/A'
+
+        # F1 = 2 * (Precision * Recall) / (Precision + Recall))
+        if file_stats[a_name]['Correct Present'] != 0 and file_stats[a_name]['Recall'] != 'N/A' and \
+                file_stats[a_name]['Precision'] != 'N/A':
+            file_stats[a_name]['F1'] = (2 * file_stats[a_name]['Recall'] * file_stats[a_name]['Precision'] /
+                  (file_stats[a_name]['Recall'] + file_stats[a_name]['Precision']))
+            f1_sum += file_stats[a_name]['F1']
+            f1_count += 1
+        else:
+            file_stats[a_name]['F1'] = 'N/A'
+
+        print("Accuracy:", file_stats[a_name]['Accuracy'])
+        print("Precision:", file_stats[a_name]['Precision'])
+        print("Recall:", file_stats[a_name]['Recall'])
+        print("F1:", file_stats[a_name]['F1'])
+        print("----------")
+
+    file_stats['All']['Accuracy'] = accuracy_sum / accuracy_count
+    file_stats['All']['Precision'] = precision_sum / precision_count
+    file_stats['All']['F1'] = f1_sum / f1_count
+
     print("Simulator\'s known genes:", file_stats['All']['Simulator Known'], "which are the 'true' pan-genes")
     simulation_discarded = GENES_START_NUMBER - file_stats['All']['Simulator Known']
     print(f"{simulation_discarded} genes were discarded before simulation even started, "
@@ -159,57 +229,29 @@ for i in range(len(file_tags)):
     print("--------------------------------------")
     print("Num of genes absent by the simulator (real absent):", file_stats['All']['Real Absent'])
     print("Num of novel genes out of them:", file_stats['All']['Novel'])
+    print("Num of reference genes out of them:", file_stats['All']['Real Absent'] - file_stats['All']['Novel'])
     print("Num of genes present by the simulator (real present):", file_stats['All']['Real Present'])
     print("Num of genes absent by Panoramic (predicted absent):", file_stats['All']['Predicted Absent'])
     print("Num of genes present by Panoramic (predicted present):", file_stats['All']['Predicted Present'])
+    print("Num of reference genes out of them:", file_stats['All']['Predicted Present'] - file_stats['All']['Novel'])
     print("Num of genes predicted absent correctly (TP):", file_stats['All']['Correct Absent'])
     print("Num of genes predicted present correctly (TN):", file_stats['All']['Correct Present'])
-    file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
-                                    (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
-    file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
-        (file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent'])
-    file_stats['All']['Recall'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
-        (file_stats['All']['Correct Absent'] /
-         (file_stats['All']['Correct Absent'] + file_stats['All']['Predicted Present']
-          - file_stats['All']['Correct Present']))
-    file_stats['All']['F1'] = 'N/A'\
-        if file_stats['All']['Correct Absent'] == 0 or 'N/A' == file_stats['All']['Recall'] \
-           or 'N/A' == file_stats['All']['Precision'] \
-        else (2 * file_stats['All']['Recall'] * file_stats['All']['Precision'] /
-              (file_stats['All']['Recall'] + file_stats['All']['Precision']))
+    # file_stats['All']['Accuracy'] = (file_stats['All']['Correct Absent'] + file_stats['All']['Correct Present']) / \
+    #                                 (file_stats['All']['Predicted Absent'] + file_stats['All']['Predicted Present'])
+    # file_stats['All']['Precision'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
+    #     (file_stats['All']['Correct Absent'] / file_stats['All']['Predicted Absent'])
+    # file_stats['All']['Recall'] = 'N/A' if 0 == file_stats['All']['Predicted Absent'] else \
+    #     (file_stats['All']['Correct Absent'] /
+    #      (file_stats['All']['Correct Absent'] + file_stats['All']['Predicted Present']
+    #       - file_stats['All']['Correct Present']))
+    # file_stats['All']['F1'] = 'N/A'\
+    #     if file_stats['All']['Correct Absent'] == 0 or 'N/A' == file_stats['All']['Recall'] \
+    #        or 'N/A' == file_stats['All']['Precision'] \
+    #     else (2 * file_stats['All']['Recall'] * file_stats['All']['Precision'] /
+    #           (file_stats['All']['Recall'] + file_stats['All']['Precision']))
     print("Accuracy:", file_stats['All']['Accuracy'])
     print("Precision:", file_stats['All']['Precision'])
-    print("Recall:", file_stats['All']['Recall'])
     print("F1:", file_stats['All']['F1'])
-
-    for a_name in relevant_accessions:
-        print("----------")
-        print("For accession:", a_name)
-        print("Num of genes absent by the simulator (real absent):", file_stats[a_name]['Real Absent'])
-        print("Num of novel genes out of them:", file_stats[a_name]['Novel'])
-        print("Num of genes absent by the simulator (real present):", file_stats[a_name]['Real Present'])
-        print("Num of genes absent by Panoramic (predicted absent):", file_stats[a_name]['Predicted Absent'])
-        print("Num of genes absent by Panoramic (predicted present):", file_stats[a_name]['Predicted Present'])
-        print("Num of genes predicted absent correctly (TP):", file_stats[a_name]['Correct Absent'])
-        print("Num of genes predicted present correctly (TN):", file_stats[a_name]['Correct Present'])
-        file_stats[a_name]['Accuracy'] = \
-            (file_stats[a_name]['Correct Absent'] + file_stats[a_name]['Correct Present']) / \
-            (file_stats[a_name]['Predicted Absent'] + file_stats[a_name]['Predicted Present'])
-        file_stats[a_name]['Precision'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
-            (file_stats[a_name]['Correct Absent'] / file_stats[a_name]['Predicted Absent'])
-        file_stats[a_name]['Recall'] = 'N/A' if 0 == file_stats[a_name]['Predicted Absent'] else \
-            (file_stats[a_name]['Correct Absent'] /
-             (file_stats[a_name]['Correct Absent'] + file_stats[a_name]['Predicted Present']
-              - file_stats[a_name]['Correct Present']))
-        file_stats[a_name]['F1'] = 'N/A'\
-            if file_stats[a_name]['Correct Absent'] == 0 or 'N/A' == file_stats[a_name]['Recall'] \
-               or 'N/A' == file_stats[a_name]['Precision'] \
-            else (2 * file_stats[a_name]['Recall'] * file_stats[a_name]['Precision'] /
-                  (file_stats[a_name]['Recall'] + file_stats[a_name]['Precision']))
-        print("Accuracy:", file_stats[a_name]['Accuracy'])
-        print("Precision:", file_stats[a_name]['Precision'])
-        print("Recall:", file_stats[a_name]['Recall'])
-        print("F1:", file_stats[a_name]['F1'])
 
     # TODO remove later
     # if not spreadsheet_input:
@@ -224,21 +266,25 @@ for i in range(len(file_tags)):
     #                         #+ str(file_stats[a_name]['Novel']) + '\n'
 
     # numbers
-    spreadsheet_input = spreadsheet_input \
-                        + str(file_stats['All']['Correct Present']) + '\n' \
-                        + str(file_stats['All']['Correct Absent']) + '\n'
+    # spreadsheet_input = spreadsheet_input \
+    #                     + str(file_stats['All']['Correct Present']) + '\n' \
+    #                     + str(file_stats['All']['Correct Absent']) + '\n'
     for a_name in relevant_accessions:
         spreadsheet_input = spreadsheet_input \
                         + str(file_stats[a_name]['Correct Present']) + '\n' \
                         + str(file_stats[a_name]['Correct Absent']) + '\n'
-    # percentages
-    spreadsheet_input = spreadsheet_input \
-                        + str(file_stats['All']['Correct Present']/file_stats['All']['Real Present']) + '\n' \
-                        + str(file_stats['All']['Correct Absent']/file_stats['All']['Real Absent']) + '\n'
     for a_name in relevant_accessions:
         spreadsheet_input = spreadsheet_input \
-                        + str(file_stats[a_name]['Correct Present']/file_stats[a_name]['Real Present']) + '\n' \
-                        + str(file_stats[a_name]['Correct Absent']/file_stats[a_name]['Real Absent']) + '\n'
+                        + str(file_stats[a_name]['Predicted Present'] - file_stats[a_name]['Correct Present']) + '\n' \
+                        + str(file_stats[a_name]['Predicted Absent'] - file_stats[a_name]['Correct Absent']) + '\n'
+    # # percentages
+    # spreadsheet_input = spreadsheet_input \
+    #                     + str(file_stats['All']['Correct Present']/file_stats['All']['Real Present']) + '\n' \
+    #                     + str(file_stats['All']['Correct Absent']/file_stats['All']['Real Absent']) + '\n'
+    # for a_name in relevant_accessions:
+    #     spreadsheet_input = spreadsheet_input \
+    #                     + str(file_stats[a_name]['Correct Present']/file_stats[a_name]['Real Present']) + '\n' \
+    #                     + str(file_stats[a_name]['Correct Absent']/file_stats[a_name]['Real Absent']) + '\n'
 
 
 # TODO remove later
@@ -250,7 +296,7 @@ bar_width = 0.35
 for file_name, file_stats in stats_per_file.items():
     # Set the number of groups and the values for each group
     N = len(file_stats) - 1
-    values1 = [v['Real Absent'] for k, v in file_stats.items() if k != 'All']
+    values1 = [v['Real Absent'] - v['Novel'] for k, v in file_stats.items() if k != 'All']
     values2 = [v['Predicted Absent'] for k, v in file_stats.items() if k != 'All']
     values3 = [v['Correct Absent'] for k, v in file_stats.items() if k != 'All']
 
@@ -284,7 +330,7 @@ for file_name, file_stats in stats_per_file.items():
 
 # Set the number of groups and the values for each group
 N = len(stats_per_file)
-values1 = [v['All']['Real Absent'] for _, v in stats_per_file.items()]
+values1 = [v['All']['Real Absent'] - v['All']['Novel'] for _, v in stats_per_file.items()]
 values2 = [v['All']['Predicted Absent'] for _, v in stats_per_file.items()]
 values3 = [v['All']['Correct Absent'] for _, v in stats_per_file.items()]
 
