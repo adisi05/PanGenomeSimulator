@@ -27,6 +27,7 @@ parser.add_argument('-l', type=str, required=True, metavar='<str>', nargs='+',
 parser.add_argument('-t', type=str, required=True, metavar='<str>', nargs='+',
                     help="* 'De-novo 01' ['Map-to-pan 01'] ['De-novo 02'] ...")
 parser.add_argument('-T', type=str, required=True, metavar='<str>', help="Graph Title")
+parser.add_argument('-g', type=str, required=True, metavar='<str>', help="Graph Mode (P/N")
 
 args = parser.parse_args()
 panoramic_pav_files = args.f
@@ -34,6 +35,17 @@ simulator_raw_pav_files = args.s
 simulator_legend_files = args.l
 file_tags = args.t
 graph_title = args.T
+graph_mode = args.g
+
+if graph_mode.upper() == 'P':
+    mode = 'Positive'
+    mode_key = 'Present'
+elif graph_mode.upper() == 'N':
+    mode = 'Negative'
+    mode_key = 'Absent'
+else:
+    raise Exception("Choose graph mode")
+graph_title = mode_key+' '+graph_title
 
 stats_per_file = {tag: {} for tag in file_tags}
 new_stats_per_file = {tag: {} for tag in file_tags}
@@ -303,9 +315,14 @@ bar_width = 0.35
 for file_name, file_stats in stats_per_file.items():
     # Set the number of groups and the values for each group
     N = len(file_stats) - 1
-    values1 = [v['Real Absent'] - v['Novel'] for k, v in file_stats.items() if k != 'All']
-    values2 = [v['Predicted Absent'] for k, v in file_stats.items() if k != 'All']
-    values3 = [v['Correct Absent'] for k, v in file_stats.items() if k != 'All']
+    values1 = [v[f'Real {mode_key}'] for k, v in file_stats.items() if k != 'All']
+    if mode_key == 'Present':
+        values1 = [v[f'Real Present'] for k, v in file_stats.items() if k != 'All']
+    else:
+        values1 = [v[f'Real Absent'] - v['Novel'] for k, v in file_stats.items() if k != 'All']
+
+    values2 = [v[f'Predicted {mode_key}'] for k, v in file_stats.items() if k != 'All']
+    values3 = [v[f'Correct {mode_key}'] for k, v in file_stats.items() if k != 'All']
 
     # Set the labels for each group and the bar width
     labels = [k for k, _ in file_stats.items() if k != 'All']
@@ -337,9 +354,12 @@ for file_name, file_stats in stats_per_file.items():
 
 # Set the number of groups and the values for each group
 N = len(stats_per_file)
-values1 = [v['All']['Real Absent'] - v['All']['Novel'] for _, v in stats_per_file.items()]
-values2 = [v['All']['Predicted Absent'] for _, v in stats_per_file.items()]
-values3 = [v['All']['Correct Absent'] for _, v in stats_per_file.items()]
+if mode_key == 'Present':
+    values1 = [v['All']['Real Present'] for _, v in stats_per_file.items()]
+else:
+    values1 = [v['All']['Real Absent'] - v['All']['Novel'] for _, v in stats_per_file.items()]
+values2 = [v['All'][f'Predicted {mode_key}'] for _, v in stats_per_file.items()]
+values3 = [v['All'][f'Correct {mode_key}'] for _, v in stats_per_file.items()]
 
 # Set the labels for each group and the bar width
 labels = [k for k, _ in stats_per_file.items()]
@@ -360,7 +380,7 @@ plt.bar([i + bar_width for i in x_pos], values3, bar_width, alpha=0.5, color='#8
 plt.xticks([i + bar_width/2 for i in x_pos], labels)
 
 # Add a legend and title
-plt.legend(['Actual Negative\n(Simulator)', 'Predicted Negative\n(Panoramic pipeline)', 'True Negative'],
+plt.legend([f'Actual {mode}\n(Simulator)', f'Predicted {mode}\n(Panoramic pipeline)', f'True {mode}'],
            bbox_to_anchor=(0.5, -0.15), loc='center', ncol=3)
 plt.title(graph_title + '\nComparison')
 
