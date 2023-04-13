@@ -343,7 +343,7 @@ for file_name, file_stats in stats_per_file.items():
     plt.xticks([i + bar_width/2 for i in x_pos], labels)
 
     # Add a legend and title
-    plt.legend(['Actual Negative\n(Simulator)', 'Predicted Negative\n(Panoramic pipeline)', 'True Negative'],
+    plt.legend([f'Actual {mode}\n(Simulator)', f'Predicted {mode}\n(Panoramic pipeline)', f'True {mode}'],
            bbox_to_anchor=(0.5, -0.15), loc='center', ncol=3)
     plt.title(graph_title + f'\n{file_name}')
 
