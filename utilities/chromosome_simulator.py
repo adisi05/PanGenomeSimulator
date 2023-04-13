@@ -88,7 +88,7 @@ class ChromosomeSimulator:
         model_regions = [region_name for region_name in self.model_per_region.keys()]
         for region in self.annotated_seq.get_regions():
             if region.value not in model_regions:
-                self.model_per_region[region.value] = self.model_per_region[Region.ALL.value]
+                self.model_per_region[region.value] = copy.deepcopy(self.model_per_region[Region.ALL.value])
             if dist:
                 self.model_per_region[region.value][ModelKeys.AVG_MUT_RATE] *= dist
             if mut_scalar:
@@ -216,7 +216,7 @@ class ChromosomeSimulator:
                                                                       self.window_unit.end)
         if 1 not in region_mask:
             return -1  # current annotation doesn't exist in window
-        for attempt in range(MAX_ATTEMPTS):
+        for _ in range(MAX_ATTEMPTS):
             if mut_type.value == MutType.INDEL.value or IGNORE_TRINUC:
                 # -2 because we don't allow SNP in the window start/end
                 k = self.window_unit.end - self.window_unit.start - 2
