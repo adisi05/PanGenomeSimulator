@@ -58,7 +58,7 @@ def index_ref(reference_path: str, logger: Logger = None) -> [list, int]:
             # Item 3 in this gives you the byte position of the next contig, I believe
             ref_indices.append((splt[0], offset, offset + seq_len + n_lines, seq_len))
         fai.close()
-        return ref_indices
+        return ref_indices, line_ln
 
     logger.message('Index not found, creating one... ')
     if absolute_reference_location.suffix == ".gz":
